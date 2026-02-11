@@ -300,12 +300,14 @@ async function getWeeklyPayout(locationId, weekStartDate) {
   for (const emp of employees) {
     let weeklyGrossTips = 0;
     let weeklyWorkedHours = 0;
+    const dailyTipsByDay = [0, 0, 0, 0, 0, 0, 0];
 
     for (let i = 0; i < 7; i++) {
       const d = new Date(Date.UTC(y, mo - 1, day + i, 0, 0, 0, 0));
       const dateStr = d.toISOString().slice(0, 10);
       const tips = await getEmployeeDailyTipsForDate(emp._id, locationId, dateStr);
       weeklyGrossTips += tips;
+      dailyTipsByDay[i] = roundMoney(tips);
 
       const dateStart = new Date(dateStr + 'T00:00:00.000Z');
       const dateEnd = new Date(dateStr + 'T23:59:59.999Z');
@@ -330,7 +332,14 @@ async function getWeeklyPayout(locationId, weekStartDate) {
       }
     }
 
-    dailyTipsByEmployee.set(emp._id.toString(), { weeklyGrossTips, weeklyWorkedHours });
+    // Weekly Gross Tips = sum of daily tips for Mon–Sun (explicit sum of the 7 days)
+    const sumOfDailyRounded = dailyTipsByDay.reduce((s, v) => s + (Number(v) || 0), 0);
+    const weeklyGrossTipsFinal = roundMoney(sumOfDailyRounded);
+    dailyTipsByEmployee.set(emp._id.toString(), {
+      weeklyGrossTips: weeklyGrossTipsFinal,
+      weeklyWorkedHours,
+      dailyTipsByDay,
+    });
     employeeWeeklyHours.set(emp._id.toString(), weeklyWorkedHours);
   }
 
@@ -339,7 +348,11 @@ async function getWeeklyPayout(locationId, weekStartDate) {
 
   for (const emp of employees) {
     const id = emp._id.toString();
-    const { weeklyGrossTips, weeklyWorkedHours } = dailyTipsByEmployee.get(id) || { weeklyGrossTips: 0, weeklyWorkedHours: 0 };
+    const { weeklyGrossTips, weeklyWorkedHours, dailyTipsByDay } = dailyTipsByEmployee.get(id) || {
+      weeklyGrossTips: 0,
+      weeklyWorkedHours: 0,
+      dailyTipsByDay: [0, 0, 0, 0, 0, 0, 0],
+    };
     const tardinessMinutes = tardinessMap.get(id) ?? 0;
     const deductionPercent = getTardinessDeductionPercent(tardinessMinutes);
     const tardinessDeductionAmount = roundMoney(weeklyGrossTips * deductionPercent);
@@ -354,9 +367,11 @@ async function getWeeklyPayout(locationId, weekStartDate) {
       employeeId: emp._id,
       employeeName: emp.name,
       dailyTips: weeklyGrossTips,
+      dailyTipsByDay: dailyTipsByDay || [0, 0, 0, 0, 0, 0, 0],
       weeklyTardinessMinutes: tardinessMinutes,
       tardinessPercent: deductionPercent * 100,
       tardinessDeduction: tardinessDeductionAmount,
+      weeklyAfterTardiness,
       manualDeduction: manual.amount,
       manualDeductionReason: manual.reason,
       netWeeklyTips,
@@ -388,9 +403,12 @@ async function getWeeklyPayout(locationId, weekStartDate) {
       employeeId: r.employeeId,
       employeeName: r.employeeName,
       dailyTipsMonToSun: r.dailyTips,
+      dailyTipsByDay: r.dailyTipsByDay,
+      weeklyGrossTips: r.dailyTips,
       weeklyTardinessMinutes: r.weeklyTardinessMinutes,
       tardinessPercent: r.tardinessPercent,
       tardinessDeduction: r.tardinessDeduction,
+      weeklyAfterTardiness: r.weeklyAfterTardiness,
       manualDeduction: r.manualDeduction,
       manualDeductionReason: r.manualDeductionReason,
       netWeeklyTips: r.netWeeklyTips,

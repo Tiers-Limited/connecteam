@@ -7,6 +7,46 @@ const Employee = require('../models/Employee');
 const { LOCATIONS } = require('../utils/constants');
 
 /**
+ * GET /connecteams/weekly-tardiness?weekStart=YYYY-MM-DD&locationId=optional
+ * Returns tardiness detail (employee, location/job, scheduled, clock-in, minutes late) and daily totals Mon–Sun + week total.
+ */
+async function getWeeklyTardiness(req, res, next) {
+  try {
+    const { weekStart, locationId } = req.query;
+    if (!weekStart || typeof weekStart !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'weekStart query param is required (YYYY-MM-DD, Monday)',
+      });
+    }
+    const start = new Date(weekStart + 'T12:00:00');
+    if (isNaN(start.getTime())) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid weekStart date',
+      });
+    }
+    let locationKeyFilter = null;
+    if (locationId) {
+      const loc = await locationService.getById(locationId);
+      if (loc?.name) {
+        const found = LOCATIONS.find(
+          (l) => (l.name || '').toLowerCase() === (loc.name || '').toLowerCase()
+        );
+        if (found) locationKeyFilter = found.key;
+      }
+    }
+    const data = await connecteamsService.getWeeklyTardinessFromConnecteams(
+      weekStart.trim(),
+      locationKeyFilter
+    );
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
  * Sync time entries from Connecteams API into TimeEntry collection.
  * Uses the 4 fixed locations: Oranjestad, Casa del Mar, The Cove, Drive Thru.
  * Replaces existing Connecteams-synced entries in the date range (employees with connecteamsUserId).
@@ -96,4 +136,4 @@ async function syncFromConnecteams(req, res, next) {
   }
 }
 
-module.exports = { syncFromConnecteams };
+module.exports = { syncFromConnecteams, getWeeklyTardiness };

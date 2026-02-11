@@ -132,13 +132,76 @@ There are no automated test suites yet; you test by running the app and walking 
    - Staff table with per-employee AM/PM hours and allocated tips.
 4. Repeat for a few more days in the same week (e.g. Jan 1–7) so Weekly Payout has data.
 
-### 4. Full stack — Weekly Payout
+### 4. How to test Weekly Payout
 
-1. Go to **Weekly Payout**; select the same **location** and set **Week (Mon–Sun)** to the Monday of the week you used (e.g. 2026-01-01).
-2. Check the **Staff payout table**:
-   - **Daily Tips (Mon–Sun)** should be the sum of that week’s daily tips per employee (non-zero if you entered gross tips for those days).
-   - **Tardiness**, **Manual Deduction**, **Net Weekly Tips**, **Redistribution**, **Final Payable** should compute from your inputs.
-3. In **Tardiness & manual deductions**, set tardiness minutes for one employee (e.g. 12 min) and optional manual deduction + reason; click **Save**. Reload payout — that employee should show 20% tardiness deduction and others may show redistribution.
+Weekly Payout depends on **Phase 1 (Daily Tips)** and optionally on **tardiness** from the Tardiness module. Follow these steps to test it end-to-end.
+
+#### Prerequisites
+
+- Backend and frontend are running.
+- For at least one **location**, you have:
+  - **Time entries** for that location (via **Time Entries** → Load range or Load from Connecteam).
+  - **Daily tip input** saved for several days in one week (via **Daily Tips** → enter AM/PM gross, Save, for e.g. Mon–Sun of that week).
+
+#### Step 1: Load the payout
+
+1. In the app, go to **Weekly Payout** (nav link).
+2. Select a **location** (e.g. Casa del Mar).
+3. Set **Week (Mon–Sun)** to the **Monday** of the week you entered daily tips for (e.g. `2025-12-29` for the week Dec 29–Jan 4).
+4. Click **Load payout**.
+5. You should see:
+   - A summary card with location name and week range, and the rules (0–5 min → 0%, >5–10 → 15%, >10 → 20%).
+   - The **Weekly Staff Payout Table** with one row per employee (or “No payout data” if no daily tips exist for that week).
+
+#### Step 2: Verify the table columns
+
+For each employee row, check:
+
+| Column | What to verify |
+|--------|-----------------|
+| **Employee** | Name from your location. |
+| **Location** | Same as the one you selected. |
+| **Daily Tips (Mon–Sun)** | Sum of that employee’s daily tips for Mon–Sun (from Phase 1). |
+| **Weekly Gross Tips** | Same as Daily Tips total; system-generated, basis for deductions. |
+| **Weekly Tardiness (min)** | From tardiness module (or 0 if not set). |
+| **Tardiness %** | 0%, 15%, or 20% based on minutes (0–5 → 0%, >5–10 → 15%, >10 → 20%). |
+| **Tardiness Deduction** | Weekly Gross Tips × Tardiness %. |
+| **Weekly After Tardiness** | Weekly Gross Tips − Tardiness Deduction. |
+| **Manual Deduction** | $0 until you set it in the admin section. |
+| **Net Weekly Tips** | Weekly After Tardiness − Manual Deduction (min 0). |
+| **Redistribution** | Tips from tardiness pool (only if eligible: ≤5 min late, worked hours > 0). |
+| **Final Payable** | Net Weekly Tips + Redistribution. |
+
+#### Step 3: Test pagination
+
+- If there are many employees, use **Rows per page** (10, 25, 50, 100) and **Previous** / **Next**.
+- Changing the page should not reload data; the same loaded week stays in memory.
+
+#### Step 4: Test tardiness and manual deductions (admin)
+
+1. Scroll to **Tardiness & manual deductions (admin)**.
+2. Pick an employee; set **Tardiness (min)** (e.g. `12`).
+3. Optionally set **Manual $** (e.g. `10`) and **Reason** (e.g. “Uniform”).
+4. Click **Save** for that row.
+5. Click **Load payout** again (or the table may refresh). That employee should show:
+   - **Tardiness %** = 20%, **Tardiness Deduction** = 20% of their Weekly Gross Tips, **Weekly After Tardiness** reduced, and **Redistribution** = $0 (not eligible).
+6. Other employees with ≤5 min tardiness and worked hours should show **Redistribution** > $0 (share of the tardiness pool).
+
+#### Step 5: Persistence
+
+- Load a payout, then navigate to **Daily Tips** or **Time Entries** and back to **Weekly Payout**. The last loaded payout should still be shown (restored from sessionStorage) until you load a different week/location or refresh the page.
+
+#### Quick API check
+
+To hit the backend directly (e.g. with curl or Postman):
+
+```bash
+# Replace <locationId> with a real MongoDB ObjectId from GET /api/locations
+# Use the Monday of the week (YYYY-MM-DD)
+curl "http://localhost:3000/api/weekly-payout/<locationId>/2025-12-29"
+```
+
+You should get JSON with `locationName`, `weekStart`, `weekEnd`, and `payouts[]` (each with `employeeName`, `weeklyGrossTips`, `weeklyTardinessMinutes`, `tardinessPercent`, `tardinessDeduction`, `weeklyAfterTardiness`, `netWeeklyTips`, `tardinessRedistribution`, `finalWeeklyTipsPayable`, etc.).
 
 ### 5. Edge checks
 
