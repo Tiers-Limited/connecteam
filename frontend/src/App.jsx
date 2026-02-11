@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import DailyTips from './pages/DailyTips';
 import TimeEntries from './pages/TimeEntries';
 import WeeklyPayout from './pages/WeeklyPayout';
+import WeeklyTardiness from './pages/WeeklyTardiness';
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="time-entries" element={<TimeEntries />} />
             <Route path="daily-tips" element={<DailyTips />} />
             <Route path="weekly-payout" element={<WeeklyPayout />} />
+            <Route path="weekly-tardiness" element={<WeeklyTardiness />} />
           </Route>
         </Routes>
       </AppProvider>

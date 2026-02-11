@@ -1,7 +1,7 @@
 const https = require('https');
 const { connecteamsApiKey, connecteamsBase } = require('../config/env');
 const { LOCATIONS } = require('../utils/constants');
-const { toDateString } = require('../utils/dateUtils');
+const { toDateString, getWeekEnd, timeToMinutes } = require('../utils/dateUtils');
 
 const DEFAULT_TIMEZONE = 'America/Aruba';
 
@@ -195,6 +195,8 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
   const datesInRange = getDatesInRange(startDate, endDate);
   const dayBounds = getDateRangeBoundsUnixSeconds(startDate, endDate);
 
+
+
   // 1. Users
   const userMap = {};
   let offset = 0;
@@ -242,24 +244,35 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
 
   // 3. Schedulers + Shifts -> scheduleMap[userId][date] = { locationKey, timezone }
   const scheduleMap = {};
+  let totalShiftsLoaded = 0;
   try {
     const schedRes = await connecteamsFetch('/scheduler/v1/schedulers');
     const sRaw = schedRes.data != null ? schedRes.data : schedRes;
-    const schedList = Array.isArray(sRaw) ? sRaw : (schedRes.schedulers || sRaw.items || []);
+    const schedList = Array.isArray(sRaw)
+      ? sRaw
+      : (sRaw.schedulers || schedRes.schedulers || sRaw.items || []);
     const activeSchedulers = (schedList || []).filter((s) => s.isArchived === false);
     const schedIds = activeSchedulers.length
       ? activeSchedulers.map((s) => s.id ?? s.schedulerId).filter(Boolean)
       : (schedList || []).map((s) => s.id ?? s.schedulerId).filter(Boolean);
-    for (const schedId of schedIds.slice(0, 10)) {
-      try {
-        let shOffset = 0;
-        const shLimit = 100;
-        let shHasMore = true;
-        while (shHasMore) {
-          const shiftsPath = `/scheduler/v1/schedulers/${schedId}/shifts?startTime=${dayBounds.startTime}&endTime=${dayBounds.endTime}&limit=${shLimit}&offset=${shOffset}`;
-          const shData = await connecteamsFetch(shiftsPath);
-          const shRaw = shData.data != null ? shData.data : shData;
-          const shiftList = Array.isArray(shRaw) ? shRaw : (shRaw.shifts || shRaw.items || []);
+    // Try both: Connecteam doc says "Unix format (in seconds)" but some APIs use milliseconds
+    const timeParamSets = [
+      { start: dayBounds.startTime * 1000, end: dayBounds.endTime * 1000, label: 'ms' },
+      { start: dayBounds.startTime, end: dayBounds.endTime, label: 'sec' },
+    ];
+    for (const timeParams of timeParamSets) {
+      if (totalShiftsLoaded > 0) break;
+      for (const schedId of schedIds.slice(0, 10)) {
+        try {
+          let shOffset = 0;
+          const shLimit = 100;
+          let shHasMore = true;
+          while (shHasMore) {
+            const shiftsPath = `/scheduler/v1/schedulers/${schedId}/shifts?startTime=${timeParams.start}&endTime=${timeParams.end}&limit=${shLimit}&offset=${shOffset}`;
+            const shData = await connecteamsFetch(shiftsPath);
+            const shRaw = shData.data != null ? shData.data : shData;
+            const shiftList = Array.isArray(shRaw) ? shRaw : (shRaw.shifts || shRaw.items || []);
+            totalShiftsLoaded += shiftList.length;
           for (const sh of shiftList) {
             const st = sh.start ?? sh.startTime ?? sh.scheduledStart ?? sh.startTimestamp;
             let stMs =
@@ -273,7 +286,10 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
             if (stMs != null && typeof st === 'object' && st !== null && st.timestamp != null)
               stMs = st.timestamp * 1000;
             if (stMs == null || isNaN(stMs)) continue;
-            const shiftDate = dateFromTimestamp(Math.floor(stMs / 1000));
+            const tz = sh.timezone || DEFAULT_TIMEZONE;
+            const shiftDate =
+              dateFromTimestampInTimezone(Math.floor(stMs / 1000), tz) ||
+              dateFromTimestamp(Math.floor(stMs / 1000));
             const locationStr =
               (sh.locationData && (sh.locationData.gps || {}).address)
                 ? sh.locationData.gps.address
@@ -285,13 +301,12 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
                       ? sh.location
                       : (sh.locationName || sh.address || (sh.location && sh.location.name) || (sh.location && sh.location.address) || '—');
             const locKey = normalizeLocationKey(locationStr);
-            const tz = sh.timezone || DEFAULT_TIMEZONE;
             const userIds = sh.assignedUserIds || sh.userIds || (sh.assignedUserId != null ? [sh.assignedUserId] : []);
             for (const uid of userIds) {
               if (uid == null) continue;
               const ukey = String(uid);
               if (!scheduleMap[ukey]) scheduleMap[ukey] = {};
-              const sd = toDateString(shiftDate) || shiftDate;
+              const sd = (typeof shiftDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(shiftDate)) ? shiftDate : (toDateString(shiftDate) || shiftDate);
               const existing = scheduleMap[ukey][sd];
               if (!existing || stMs < (existing.scheduledStartMs || 0)) {
                 scheduleMap[ukey][sd] = {
@@ -304,18 +319,28 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
           }
           shHasMore = shiftList.length >= shLimit;
           shOffset += shiftList.length;
+          }
+        } catch (_) {
+          // skip scheduler
         }
-      } catch (_) {
-        // skip scheduler
       }
     }
-  } catch (_) {
-    // no schedulers
+  } catch (err) {
   }
+  const scheduleMapSize = Object.keys(scheduleMap).reduce(
+    (sum, ukey) => sum + Object.keys(scheduleMap[ukey] || {}).length,
+    0
+  );
+  const scheduleMapSample = Object.entries(scheduleMap)
+    .slice(0, 3)
+    .map(([ukey, dates]) => ({ userId: ukey, dates: Object.keys(dates).slice(0, 5) }));
 
   // 4. Timesheet + Time-activities -> build list of (userId, date, clockIn, clockOut, locationKey)
   const entries = [];
   const assignedUserIdsByClock = {};
+  let timesheetFlatRecordsTotal = 0;
+  let timesheetSchedMatchCount = 0;
+  let timesheetSchedMissCount = 0;
   timeClocksList.forEach((tc) => {
     const tid = tc.id ?? tc.timeClockId;
     if (tid == null) return;
@@ -364,6 +389,7 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
           }
         }
       }
+      timesheetFlatRecordsTotal += flatRecords.length;
       for (const rec of flatRecords) {
         const clockInMs = getClockInMsFromRecord(rec);
         const clockOutMs = getClockOutMsFromRecord(rec);
@@ -381,6 +407,8 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
         const userInfo = userMap[ukey];
         if (!userBelongsToLocations(userInfo, locationKeys)) continue;
         const sched = (scheduleMap[ukey] || {})[recordDate];
+        if (sched) timesheetSchedMatchCount++;
+        else timesheetSchedMissCount++;
         const tz = (sched && sched.timezone) ? sched.timezone : DEFAULT_TIMEZONE;
         let locationKey = (sched && sched.locationKey) || null;
         if (!locationKey && userInfo) {
@@ -407,14 +435,16 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
           clockIn: clockInStr,
           clockOut: clockOutStr,
           scheduledTime: scheduledTimeStr !== '—' ? scheduledTimeStr : undefined,
+          scheduledStartMs: sched && sched.scheduledStartMs != null ? sched.scheduledStartMs : undefined,
+          clockInMs,
         });
       }
-    } catch (_) {
-      // skip time clock
+    } catch (err) {
     }
   }
 
   // 5. Time-activities (fallback for punch pairs)
+  const entriesBeforeTimeActivities = entries.length;
   for (const tcId of timeClockIds) {
     try {
       const actPath = `/time-clock/v1/time-clocks/${tcId}/time-activities?startDate=${startDate}&endDate=${endDate}`;
@@ -474,6 +504,8 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
             clockIn: formatTimeInTimezone(clockInTs, tz),
             clockOut: formatTimeInTimezone(clockOutMsUse, tz),
             scheduledTime: scheduledTimeStr,
+            scheduledStartMs: sched && sched.scheduledStartMs != null ? sched.scheduledStartMs : undefined,
+            clockInMs: clockInTs,
           });
         }
       }
@@ -481,6 +513,14 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
       // skip
     }
   }
+  const withScheduled = entries.filter((e) => e.scheduledTime || e.scheduledStartMs != null);
+  console.log('[Connecteam] getTimeEntriesFromConnecteams result:', {
+    totalEntries: entries.length,
+    fromTimeActivities: entries.length - entriesBeforeTimeActivities,
+    withScheduledTimeOrMs: withScheduled.length,
+    sampleRecordDates: entries.slice(0, 5).map((e) => e.date),
+    sampleScheduled: entries.slice(0, 5).map((e) => ({ date: e.date, scheduledTime: e.scheduledTime })),
+  });
 
   return entries;
 }
@@ -500,8 +540,82 @@ function getDatesInRange(startStr, endStr) {
   return dates;
 }
 
+/** getDay(): 0=Sun, 1=Mon, ... 6=Sat */
+const DAY_KEY_BY_JS_DAY = { 0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat' };
+
+/**
+ * Get weekly tardiness from Connecteams: detail rows (employee, location/job, scheduled, clock-in, minutes late)
+ * and daily totals Mon–Sun plus week total.
+ * @param {string} weekStart - Monday date YYYY-MM-DD
+ * @param {string|null} locationKeyFilter - optional location key to filter (e.g. 'oranjestad')
+ * @returns {Promise<{ entries: Array<{ employeeName, locationName, locationKey, date, scheduledTime, clockIn, minutesLate }>, dailyTotals: Record<string, number>, weekTotal: number }>}
+ */
+async function getWeeklyTardinessFromConnecteams(weekStart, locationKeyFilter = null) {
+  const startDate = toDateString(weekStart) || weekStart;
+  const weekStartDate = new Date(startDate + 'T12:00:00');
+  const weekEndDate = getWeekEnd(weekStartDate);
+  const endDate = toDateString(weekEndDate);
+
+  const rawEntries = await getTimeEntriesFromConnecteams(startDate, endDate);
+
+  const withScheduled = rawEntries.filter((e) => e.scheduledTime || e.scheduledStartMs != null);
+  const withBoth = rawEntries.filter(
+    (e) => (e.scheduledStartMs != null && e.clockInMs != null) || (e.scheduledTime && e.clockIn)
+  );
+
+  const locationNameByKey = Object.fromEntries(LOCATIONS.map((l) => [l.key, l.name]));
+
+  const entries = [];
+  const dailyTotals = { mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0, sun: 0 };
+
+  let skippedLocation = 0;
+  let skippedNoLate = 0;
+  for (const e of rawEntries) {
+    if (locationKeyFilter != null && e.locationKey !== locationKeyFilter) {
+      skippedLocation++;
+      continue;
+    }
+    let minutesLate = 0;
+    if (e.scheduledStartMs != null && e.clockInMs != null) {
+      minutesLate = Math.max(0, Math.round((e.clockInMs - e.scheduledStartMs) / 60000));
+    } else if (e.scheduledTime && e.clockIn) {
+      const scheduledMins = timeToMinutes(e.scheduledTime);
+      const clockInMins = timeToMinutes(e.clockIn);
+      minutesLate = Math.max(0, clockInMins - scheduledMins);
+    }
+    if (minutesLate === 0) {
+      skippedNoLate++;
+      continue;
+    }
+
+    const locationName = locationNameByKey[e.locationKey] || e.locationKey || '—';
+    entries.push({
+      employeeName: e.employeeName,
+      locationName,
+      locationKey: e.locationKey,
+      date: e.date,
+      scheduledTime: e.scheduledTime,
+      clockIn: e.clockIn,
+      minutesLate,
+    });
+
+    const d = new Date(e.date + 'T12:00:00');
+    const dayKey = DAY_KEY_BY_JS_DAY[d.getDay()];
+    if (dayKey) dailyTotals[dayKey] = (dailyTotals[dayKey] || 0) + minutesLate;
+  }
+
+  const weekTotal = Object.values(dailyTotals).reduce((sum, n) => sum + n, 0);
+
+  return {
+    entries,
+    dailyTotals,
+    weekTotal,
+  };
+}
+
 module.exports = {
   connecteamsFetch,
   getTimeEntriesFromConnecteams,
+  getWeeklyTardinessFromConnecteams,
   LOCATIONS: LOCATIONS,
 };
