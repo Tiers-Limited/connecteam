@@ -1,0 +1,2 @@
+# SPA: all routes → index.html (for React Router when deploying to Netlify)
+/*    /index.html   200

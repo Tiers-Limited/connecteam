@@ -106,6 +106,72 @@ npm run dev
 
 Vite runs the app (e.g. `http://localhost:5173`). API requests to `/api` are proxied to the backend.
 
+## Deploy frontend to Netlify
+
+The frontend can be deployed to **Netlify** as a static site. The backend must be deployed separately (e.g. Railway, Render, Fly.io) and reachable via HTTPS.
+
+### 1. Deploy the backend first
+
+- Host your Node backend somewhere that exposes a public URL (e.g. `https://your-backend.railway.app` or `https://connecteam.tierssolutionslimited.com`).
+- Ensure CORS allows your Netlify domain (or `*` for development). In the backend, add the Netlify URL to CORS if you use the `cors` package.
+
+### 2. Connect the frontend repo to Netlify
+
+1. Go to [netlify.com](https://www.netlify.com) and sign in.
+2. **Add new site** → **Import an existing project**.
+3. Connect your Git provider (GitHub, GitLab, Bitbucket) and select the **ConnectTeam** repository.
+4. Configure the build:
+   - **Base directory:** `frontend` (so Netlify runs build from the `frontend` folder).
+   - **Build command:** `npm run build` (or leave blank; `frontend/netlify.toml` sets it).
+   - **Publish directory:** `frontend/dist` (or `dist` when base directory is `frontend`).
+5. **Environment variables** (Site settings → Environment variables → Add):
+   - **Key:** `VITE_API_URL`  
+   - **Value:** your backend API base URL, e.g. `https://your-backend.railway.app/api` or `https://connecteam.tierssolutionslimited.com/api`  
+   - (No trailing slash. The app will send requests to this URL.)
+6. Click **Deploy site**.
+
+Netlify will run `npm run build` inside `frontend`, then serve the `dist` folder. The SPA redirect rule in `frontend/netlify.toml` sends all routes to `index.html` for React Router.
+
+### 3. Base directory and netlify.toml
+
+If the repo root is **ConnectTeam** (with `frontend/` and `backend/` inside), set Netlify’s **Base directory** to **`frontend`**. Then:
+
+- Build command: `npm run build`
+- Publish directory: `dist` (relative to `frontend`)
+
+The repo already contains `frontend/netlify.toml` with these settings and the SPA redirect. If you set Base directory to `frontend`, Netlify will use that file.
+
+### 4. After deploy
+
+- Open the Netlify site URL. The app will call the API at `VITE_API_URL`.
+- If you see network/CORS errors, check that the backend allows the Netlify origin and that `VITE_API_URL` is correct (no trailing slash, includes `/api` if your backend serves under `/api`).
+
+### Manual deployment (no Git connection)
+
+If you want to **build locally and upload the site by hand** (no Git, no automatic builds):
+
+1. **Set the API URL for the build**  
+   In `frontend/.env` set your production backend URL (Vite bakes this into the build):
+   ```env
+   VITE_API_URL=https://your-backend.com/api
+   ```
+   Replace with your real backend URL (no trailing slash). Omit this to use `/api` (same origin).
+
+2. **Build the frontend**
+   ```bash
+   cd frontend
+   npm run build
+   ```
+   Output is in `frontend/dist`.
+
+3. **Deploy the `dist` folder to Netlify**
+   - Go to [app.netlify.com](https://app.netlify.com) → **Sites** → **Add new site** → **Deploy manually**.
+   - **Drag and drop** the `frontend/dist` folder onto the deploy area (or choose “Browse to upload” and select the `dist` folder).
+   - Netlify will publish that folder as the site. The `dist` folder already contains `_redirects` (from `frontend/public/_redirects`) so client-side routes work.
+
+4. **Later updates**  
+   Change code → run `npm run build` again → drag-and-drop the new `dist` folder in the same site’s **Deploys** tab.
+
 ## How to test the project
 
 There are no automated test suites yet; you test by running the app and walking through the flows below.
