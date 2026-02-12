@@ -4,7 +4,7 @@ const employeeRoutes = require('./employeeRoutes');
 const dailyTipRoutes = require('./dailyTipRoutes');
 const timeEntryRoutes = require('./timeEntryRoutes');
 const weeklyPayoutRoutes = require('./weeklyPayoutRoutes');
-const connecteamsRoutes = require('./connecteamsRoutes');
+const manualWorkingRoutes = require('./manualWorkingRoutes');
 
 const router = express.Router();
 
@@ -14,6 +14,6 @@ router.use('/employees', employeeRoutes);
 router.use('/daily-tips', dailyTipRoutes);
 router.use('/time-entries', timeEntryRoutes);
 router.use('/weekly-payout', weeklyPayoutRoutes);
-router.use('/connecteams', connecteamsRoutes);
+router.use('/manual-working', manualWorkingRoutes);
 
 module.exports = router;

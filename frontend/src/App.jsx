@@ -3,10 +3,13 @@ import { Toaster } from 'react-hot-toast';
 import { AppProvider } from './context/AppContext';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
+import Locations from './pages/Locations';
+import Employees from './pages/Employees';
 import DailyTips from './pages/DailyTips';
 import TimeEntries from './pages/TimeEntries';
+import ManualWorking from './pages/ManualWorking';
 import WeeklyPayout from './pages/WeeklyPayout';
-import WeeklyTardiness from './pages/WeeklyTardiness';
+import Audit from './pages/Audit';
 
 export default function App() {
   return (
@@ -22,10 +25,13 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Layout />}>
             <Route index element={<Dashboard />} />
-            <Route path="time-entries" element={<TimeEntries />} />
+            <Route path="locations" element={<Locations />} />
+            <Route path="employees" element={<Employees />} />
             <Route path="daily-tips" element={<DailyTips />} />
+            <Route path="time-entries" element={<TimeEntries />} />
+            <Route path="manual-working" element={<ManualWorking />} />
             <Route path="weekly-payout" element={<WeeklyPayout />} />
-            <Route path="weekly-tardiness" element={<WeeklyTardiness />} />
+            <Route path="audit" element={<Audit />} />
           </Route>
         </Routes>
       </AppProvider>

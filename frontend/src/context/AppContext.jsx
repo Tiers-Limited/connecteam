@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback } from 'react';
 import { getLocations } from '../services/locationService';
 
 const AppContext = createContext(null);
@@ -7,25 +7,19 @@ export function AppProvider({ children }) {
   const [locations, setLocations] = useState([]);
   const [locationsLoading, setLocationsLoading] = useState(true);
   const [selectedLocationId, setSelectedLocationId] = useState(null);
-  const [timeEntriesCache, setTimeEntriesCache] = useState({ locationId: null, startDate: null, endDate: null, entries: [] });
-  const [dailyTipsCache, setDailyTipsCache] = useState({ locationId: null, date: null, form: { amGrossTips: '', pmGrossTips: '' }, calculation: null, calculationError: null });
 
   const refreshLocations = useCallback(async () => {
     setLocationsLoading(true);
     try {
       const list = await getLocations(false);
       setLocations(list);
-      setSelectedLocationId((prev) => (list.length && !prev ? list[0]._id : prev));
+      if (list.length && !selectedLocationId) setSelectedLocationId(list[0]._id);
     } catch (e) {
       // API errors logged in api.js
     } finally {
       setLocationsLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    refreshLocations();
-  }, [refreshLocations]);
+  }, [selectedLocationId]);
 
   const value = {
     locations,
@@ -34,10 +28,6 @@ export function AppProvider({ children }) {
     selectedLocationId,
     setSelectedLocationId,
     selectedLocation: locations.find((l) => l._id === selectedLocationId) || null,
-    timeEntriesCache,
-    setTimeEntriesCache,
-    dailyTipsCache,
-    setDailyTipsCache,
     apiBase: '/api',
   };
 
