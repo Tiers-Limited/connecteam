@@ -1,8 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { useApp } from '../context/AppContext';
-import { useDelayedLoading } from '../hooks/useDelayedLoading';
-import { SkeletonPage } from '../skeletons';
 import { getDailyTipInput, getDailyTipCalculation, upsertDailyTipInput } from '../services/dailyTipService';
 import { toDateString } from '../utils/dateUtils';
 import Card from '../components/ui/Card';
@@ -17,19 +15,18 @@ export default function DailyTips() {
   const [calculation, setCalculation] = useState(() => dailyTipsCache?.calculation ?? null);
   const [calculationError, setCalculationError] = useState(() => dailyTipsCache?.calculationError ?? null);
   const hasCachedResult = !!(dailyTipsCache?.locationId && dailyTipsCache?.date && (dailyTipsCache?.calculation || dailyTipsCache?.calculationError));
-  const [loading, setLoading] = useState(!hasCachedResult);
+  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState(() => dailyTipsCache?.form || { amGrossTips: '', pmGrossTips: '' });
   const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const showSkeleton = useDelayedLoading(loading);
 
   const location = locations.find((l) => l._id === selectedLocationId);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!selectedLocationId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setCalculationError(null);
     try {
       const [tipInput, calc] = await Promise.all([
@@ -57,13 +54,18 @@ export default function DailyTips() {
     } catch (e) {
       setCalculationError('Failed to load data');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [selectedLocationId, date, setDailyTipsCache]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!selectedLocationId) return;
+    const cacheMatches =
+      dailyTipsCache?.locationId === selectedLocationId &&
+      dailyTipsCache?.date === date &&
+      (dailyTipsCache?.calculation != null || dailyTipsCache?.calculationError != null);
+    load(cacheMatches);
+  }, [load, selectedLocationId, date]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -99,12 +101,32 @@ export default function DailyTips() {
     }
   };
 
-  const allocations = calculation?.employeeAllocations ?? [];
+  const allocations = (calculation?.employeeAllocations ?? [])
+    .slice()
+    .sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || '', undefined, { sensitivity: 'base' }));
   const totalRows = allocations.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const currentPage = Math.min(page, totalPages);
   const startIdx = (currentPage - 1) * pageSize;
   const pageAllocations = allocations.slice(startIdx, startIdx + pageSize);
+
+  const totals = totalRows > 0 ? allocations.reduce(
+    (acc, a) => ({
+      amWorkedHours: acc.amWorkedHours + (Number(a.amWorkedHours) || 0),
+      pmWorkedHours: acc.pmWorkedHours + (Number(a.pmWorkedHours) || 0),
+      amTips: acc.amTips + (Number(a.amTips) || 0),
+      pmTips: acc.pmTips + (Number(a.pmTips) || 0),
+      totalTips: acc.totalTips + (Number(a.totalTips) || 0),
+    }),
+    { amWorkedHours: 0, pmWorkedHours: 0, amTips: 0, pmTips: 0, totalTips: 0 }
+  ) : null;
+
+  const spinner = (
+    <svg className="mr-2 h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+    </svg>
+  );
 
   if (!selectedLocationId) {
     return (
@@ -113,15 +135,6 @@ export default function DailyTips() {
         <Card>
           <p className="text-slate-600 dark:text-slate-400">Loading locations…</p>
         </Card>
-      </div>
-    );
-  }
-
-  if (showSkeleton && loading) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Daily Tips</h1>
-        <SkeletonPage variant="form" />
       </div>
     );
   }
@@ -181,7 +194,26 @@ export default function DailyTips() {
             />
             {formErrors.pmGrossTips && <p className="mt-0.5 text-xs text-red-600">{formErrors.pmGrossTips}</p>}
           </div>
-          <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? (
+              <>
+                {spinner}
+                Saving…
+              </>
+            ) : (
+              'Save'
+            )}
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => load()} disabled={loading}>
+            {loading ? (
+              <>
+                {spinner}
+                Loading…
+              </>
+            ) : (
+              'Load calculation'
+            )}
+          </Button>
         </form>
       </div>
 
@@ -225,6 +257,8 @@ export default function DailyTips() {
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-700">
                   <th className="pb-2 text-left font-medium">Employee</th>
+                  <th className="pb-2 text-left font-medium">Clock In</th>
+                  <th className="pb-2 text-left font-medium">Clock Out</th>
                   <th className="pb-2 text-right font-medium">AM hrs</th>
                   <th className="pb-2 text-right font-medium">PM hrs</th>
                   <th className="pb-2 text-right font-medium">AM tips</th>
@@ -234,8 +268,10 @@ export default function DailyTips() {
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                 {pageAllocations.map((a) => (
-                  <tr key={a.employeeId} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <tr key={a.employeeId ?? a.employeeName} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                     <td className="py-2 font-medium">{a.employeeName}</td>
+                    <td className="py-2 tabular-nums">{a.clockIn ?? '–'}</td>
+                    <td className="py-2 tabular-nums">{a.clockOut ?? '–'}</td>
                     <td className="py-2 text-right tabular-nums">{a.amWorkedHours?.toFixed(2)}</td>
                     <td className="py-2 text-right tabular-nums">{a.pmWorkedHours?.toFixed(2)}</td>
                     <td className="py-2 text-right tabular-nums">${a.amTips?.toFixed(2)}</td>
@@ -244,8 +280,33 @@ export default function DailyTips() {
                   </tr>
                 ))}
               </tbody>
+              {totals && (
+                <tfoot className="border-t-2 border-slate-300 dark:border-slate-600">
+                  <tr className="bg-slate-100 dark:bg-slate-800/70 font-semibold">
+                    <td className="py-3 pl-2">Total</td>
+                    <td className="py-3" colSpan={2} />
+                    <td className="py-3 text-right tabular-nums">{totals.amWorkedHours.toFixed(2)}</td>
+                    <td className="py-3 text-right tabular-nums">{totals.pmWorkedHours.toFixed(2)}</td>
+                    <td className="py-3 text-right tabular-nums">${totals.amTips.toFixed(2)}</td>
+                    <td className="py-3 text-right tabular-nums">${totals.pmTips.toFixed(2)}</td>
+                    <td className="py-3 text-right tabular-nums">${totals.totalTips.toFixed(2)}</td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
+          {totals && (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/30">
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Totals</p>
+              <div className="flex flex-wrap gap-6 text-sm text-slate-600 dark:text-slate-400">
+                <span>AM hours: <strong className="text-slate-800 dark:text-slate-200">{totals.amWorkedHours.toFixed(2)}</strong></span>
+                <span>PM hours: <strong className="text-slate-800 dark:text-slate-200">{totals.pmWorkedHours.toFixed(2)}</strong></span>
+                <span>AM tips: <strong className="text-slate-800 dark:text-slate-200">${totals.amTips.toFixed(2)}</strong></span>
+                <span>PM tips: <strong className="text-slate-800 dark:text-slate-200">${totals.pmTips.toFixed(2)}</strong></span>
+                <span>Total tips: <strong className="text-slate-800 dark:text-slate-200">${totals.totalTips.toFixed(2)}</strong></span>
+              </div>
+            </div>
+          )}
           {totalRows > 0 && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
               <button

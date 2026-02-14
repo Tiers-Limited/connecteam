@@ -9,6 +9,46 @@ import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 
 const PAGE_SIZES = [10, 25, 50, 100];
+const STORAGE_KEY_VIEW = 'timeEntries_view';
+const STORAGE_KEY_DATA = 'timeEntries_data';
+
+function loadPersistedView() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY_VIEW);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    if (p?.viewStartDate && p?.viewEndDate) return p;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedView(viewStartDate, viewEndDate) {
+  try {
+    if (viewStartDate && viewEndDate) {
+      sessionStorage.setItem(STORAGE_KEY_VIEW, JSON.stringify({ viewStartDate, viewEndDate }));
+    }
+  } catch (_) {}
+}
+
+function loadPersistedData() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY_DATA);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedData(data) {
+  try {
+    if (data?.entries && Array.isArray(data.entries)) {
+      sessionStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(data));
+    }
+  } catch (_) {}
+}
 
 /** Parse "HH:mm" to minutes since midnight for comparison */
 function timeToMinutes(str) {
@@ -20,8 +60,14 @@ function timeToMinutes(str) {
 
 export default function TimeEntries() {
   const { selectedLocationId, setSelectedLocationId, locations, timeEntriesCache, setTimeEntriesCache } = useApp();
-  const [viewStartDate, setViewStartDate] = useState(toDateString(new Date()));
-  const [viewEndDate, setViewEndDate] = useState(toDateString(new Date()));
+  const [viewStartDate, setViewStartDate] = useState(() => {
+    const p = loadPersistedView();
+    return p?.viewStartDate ?? toDateString(new Date());
+  });
+  const [viewEndDate, setViewEndDate] = useState(() => {
+    const p = loadPersistedView();
+    return p?.viewEndDate ?? toDateString(new Date());
+  });
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -39,8 +85,10 @@ export default function TimeEntries() {
       if (!end || new Date(end) < new Date(start)) end = start;
       setViewEndDate(end);
       const ents = await getTimeEntriesRange(selectedLocationId, start, end);
+      const cache = { locationId: selectedLocationId, startDate: start, endDate: end, entries: ents };
       setEntries(ents);
-      setTimeEntriesCache({ locationId: selectedLocationId, startDate: start, endDate: end, entries: ents });
+      setTimeEntriesCache(cache);
+      savePersistedData(cache);
       setCurrentPage(1);
     } catch (e) {
       // logged in api
@@ -48,6 +96,10 @@ export default function TimeEntries() {
       setLoading(false);
     }
   }, [selectedLocationId, viewStartDate, viewEndDate, setTimeEntriesCache]);
+
+  useEffect(() => {
+    savePersistedView(viewStartDate, viewEndDate);
+  }, [viewStartDate, viewEndDate]);
 
   useEffect(() => {
     if (!selectedLocationId) return;
@@ -61,8 +113,19 @@ export default function TimeEntries() {
       setEntries(cache.entries);
       return;
     }
+    const stored = loadPersistedData();
+    const storedMatches =
+      stored?.locationId === selectedLocationId &&
+      stored?.startDate === viewStartDate &&
+      stored?.endDate === viewEndDate &&
+      Array.isArray(stored.entries);
+    if (storedMatches) {
+      setEntries(stored.entries);
+      setTimeEntriesCache(stored);
+      return;
+    }
     load();
-  }, [selectedLocationId, viewStartDate, viewEndDate, load]);
+  }, [selectedLocationId, viewStartDate, viewEndDate, timeEntriesCache, load, setTimeEntriesCache]);
 
   const handleLoadFromConnecteams = async () => {
     let start = viewStartDate;

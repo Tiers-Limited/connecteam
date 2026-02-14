@@ -6,7 +6,8 @@ const ManualDeduction = require('../models/ManualDeduction');
 const Employee = require('../models/Employee');
 const Location = require('../models/Location');
 const DailyTipAudit = require('../models/DailyTipAudit');
-const { PRODUCTION_DEDUCTION_PERCENT, SHIFT_BOUNDARIES, TARDINESS_TIERS, ROUND_DECIMALS } = require('../utils/constants');
+const connecteamsService = require('./connecteamsService');
+const { PRODUCTION_DEDUCTION_PERCENT, SHIFT_BOUNDARIES, TARDINESS_TIERS, ROUND_DECIMALS, LOCATIONS } = require('../utils/constants');
 const { getWeekStart, getWeekEnd, timeToMinutes, toDateString, isDateInWeek } = require('../utils/dateUtils');
 
 /**
@@ -87,48 +88,78 @@ async function getDailyTipCalculation(locationId, date) {
     return { error: 'No tip input for this location and date', locationId, date: dateStr };
   }
 
-  const timeEntries = await TimeEntry.find({
-    locationId,
-    date: { $gte: dateStart, $lte: dateEnd },
-  })
-    .populate('employeeId', 'name')
-    .lean();
+  // Time entries from Connecteam API (not from TimeEntries page / DB) — one source of truth for hours
+  let locationKeyFilter = null;
+  const locationDoc = await Location.findById(locationId).lean();
+  if (locationDoc?.name) {
+    const found = LOCATIONS.find((l) => (l.name || '').toLowerCase() === (locationDoc.name || '').toLowerCase());
+    if (found) locationKeyFilter = found.key;
+  }
+
+  let rawConnecteamEntries = [];
+  try {
+    rawConnecteamEntries = await connecteamsService.getTimeEntriesFromConnecteams(dateStr, dateStr);
+  } catch (err) {
+    return { error: 'Failed to load time entries from Connecteam: ' + (err.message || 'Unknown error'), locationId, date: dateStr };
+  }
+
+  const connecteamEntries = locationKeyFilter
+    ? rawConnecteamEntries.filter((e) => (e.locationKey || '').toLowerCase() === locationKeyFilter.toLowerCase() && e.date === dateStr)
+    : rawConnecteamEntries.filter((e) => e.date === dateStr);
+
+  // Per employee: first clock-in and last clock-out of the day (spans across AM/PM: e.g. 06:00–15:10 → 9h AM + 10min PM)
+  const employeeFirstLast = new Map();
+  for (const entry of connecteamEntries) {
+    const uid = String(entry.connecteamsUserId || entry.employeeName || '');
+    const inMin = timeToMinutes(entry.clockIn);
+    const outMin = timeToMinutes(entry.clockOut);
+    if (!uid) continue;
+    if (!employeeFirstLast.has(uid)) {
+      employeeFirstLast.set(uid, {
+        connecteamsUserId: uid,
+        employeeName: entry.employeeName || 'User ' + uid,
+        firstIn: entry.clockIn,
+        lastOut: entry.clockOut,
+        inMin,
+        outMin,
+      });
+    } else {
+      const row = employeeFirstLast.get(uid);
+      if (inMin < row.inMin) {
+        row.firstIn = entry.clockIn;
+        row.inMin = inMin;
+      }
+      if (outMin > row.outMin) {
+        row.lastOut = entry.clockOut;
+        row.outMin = outMin;
+      }
+    }
+  }
+
+  // Resolve Connecteam user to our Employee (for allocation output); use stable key for map
+  const employeeHours = new Map();
+  for (const [connecteamsUserId, row] of employeeFirstLast) {
+    const { amHours, pmHours } = splitWorkedHours(row.firstIn, row.lastOut);
+    const employee = await Employee.findOne({ connecteamsUserId, locationId }).lean();
+    const employeeId = employee?._id || null;
+    const employeeName = employee?.name || row.employeeName;
+    const mapKey = employeeId ? employeeId.toString() : `connecteam_${connecteamsUserId}`;
+    employeeHours.set(mapKey, {
+      employeeId,
+      employeeName,
+      amHours,
+      pmHours,
+      clockIn: row.firstIn,
+      clockOut: row.lastOut,
+    });
+  }
+
   const manualEntries = await ManualWorking.find({
     locationId,
     date: { $gte: dateStart, $lte: dateEnd },
   })
     .populate('employeeId', 'name')
     .lean();
-
-  // Step 2.1 Deduplication: same employee + same date + same clock-in + same clock-out → keep one
-  const dedupeKey = new Set();
-  const deduplicatedEntries = [];
-  for (const entry of timeEntries) {
-    const empId = (entry.employeeId && entry.employeeId._id) ? entry.employeeId._id.toString() : '';
-    const key = `${empId}|${entry.clockIn}|${entry.clockOut}`;
-    if (dedupeKey.has(key)) continue;
-    dedupeKey.add(key);
-    deduplicatedEntries.push(entry);
-  }
-
-  // Step 2.2 & 4: Group by employee → sum AM/PM hours from all (deduplicated) entries
-  const employeeHours = new Map();
-  for (const entry of deduplicatedEntries) {
-    const { amHours, pmHours } = splitWorkedHours(entry.clockIn, entry.clockOut);
-    const empId = entry.employeeId._id.toString();
-    const empName = entry.employeeId.name || '—';
-    if (!employeeHours.has(empId)) {
-      employeeHours.set(empId, {
-        employeeId: entry.employeeId._id,
-        employeeName: empName,
-        amHours: 0,
-        pmHours: 0,
-      });
-    }
-    const row = employeeHours.get(empId);
-    row.amHours += amHours;
-    row.pmHours += pmHours;
-  }
 
   // Manual working entries (add hours and fixed tips)
   let manualAMTipsTotal = 0;
@@ -141,6 +172,8 @@ async function getDailyTipCalculation(locationId, date) {
         employeeName: manual.employeeId.name || '—',
         amHours: 0,
         pmHours: 0,
+        clockIn: null,
+        clockOut: null,
         manualAmTips: 0,
         manualPmTips: 0,
       });
@@ -184,6 +217,8 @@ async function getDailyTipCalculation(locationId, date) {
     employeeAllocations.push({
       employeeId: row.employeeId,
       employeeName: row.employeeName,
+      clockIn: row.clockIn || null,
+      clockOut: row.clockOut || null,
       amWorkedHours: roundMoney(row.amHours),
       pmWorkedHours: roundMoney(row.pmHours),
       amTips: roundMoney(amTips),
@@ -199,11 +234,12 @@ async function getDailyTipCalculation(locationId, date) {
     locationId,
     date: dateStart,
     raw: {
-      deduplicatedEntries: deduplicatedEntries.map((e) => ({
-        employeeId: e.employeeId._id,
-        employeeName: (e.employeeId && e.employeeId.name) || '—',
-        clockIn: e.clockIn,
-        clockOut: e.clockOut,
+      source: 'Connecteam API',
+      firstLastPerEmployee: Array.from(employeeFirstLast.values()).map((r) => ({
+        connecteamsUserId: r.connecteamsUserId,
+        employeeName: r.employeeName,
+        firstClockIn: r.firstIn,
+        lastClockOut: r.lastOut,
       })),
     },
     derived: {
@@ -272,7 +308,7 @@ async function getDailyTipCalculation(locationId, date) {
 async function getEmployeeDailyTipsForDate(employeeId, locationId, date) {
   const calc = await getDailyTipCalculation(locationId, date);
   if (calc.error) return 0;
-  const found = calc.employeeAllocations.find((a) => a.employeeId.toString() === employeeId.toString());
+  const found = calc.employeeAllocations.find((a) => a.employeeId && a.employeeId.toString() === employeeId.toString());
   return found ? found.totalTips : 0;
 }
 
