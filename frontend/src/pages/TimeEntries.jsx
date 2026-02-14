@@ -1,27 +1,32 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { useApp } from '../context/AppContext';
-import { useDelayedLoading } from '../hooks/useDelayedLoading';
-import { SkeletonPage } from '../skeletons';
 import { getTimeEntriesRange } from '../services/timeEntryService';
 import { syncFromConnecteams } from '../services/connecteamsService';
-import { toDateString } from '../utils/dateUtils';
+import { toDateString, getDateRangeColumns } from '../utils/dateUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
+/** Parse "HH:mm" to minutes since midnight for comparison */
+function timeToMinutes(str) {
+  if (!str || typeof str !== 'string') return NaN;
+  const [h, m] = str.trim().split(':').map(Number);
+  if (Number.isNaN(h)) return NaN;
+  return (h || 0) * 60 + (Number.isNaN(m) ? 0 : m);
+}
+
 export default function TimeEntries() {
   const { selectedLocationId, setSelectedLocationId, locations, timeEntriesCache, setTimeEntriesCache } = useApp();
   const [viewStartDate, setViewStartDate] = useState(toDateString(new Date()));
   const [viewEndDate, setViewEndDate] = useState(toDateString(new Date()));
   const [entries, setEntries] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const showSkeleton = useDelayedLoading(loading);
 
   const location = locations.find((l) => l._id === selectedLocationId);
 
@@ -54,7 +59,6 @@ export default function TimeEntries() {
       Array.isArray(cache.entries);
     if (cacheMatches) {
       setEntries(cache.entries);
-      setLoading(false);
       return;
     }
     load();
@@ -82,6 +86,74 @@ export default function TimeEntries() {
     load();
   };
 
+  const formatEntryDate = (d) => {
+    if (!d) return '—';
+    const date = new Date(d);
+    return isNaN(date.getTime()) ? '—' : date.toISOString().slice(0, 10);
+  };
+
+  // Group by employee+date: first clock-in and last clock-out per day. Must be before any early return (Rules of Hooks).
+  const groupedRows = useMemo(() => {
+    const map = new Map();
+    for (const e of entries) {
+      const empId = e.employeeId?._id ?? e.employeeId;
+      const dateStr = formatEntryDate(e.date);
+      const key = `${empId}|${dateStr}`;
+      const clockInMins = timeToMinutes(e.clockIn);
+      const clockOutMins = timeToMinutes(e.clockOut);
+      if (!map.has(key)) {
+        map.set(key, {
+          _id: e._id,
+          date: e.date,
+          employeeId: e.employeeId,
+          clockIn: e.clockIn,
+          clockOut: e.clockOut,
+          _clockInMins: Number.isNaN(clockInMins) ? Infinity : clockInMins,
+          _clockOutMins: Number.isNaN(clockOutMins) ? -1 : clockOutMins,
+        });
+      } else {
+        const row = map.get(key);
+        if (!Number.isNaN(clockInMins) && clockInMins < row._clockInMins) {
+          row.clockIn = e.clockIn;
+          row._clockInMins = clockInMins;
+        }
+        if (!Number.isNaN(clockOutMins) && clockOutMins > row._clockOutMins) {
+          row.clockOut = e.clockOut;
+          row._clockOutMins = clockOutMins;
+        }
+      }
+    }
+    const rows = Array.from(map.values()).map(({ _clockInMins, _clockOutMins, ...r }) => r);
+    rows.sort((a, b) => {
+      const d = new Date(a.date).getTime() - new Date(b.date).getTime();
+      if (d !== 0) return d;
+      return (a.employeeId?.name ?? '').localeCompare(b.employeeId?.name ?? '');
+    });
+    return rows;
+  }, [entries]);
+
+  // Pivot: one row per employee, date columns (02 Feb | 03 Feb | ...) like WeeklyTardiness. Must be before early return.
+  const dateColumns = useMemo(
+    () => getDateRangeColumns(viewStartDate, viewEndDate),
+    [viewStartDate, viewEndDate]
+  );
+  const employeeRows = useMemo(() => {
+    const byEmployee = new Map();
+    for (const row of groupedRows) {
+      const name = row.employeeId?.name ?? '—';
+      const empKey = row.employeeId?._id ?? row.employeeId ?? name;
+      if (!byEmployee.has(empKey)) {
+        byEmployee.set(empKey, { employeeName: name, byDate: {} });
+      }
+      const rec = byEmployee.get(empKey);
+      const dateStr = formatEntryDate(row.date);
+      rec.byDate[dateStr] = { clockIn: row.clockIn, clockOut: row.clockOut };
+    }
+    return Array.from(byEmployee.values()).sort((a, b) =>
+      a.employeeName.localeCompare(b.employeeName)
+    );
+  }, [groupedRows]);
+
   if (!selectedLocationId) {
     return (
       <div className="space-y-6">
@@ -93,25 +165,17 @@ export default function TimeEntries() {
     );
   }
 
-  const totalPages = Math.max(1, Math.ceil(entries.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(employeeRows.length / pageSize));
   const page = Math.min(currentPage, totalPages);
   const startIdx = (page - 1) * pageSize;
-  const pageEntries = entries.slice(startIdx, startIdx + pageSize);
+  const pageEmployeeRows = employeeRows.slice(startIdx, startIdx + pageSize);
 
-  const formatEntryDate = (d) => {
-    if (!d) return '—';
-    const date = new Date(d);
-    return isNaN(date.getTime()) ? '—' : date.toISOString().slice(0, 10);
-  };
-
-  if (showSkeleton && loading) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Time Entries</h1>
-        <SkeletonPage variant="table" />
-      </div>
-    );
-  }
+  const spinner = (
+    <svg className="mr-2 h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+    </svg>
+  );
 
   return (
     <div className="space-y-6">
@@ -147,7 +211,14 @@ export default function TimeEntries() {
             onChange={(e) => setViewEndDate(e.target.value)}
           />
           <Button type="button" variant="secondary" onClick={handleApplyRange} disabled={loading}>
-            Load range
+            {loading ? (
+              <>
+                {spinner}
+                Loading…
+              </>
+            ) : (
+              'Load range'
+            )}
           </Button>
         </div>
       </Card>
@@ -162,7 +233,14 @@ export default function TimeEntries() {
             onClick={handleLoadFromConnecteams}
             disabled={syncing}
           >
-            {syncing ? 'Syncing…' : 'Load from Connecteams'}
+            {syncing ? (
+              <>
+                {spinner}
+                Syncing…
+              </>
+            ) : (
+              'Load from Connecteams'
+            )}
           </Button>
         </div>
       </Card>
@@ -170,7 +248,7 @@ export default function TimeEntries() {
       <Card title="Time entries (from Connecteams)">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-4">
           <span className="text-sm text-slate-500 dark:text-slate-400">
-            {viewStartDate} – {viewEndDate} · {entries.length} row(s)
+            {viewStartDate} – {viewEndDate} · {employeeRows.length} employee(s)
           </span>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-slate-500 dark:text-slate-400">Rows per page</span>
@@ -186,31 +264,50 @@ export default function TimeEntries() {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[500px] text-sm">
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-700">
-                <th className="pb-3 text-left text-sm font-semibold">Date</th>
-                <th className="pb-3 text-left text-sm font-semibold">Employee</th>
-                <th className="pb-3 text-left text-sm font-semibold">Clock In</th>
-                <th className="pb-3 text-left text-sm font-semibold">Clock Out</th>
+                <th className="whitespace-nowrap pb-3 pr-4 text-left font-semibold text-slate-700 dark:text-slate-300">
+                  Employee
+                </th>
+                {dateColumns.map((col) => (
+                  <th
+                    key={col.dateKey}
+                    className="whitespace-nowrap pb-3 px-2 text-left font-semibold text-slate-700 dark:text-slate-300"
+                  >
+                    {col.label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-              {pageEntries.map((e) => (
-                <tr key={e._id}>
-                  <td className="py-3">{formatEntryDate(e.date)}</td>
-                  <td className="py-3">{e.employeeId?.name ?? '—'}</td>
-                  <td className="py-3">{e.clockIn}</td>
-                  <td className="py-3">{e.clockOut}</td>
+              {pageEmployeeRows.map((rec, i) => (
+                <tr key={`${rec.employeeName}-${startIdx + i}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <td className="py-2.5 pr-4 font-medium">{rec.employeeName}</td>
+                  {dateColumns.map((col) => {
+                    const day = rec.byDate[col.dateKey];
+                    const hasData = day?.clockIn != null || day?.clockOut != null;
+                    return (
+                      <td key={col.dateKey} className="py-2.5 px-2 text-slate-700 dark:text-slate-300">
+                        {hasData ? (
+                          <span className="block text-slate-600 dark:text-slate-400">
+                            {day.clockIn ?? '–'} – {day.clockOut ?? '–'}
+                          </span>
+                        ) : (
+                          '–'
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        {entries.length === 0 && (
+        {employeeRows.length === 0 && (
           <p className="py-8 text-center text-slate-500 dark:text-slate-400">No entries for this location and date range. Sync from Connecteams or adjust the range.</p>
         )}
-        {entries.length > 0 && (
+        {employeeRows.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
             <button
               type="button"
@@ -221,7 +318,7 @@ export default function TimeEntries() {
               Previous
             </button>
             <span className="text-sm text-slate-500 dark:text-slate-400">
-              Page {page} of {totalPages} ({entries.length} total)
+              Page {page} of {totalPages} ({employeeRows.length} total)
             </span>
             <button
               type="button"

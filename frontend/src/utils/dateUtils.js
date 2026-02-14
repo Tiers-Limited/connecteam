@@ -47,3 +47,19 @@ export function getWeekDateColumns(weekStart) {
   }
   return cols;
 }
+
+/** Date columns for an arbitrary range: [{ dateKey: 'YYYY-MM-DD', label: '02 Feb' }, ...] */
+export function getDateRangeColumns(startDate, endDate) {
+  const start = new Date(startDate + 'T12:00:00');
+  const end = new Date(endDate + 'T12:00:00');
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return [];
+  const cols = [];
+  const d = new Date(start);
+  while (d <= end) {
+    const day = String(d.getDate()).padStart(2, '0');
+    const mon = d.toLocaleDateString('en-GB', { month: 'short' });
+    cols.push({ dateKey: toDateString(d), label: `${day} ${mon}` });
+    d.setDate(d.getDate() + 1);
+  }
+  return cols;
+}
