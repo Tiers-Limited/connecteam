@@ -567,6 +567,8 @@ async function getWeeklyTardinessFromConnecteams(weekStart, locationKeyFilter = 
 
   const entries = [];
   const dailyTotals = { mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0, sun: 0 };
+  /** First punch per (employee, date) only — for correct daily totals (match UI: one tardiness per employee per day) */
+  const firstPunchMinutesByKey = new Map();
 
   let skippedLocation = 0;
   let skippedNoLate = 0;
@@ -577,19 +579,30 @@ async function getWeeklyTardinessFromConnecteams(weekStart, locationKeyFilter = 
     }
     let minutesLate = 0;
     if (e.scheduledStartMs != null && e.clockInMs != null) {
-      minutesLate = Math.max(0, Math.round((e.clockInMs - e.scheduledStartMs) / 60000));
+      // Use floor so 0–59 seconds late = 0 min (07:00 → 07:00 shows 0, not 1)
+      minutesLate = Math.max(0, Math.floor((e.clockInMs - e.scheduledStartMs) / 60000));
     } else if (e.scheduledTime && e.clockIn) {
       const scheduledMins = timeToMinutes(e.scheduledTime);
       const clockInMins = timeToMinutes(e.clockIn);
       minutesLate = Math.max(0, clockInMins - scheduledMins);
     }
-    if (minutesLate === 0) {
-      skippedNoLate++;
-      continue;
+    // Same time (e.g. 07:00 → 07:00) = 0 min for entries and for daily/week totals
+    const scheduledStr = (e.scheduledTime ?? '').toString().trim();
+    const clockInStr = (e.clockIn ?? '').toString().trim();
+    if (scheduledStr && clockInStr && scheduledStr === clockInStr) minutesLate = 0;
+    if (minutesLate === 0) skippedNoLate++;
+
+    const clockInMins = (e.clockIn && timeToMinutes(e.clockIn)) ?? Infinity;
+    const key = `${e.employeeName}|${e.date}`;
+    const existing = firstPunchMinutesByKey.get(key);
+    if (existing == null || clockInMins < existing.clockInMins) {
+      firstPunchMinutesByKey.set(key, { minutesLate, clockInMins, date: e.date });
     }
 
+    // Include all entries with scheduled + clock-in (including on-time/early) so the UI can show first punch and 0 min late
     const locationName = locationNameByKey[e.locationKey] || e.locationKey || '—';
     entries.push({
+      connecteamsUserId: e.connecteamsUserId,
       employeeName: e.employeeName,
       locationName,
       locationKey: e.locationKey,
@@ -598,8 +611,10 @@ async function getWeeklyTardinessFromConnecteams(weekStart, locationKeyFilter = 
       clockIn: e.clockIn,
       minutesLate,
     });
+  }
 
-    const d = new Date(e.date + 'T12:00:00');
+  for (const { minutesLate, date } of firstPunchMinutesByKey.values()) {
+    const d = new Date(date + 'T12:00:00');
     const dayKey = DAY_KEY_BY_JS_DAY[d.getDay()];
     if (dayKey) dailyTotals[dayKey] = (dailyTotals[dayKey] || 0) + minutesLate;
   }
