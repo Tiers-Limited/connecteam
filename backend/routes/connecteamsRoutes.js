@@ -20,4 +20,13 @@ router.get(
   connecteamsController.getWeeklyTardiness
 );
 
+router.get(
+  '/clock-in-times',
+  query('userId').notEmpty().withMessage('userId required (Connecteam user id)'),
+  query('startDate').notEmpty().withMessage('startDate required (YYYY-MM-DD)'),
+  query('endDate').notEmpty().withMessage('endDate required (YYYY-MM-DD)'),
+  validate,
+  connecteamsController.getClockInTimes
+);
+
 module.exports = router;

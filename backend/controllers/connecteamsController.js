@@ -136,4 +136,80 @@ async function syncFromConnecteams(req, res, next) {
   }
 }
 
-module.exports = { syncFromConnecteams, getWeeklyTardiness };
+/**
+ * GET /connecteams/clock-in-times?userId=...&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&locationId=...|locationName=...
+ * Returns clock-in (and clock-out) times for a Connecteam user in a date range, optionally filtered by location.
+ */
+async function getClockInTimes(req, res, next) {
+  try {
+    const { userId, startDate, endDate, locationId, locationName } = req.query;
+    if (!userId || typeof userId !== 'string' || !userId.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'userId query param is required (Connecteam user id)',
+      });
+    }
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        error: 'startDate and endDate query params are required (YYYY-MM-DD)',
+      });
+    }
+    const start = new Date(startDate + 'T12:00:00');
+    const end = new Date(endDate + 'T12:00:00');
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid date range',
+      });
+    }
+
+    let locationKeyFilter = null;
+    const nameToUse = locationName?.trim() || (locationId && (await locationService.getById(locationId))?.name);
+    if (nameToUse) {
+      const found = LOCATIONS.find(
+        (l) => (l.name || '').toLowerCase() === (nameToUse || '').toLowerCase()
+      );
+      if (found) locationKeyFilter = found.key;
+    }
+
+    const rawEntries = await connecteamsService.getTimeEntriesFromConnecteams(
+      startDate.trim(),
+      endDate.trim()
+    );
+
+    const uid = String(userId).trim();
+    let entries = rawEntries.filter((e) => String(e.connecteamsUserId) === uid);
+    if (locationKeyFilter != null) {
+      entries = entries.filter(
+        (e) => (e.locationKey || '').toLowerCase() === locationKeyFilter.toLowerCase()
+      );
+    }
+
+    const response = entries.map((e) => ({
+      date: e.date,
+      clockIn: e.clockIn,
+      clockOut: e.clockOut,
+      ...(e.scheduledTime && { scheduledTime: e.scheduledTime }),
+      locationKey: e.locationKey,
+      employeeName: e.employeeName,
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        userId: uid,
+        locationName: locationKeyFilter
+          ? (LOCATIONS.find((l) => (l.key || '').toLowerCase() === locationKeyFilter.toLowerCase()) || {}).name
+          : null,
+        startDate: startDate.trim(),
+        endDate: endDate.trim(),
+        entries: response,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { syncFromConnecteams, getWeeklyTardiness, getClockInTimes };

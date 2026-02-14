@@ -33,3 +33,17 @@ export function formatWeekRange(weekStart) {
   end.setDate(end.getDate() + 6);
   return `${formatDate(start)} – ${formatDate(end)}`;
 }
+
+/** Week day labels for table columns: [{ dateKey: 'YYYY-MM-DD', label: '02 Feb' }, ...] (Mon–Sun) */
+export function getWeekDateColumns(weekStart) {
+  const start = new Date(weekStart);
+  const cols = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const day = String(d.getDate()).padStart(2, '0');
+    const mon = d.toLocaleDateString('en-GB', { month: 'short' });
+    cols.push({ dateKey: toDateString(d), label: `${day} ${mon}` });
+  }
+  return cols;
+}
