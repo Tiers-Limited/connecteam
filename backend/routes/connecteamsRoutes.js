@@ -29,4 +29,13 @@ router.get(
   connecteamsController.getClockInTimes
 );
 
+router.get(
+  '/time-entries',
+  query('startDate').notEmpty().withMessage('startDate required (YYYY-MM-DD)'),
+  query('endDate').notEmpty().withMessage('endDate required (YYYY-MM-DD)'),
+  query('locationId').notEmpty().withMessage('locationId required'),
+  validate,
+  connecteamsController.getConnecteamTimeEntries
+);
+
 module.exports = router;

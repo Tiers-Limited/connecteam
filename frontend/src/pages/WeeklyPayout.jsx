@@ -1,12 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { useApp } from '../context/AppContext';
-import { useDelayedLoading } from '../hooks/useDelayedLoading';
-import { SkeletonPage } from '../skeletons';
 import {
   getWeeklyPayout,
   getManualDeductions,
-  upsertTardiness,
   upsertManualDeduction,
 } from '../services/weeklyPayoutService';
 import { getWeekStart, toDateString, formatWeekRange } from '../utils/dateUtils';
@@ -45,29 +42,29 @@ export default function WeeklyPayout() {
   );
   const [data, setData] = useState(loadPersistedData);
   const [loading, setLoading] = useState(false);
-  const [tardinessEdits, setTardinessEdits] = useState({});
   const [manualEdits, setManualEdits] = useState({});
   const [saving, setSaving] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [modalEmployee, setModalEmployee] = useState(null);
-  const [editTardiness, setEditTardiness] = useState('');
   const [editManualAmount, setEditManualAmount] = useState('');
   const [editManualReason, setEditManualReason] = useState('');
-  const showSkeleton = useDelayedLoading(loading);
 
-  const loadPayout = useCallback(() => {
+  const loadPayout = useCallback((refresh = false) => {
     if (!selectedLocationId) {
       toast.error('Select a location first');
       return;
     }
     setLoading(true);
-    setData(null);
-    getWeeklyPayout(selectedLocationId, weekStart)
+    getWeeklyPayout(selectedLocationId, weekStart, refresh)
       .then((res) => {
         setData(res);
         setPage(1);
-        toast.success(`Loaded payout for ${res?.payouts?.length ?? 0} employees.`);
+        toast.success(
+          refresh
+            ? `Recalculated and saved payout for ${res?.payouts?.length ?? 0} employees.`
+            : `Loaded payout for ${res?.payouts?.length ?? 0} employees.`
+        );
       })
       .catch(() => {
         setData(null);
@@ -78,7 +75,6 @@ export default function WeeklyPayout() {
 
   const openDeductionModal = useCallback((p) => {
     setModalEmployee(p);
-    setEditTardiness(String(p.weeklyTardinessMinutes ?? 0));
     setEditManualAmount(String(p.manualDeduction ?? 0));
     setEditManualReason(manualEdits[p.employeeId]?.reason ?? '');
   }, [manualEdits]);
@@ -97,13 +93,6 @@ export default function WeeklyPayout() {
     }
     setSaving(true);
     try {
-      const tardMin = parseInt(editTardiness, 10) || 0;
-      await upsertTardiness({
-        employeeId: modalEmployee.employeeId,
-        locationId: selectedLocationId,
-        weekStart,
-        totalTardinessMinutes: tardMin,
-      });
       await upsertManualDeduction({
         employeeId: modalEmployee.employeeId,
         locationId: selectedLocationId,
@@ -120,7 +109,7 @@ export default function WeeklyPayout() {
     } finally {
       setSaving(false);
     }
-  }, [modalEmployee, selectedLocationId, weekStart, editTardiness, editManualAmount, editManualReason, closeModal, loadPayout]);
+  }, [modalEmployee, selectedLocationId, weekStart, editManualAmount, editManualReason, closeModal, loadPayout]);
 
   useEffect(() => {
     savePersistedData(data);
@@ -137,13 +126,10 @@ export default function WeeklyPayout() {
 
   useEffect(() => {
     if (!selectedLocationId || !data?.payouts?.length) return;
-    const t = {};
     const m = {};
     data.payouts.forEach((p) => {
-      t[p.employeeId] = String(p.weeklyTardinessMinutes ?? 0);
       m[p.employeeId] = { amount: String(p.manualDeduction ?? 0), reason: '' };
     });
-    setTardinessEdits(t);
     setManualEdits(m);
     getManualDeductions(selectedLocationId, weekStart)
       .then((list) => {
@@ -181,16 +167,12 @@ export default function WeeklyPayout() {
     );
   }
 
-  if (showSkeleton && loading) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
-          Weekly Staff Payout
-        </h1>
-        <SkeletonPage variant="table" />
-      </div>
-    );
-  }
+  const spinner = (
+    <svg className="mr-2 h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+    </svg>
+  );
 
   return (
     <div className="space-y-6">
@@ -231,8 +213,22 @@ export default function WeeklyPayout() {
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
             />
           </div>
-          <Button onClick={loadPayout} disabled={loading}>
-            {loading ? 'Loading…' : 'Load payout'}
+          <Button onClick={() => loadPayout(false)} disabled={loading}>
+            {loading ? (
+              <>
+                {spinner}
+                Loading…
+              </>
+            ) : (
+              'Load payout'
+            )}
+          </Button>
+          <Button
+            onClick={() => loadPayout(true)}
+            disabled={loading}
+            variant="secondary"
+          >
+            Recalculate
           </Button>
         </div>
       </div>
@@ -244,7 +240,7 @@ export default function WeeklyPayout() {
               {locationName} — {formatWeekRange(weekStart)}
             </p>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              Weekly Gross Tips = Σ Daily Tips (Mon–Sun). Tardiness: 0–5 min → 0%; &gt;5–10 min → 15%; &gt;10 min → 20%. One tier per week. Values are system-generated and auditable.
+              Weekly Gross Tips = Σ Daily Tips (Mon–Sun). Tardiness: 0–5 min → 0%; &gt;5–10 min → 15%; &gt;10 min → 20%. One tier per week. Tardiness deductions are redistributed to eligible staff (≤5 min tardiness, worked hours &gt; 0) by worked hours. Final Weekly Tips Payable = Net + Redistribution.
             </p>
           </div>
         </div>
@@ -261,6 +257,14 @@ export default function WeeklyPayout() {
       {data && (
         <>
           <Card title="Weekly Staff Payout Table">
+            {totalRows > 0 && (data.redistributionPool != null || data.eligibleTotalHours != null) && (
+              <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-800/50">
+                <p className="font-medium text-slate-700 dark:text-slate-300">Tardiness Redistribution (Staff Tips)</p>
+                <p className="mt-1 text-slate-600 dark:text-slate-400">
+                  Redistribution pool: <strong>{formatMoney(data.redistributionPool ?? 0)}</strong> (Σ tardiness deductions). Distributed to eligible staff (weekly tardiness ≤5 min, worked hours &gt; 0) by proportion of worked hours. Employees with a tardiness deduction receive $0.00 redistribution.
+                </p>
+              </div>
+            )}
             {totalRows > 0 && (
               <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-3 dark:border-slate-700">
                 <div className="flex items-center gap-3">
@@ -351,11 +355,11 @@ export default function WeeklyPayout() {
                     <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-700 dark:text-slate-300">
                       Net Weekly Tips
                     </th>
-                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-700 dark:text-slate-300">
-                      Redistribution
+                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-700 dark:text-slate-300" title="Tips received from others (eligible: ≤5 min tardiness, worked hours &gt; 0)">
+                      Tardiness Redistribution
                     </th>
-                    <th className="whitespace-nowrap pb-3 pl-4 text-right font-semibold text-slate-700 dark:text-slate-300">
-                      Final Payable
+                    <th className="whitespace-nowrap pb-3 pl-4 text-right font-semibold text-slate-700 dark:text-slate-300" title="Net tips + redistribution">
+                      Final Weekly Tips Payable
                     </th>
                   </tr>
                 </thead>
@@ -407,11 +411,11 @@ export default function WeeklyPayout() {
                       <td className="py-3 pr-4 text-right tabular-nums">
                         {formatMoney(p.netWeeklyTips)}
                       </td>
-                      <td className="py-3 pr-4 text-right tabular-nums text-emerald-600 dark:text-emerald-400">
-                        {formatMoney(p.tardinessRedistribution)}
+                      <td className="py-3 pr-4 text-right tabular-nums text-emerald-600 dark:text-emerald-400" title={((p.weeklyTardinessMinutes ?? 0) > 5 ? 'Not eligible (tardiness deduction applied)' : 'Tips received from redistribution pool')}>
+                        {formatMoney(p.tardinessRedistribution ?? 0)}
                       </td>
                       <td className="py-3 pl-4 text-right tabular-nums font-semibold text-slate-900 dark:text-slate-100">
-                        {formatMoney(p.finalWeeklyTipsPayable)}
+                        {formatMoney(p.finalWeeklyTipsPayable ?? 0)}
                       </td>
                     </tr>
                   ))}
@@ -441,21 +445,16 @@ export default function WeeklyPayout() {
                   Tardiness & manual deduction — {modalEmployee.employeeName}
                 </h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Tardiness: 0–5 min → 0%; &gt;5–10 min → 15%; &gt;10 min → 20%. Reason required if manual deduction &gt; 0.
+                  Tardiness comes from the Weekly Tardiness page (load there first). Reason required if manual deduction &gt; 0.
                 </p>
                 <div className="mt-5 space-y-4">
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
                       Weekly tardiness (minutes)
                     </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={editTardiness}
-                      onChange={(e) => setEditTardiness(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-                    />
+                    <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      {modalEmployee.weeklyTardinessMinutes ?? 0} min (from Weekly Tardiness)
+                    </p>
                   </div>
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">

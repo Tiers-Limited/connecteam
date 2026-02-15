@@ -13,3 +13,18 @@ export async function syncFromConnecteams(startDate, endDate) {
   });
   return data.data;
 }
+
+/**
+ * Fetch time entries from Connecteam API for a location and date range (no DB).
+ * Same shape as getTimeEntriesRange so the Time Entries page can display them.
+ * @param {string} locationId - our Location _id
+ * @param {string} startDate - YYYY-MM-DD
+ * @param {string} endDate - YYYY-MM-DD
+ * @returns {Promise<Array<{ employeeId: { _id, name }, date, clockIn, clockOut }>>}
+ */
+export async function getConnecteamTimeEntries(locationId, startDate, endDate) {
+  const { data } = await api.get('/connecteams/time-entries', {
+    params: { locationId, startDate, endDate },
+  });
+  return data.data;
+}

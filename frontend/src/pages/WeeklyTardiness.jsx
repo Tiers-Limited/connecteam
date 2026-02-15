@@ -9,24 +9,6 @@ import Button from '../components/ui/Button';
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const PAGE_SIZES = [10, 25, 50, 100];
-const STORAGE_KEY = 'weeklyTardiness_data';
-
-function loadPersistedData() {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-function savePersistedData(data) {
-  try {
-    if (data) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    else sessionStorage.removeItem(STORAGE_KEY);
-  } catch (_) {}
-}
 
 /** Parse "HH:mm" to minutes since midnight for comparison (earliest clock-in = first punch of day) */
 function timeToMinutes(str) {
@@ -41,15 +23,35 @@ export default function WeeklyTardiness() {
   const [weekStart, setWeekStart] = useState(() =>
     toDateString(getWeekStart(new Date()))
   );
-  const [data, setData] = useState(loadPersistedData);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
-  useEffect(() => {
-    savePersistedData(data);
-  }, [data]);
+  /** Load from DB cache when week or location changes (no Connecteam API call). */
+  const loadFromCache = useCallback(async () => {
+    try {
+      const result = await getWeeklyTardiness(
+        weekStart,
+        selectedLocationId || undefined,
+        false
+      );
+      if (result && (result.entries?.length > 0 || (result.weekTotal ?? 0) > 0)) {
+        setData(result);
+        setPage(1);
+      } else {
+        setData(null);
+      }
+    } catch {
+      setData(null);
+    }
+  }, [weekStart, selectedLocationId]);
 
+  useEffect(() => {
+    loadFromCache();
+  }, [loadFromCache]);
+
+  /** Fetch from Connecteam API and save to DB, then show data. */
   const loadTardiness = useCallback(async () => {
     setLoading(true);
     setData(null);
@@ -57,10 +59,10 @@ export default function WeeklyTardiness() {
     try {
       const result = await getWeeklyTardiness(
         weekStart,
-        selectedLocationId || undefined
+        selectedLocationId || undefined,
+        true
       );
       setData(result);
-      // Log unique userId and username from fetched entries
       const seen = new Set();
       (result?.entries ?? []).forEach((entry) => {
         const uid = entry.connecteamsUserId ?? entry.employeeName;
@@ -70,7 +72,7 @@ export default function WeeklyTardiness() {
         }
       });
       toast.success(
-        `Loaded ${result?.entries?.length ?? 0} tardiness entries for the week.`
+        `Loaded ${result?.entries?.length ?? 0} tardiness entries from Connecteam and saved to database.`
       );
     } catch (err) {
       setData(null);

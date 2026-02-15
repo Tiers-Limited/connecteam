@@ -5,6 +5,8 @@ const { toDateString, getWeekEnd, timeToMinutes } = require('../utils/dateUtils'
 
 const DEFAULT_TIMEZONE = 'America/Aruba';
 
+let connecteamCallCount = 0;
+
 /**
  * Fetch JSON from Connecteams API (GET).
  * @param {string} path - e.g. /users/v1/users?limit=100&offset=0
@@ -12,6 +14,9 @@ const DEFAULT_TIMEZONE = 'America/Aruba';
  */
 function connecteamsFetch(path) {
   const url = new URL(path.startsWith('http') ? path : path, connecteamsBase);
+  connecteamCallCount += 1;
+  const shortPath = url.pathname + url.search;
+  console.log(`  ${String(connecteamCallCount).padStart(2)}. GET ${shortPath}`);
   return new Promise((resolve, reject) => {
     const options = {
       hostname: url.hostname,
@@ -87,6 +92,25 @@ function normalizeLocationKey(str) {
   if (s.includes('cove')) return 'the cove';
   if (s.includes('drive') && s.includes('thru')) return 'drive thru';
   return null;
+}
+
+/**
+ * Get all location keys for a punch: from shift (single) or from user's Location / Location - Job (can be multiple).
+ * So an employee assigned to "Casa Del Mar", "Oranjestad", "The Cove" gets one entry per location when there's no shift.
+ */
+function getLocationKeysForPunch(userInfo, schedLocationKey, locationKeys) {
+  if (schedLocationKey && locationKeys.includes(schedLocationKey)) {
+    return [schedLocationKey];
+  }
+  const collected = new Set();
+  const locJob = (userInfo && (userInfo.locationJobValues || userInfo.locationValues)) || [];
+  const locOnly = (userInfo && userInfo.locationValues) || [];
+  for (const v of [...locJob, ...locOnly]) {
+    const k = normalizeLocationKey(String(v));
+    if (k && locationKeys.includes(k)) collected.add(k);
+  }
+  if (collected.size > 0) return Array.from(collected);
+  return [locationKeys[0]];
 }
 
 function dateFromTimestamp(tsSeconds) {
@@ -191,11 +215,17 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
     throw new Error('CONNECTEAMS_API_KEY is not set');
   }
 
+  connecteamCallCount = 0;
+  console.log('\n' + '═'.repeat(60));
+  console.log('Connecteam API — getTimeEntriesFromConnecteams');
+  console.log('  Date range: ' + startDate + ' → ' + endDate);
+  console.log('  Base URL:   ' + connecteamsBase);
+  console.log('═'.repeat(60));
+  console.log('Calls:');
+
   const locationKeys = LOCATIONS.map((l) => l.key);
   const datesInRange = getDatesInRange(startDate, endDate);
   const dayBounds = getDateRangeBoundsUnixSeconds(startDate, endDate);
-
-
 
   // 1. Users
   const userMap = {};
@@ -410,34 +440,25 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
         if (sched) timesheetSchedMatchCount++;
         else timesheetSchedMissCount++;
         const tz = (sched && sched.timezone) ? sched.timezone : DEFAULT_TIMEZONE;
-        let locationKey = (sched && sched.locationKey) || null;
-        if (!locationKey && userInfo) {
-          const locJob = userInfo.locationJobValues || userInfo.locationValues || [];
-          for (const v of locJob) {
-            const k = normalizeLocationKey(v);
-            if (k) {
-              locationKey = k;
-              break;
-            }
-          }
-        }
-        if (!locationKey) locationKey = locationKeys[0];
+        const locationKeysForPunch = getLocationKeysForPunch(userInfo, sched && sched.locationKey, locationKeys);
         const clockOutMsUse = clockOutMs != null ? clockOutMs : clockInMs + 8 * 60 * 60 * 1000;
         const clockInStr = formatTimeInTimezone(clockInMs, tz);
         const clockOutStr = formatTimeInTimezone(clockOutMsUse, tz);
         if (clockInStr === '—') continue;
         const scheduledTimeStr = (sched && sched.scheduledStartMs != null) ? formatTimeInTimezone(sched.scheduledStartMs, tz) : '—';
-        entries.push({
-          connecteamsUserId: ukey,
-          employeeName: userInfo ? userInfo.name : 'User ' + ukey,
-          locationKey,
-          date: recordDate,
-          clockIn: clockInStr,
-          clockOut: clockOutStr,
-          scheduledTime: scheduledTimeStr !== '—' ? scheduledTimeStr : undefined,
-          scheduledStartMs: sched && sched.scheduledStartMs != null ? sched.scheduledStartMs : undefined,
-          clockInMs,
-        });
+        for (const locationKey of locationKeysForPunch) {
+          entries.push({
+            connecteamsUserId: ukey,
+            employeeName: userInfo ? userInfo.name : 'User ' + ukey,
+            locationKey,
+            date: recordDate,
+            clockIn: clockInStr,
+            clockOut: clockOutStr,
+            scheduledTime: scheduledTimeStr !== '—' ? scheduledTimeStr : undefined,
+            scheduledStartMs: sched && sched.scheduledStartMs != null ? sched.scheduledStartMs : undefined,
+            clockInMs,
+          });
+        }
       }
     } catch (err) {
     }
@@ -483,30 +504,21 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
           const clockOutMsUse =
             clockOutTs != null ? clockOutTs : clockInTs + 8 * 60 * 60 * 1000;
           const sched = (scheduleMap[ukey] || {})[shiftDate];
-          let locationKey = (sched && sched.locationKey) || null;
-          if (!locationKey && userInfo) {
-            const locJob = userInfo.locationJobValues || userInfo.locationValues || [];
-            for (const v of locJob) {
-              const k = normalizeLocationKey(v);
-              if (k) {
-                locationKey = k;
-                break;
-              }
-            }
-          }
-          if (!locationKey) locationKey = locationKeys[0];
+          const locationKeysForPunch = getLocationKeysForPunch(userInfo, sched && sched.locationKey, locationKeys);
           const scheduledTimeStr = (sched && sched.scheduledStartMs != null) ? formatTimeInTimezone(sched.scheduledStartMs, tz) : undefined;
-          entries.push({
-            connecteamsUserId: ukey,
-            employeeName: userInfo ? userInfo.name : 'User ' + ukey,
-            locationKey,
-            date: shiftDate,
-            clockIn: formatTimeInTimezone(clockInTs, tz),
-            clockOut: formatTimeInTimezone(clockOutMsUse, tz),
-            scheduledTime: scheduledTimeStr,
-            scheduledStartMs: sched && sched.scheduledStartMs != null ? sched.scheduledStartMs : undefined,
-            clockInMs: clockInTs,
-          });
+          for (const locationKey of locationKeysForPunch) {
+            entries.push({
+              connecteamsUserId: ukey,
+              employeeName: userInfo ? userInfo.name : 'User ' + ukey,
+              locationKey,
+              date: shiftDate,
+              clockIn: formatTimeInTimezone(clockInTs, tz),
+              clockOut: formatTimeInTimezone(clockOutMsUse, tz),
+              scheduledTime: scheduledTimeStr,
+              scheduledStartMs: sched && sched.scheduledStartMs != null ? sched.scheduledStartMs : undefined,
+              clockInMs: clockInTs,
+            });
+          }
         }
       }
     } catch (_) {
@@ -514,13 +526,21 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
     }
   }
   const withScheduled = entries.filter((e) => e.scheduledTime || e.scheduledStartMs != null);
-  console.log('[Connecteam] getTimeEntriesFromConnecteams result:', {
-    totalEntries: entries.length,
-    fromTimeActivities: entries.length - entriesBeforeTimeActivities,
-    withScheduledTimeOrMs: withScheduled.length,
-    sampleRecordDates: entries.slice(0, 5).map((e) => e.date),
-    sampleScheduled: entries.slice(0, 5).map((e) => ({ date: e.date, scheduledTime: e.scheduledTime })),
-  });
+  const byLocationKey = {};
+  for (const e of entries) {
+    const k = e.locationKey || 'unknown';
+    byLocationKey[k] = (byLocationKey[k] || 0) + 1;
+  }
+
+  console.log('\n' + '─'.repeat(60));
+  console.log('Connecteam getTimeEntriesFromConnecteams — RESULT');
+  console.log('─'.repeat(60));
+  console.log('  Total entries:', entries.length);
+  console.log('  By location:  ', JSON.stringify(byLocationKey));
+  console.log('  From time-activities (fallback):', entries.length - entriesBeforeTimeActivities);
+  console.log('  With scheduled time:            ', withScheduled.length);
+  console.log('  Sample dates:', entries.slice(0, 5).map((e) => e.date).join(', '));
+  console.log('─'.repeat(60) + '\n');
 
   return entries;
 }
