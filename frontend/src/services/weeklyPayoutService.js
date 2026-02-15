@@ -1,7 +1,13 @@
 import api from './api';
 
-export async function getWeeklyPayout(locationId, weekStart) {
-  const { data } = await api.get(`/weekly-payout/${locationId}/${weekStart}`);
+/**
+ * @param {string} locationId
+ * @param {string} weekStart - YYYY-MM-DD (Monday)
+ * @param {boolean} [refresh=false] - if true, force recompute and save to DB (e.g. after updating Weekly Tardiness)
+ */
+export async function getWeeklyPayout(locationId, weekStart, refresh = false) {
+  const params = refresh ? { refresh: 'true' } : {};
+  const { data } = await api.get(`/weekly-payout/${locationId}/${weekStart}`, { params });
   return data.data;
 }
 

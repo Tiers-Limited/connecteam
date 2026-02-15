@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { useApp } from '../context/AppContext';
 import { getTimeEntriesRange } from '../services/timeEntryService';
-import { syncFromConnecteams } from '../services/connecteamsService';
+import { syncFromConnecteams, getConnecteamTimeEntries } from '../services/connecteamsService';
 import { toDateString, getDateRangeColumns } from '../utils/dateUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -71,22 +71,23 @@ export default function TimeEntries() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [fetchingConnecteam, setFetchingConnecteam] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
   const location = locations.find((l) => l._id === selectedLocationId);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (overrideStart, overrideEnd) => {
     if (!selectedLocationId) return;
+    const start = overrideStart ?? viewStartDate;
+    let end = overrideEnd ?? viewEndDate;
+    if (!end || new Date(end) < new Date(start)) end = start;
+    if (!overrideStart && !overrideEnd) setViewEndDate(end);
     setLoading(true);
     try {
-      let start = viewStartDate;
-      let end = viewEndDate;
-      if (!end || new Date(end) < new Date(start)) end = start;
-      setViewEndDate(end);
       const ents = await getTimeEntriesRange(selectedLocationId, start, end);
-      const cache = { locationId: selectedLocationId, startDate: start, endDate: end, entries: ents };
-      setEntries(ents);
+      const cache = { locationId: selectedLocationId, startDate: start, endDate: end, entries: ents ?? [] };
+      setEntries(ents ?? []);
       setTimeEntriesCache(cache);
       savePersistedData(cache);
       setCurrentPage(1);
@@ -135,13 +136,42 @@ export default function TimeEntries() {
     setSyncing(true);
     try {
       const result = await syncFromConnecteams(start, end);
-      toast.success(`Synced ${result.synced} time entries from Connecteams.`);
-      await load();
+      toast.success(`Synced ${result.synced} time entries to DB.`);
+      await load(start, end);
     } catch (err) {
       const msg = err.response?.data?.error || err.message;
       toast.error('Connecteams sync failed: ' + msg);
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleFetchFromConnecteam = async () => {
+    if (!selectedLocationId) return;
+    let start = viewStartDate;
+    let end = viewEndDate;
+    if (!end || new Date(end) < new Date(start)) end = start;
+    setFetchingConnecteam(true);
+    try {
+      const connecteamEntries = await getConnecteamTimeEntries(selectedLocationId, start, end);
+      if (connecteamEntries?.length > 0) {
+        console.log('[TimeEntries] Connecteam time-entries API', {
+          api: 'GET /api/connecteams/time-entries',
+          params: { locationId: selectedLocationId, startDate: start, endDate: end },
+          firstEntry: connecteamEntries[0],
+        });
+      }
+      const cache = { locationId: selectedLocationId, startDate: start, endDate: end, entries: connecteamEntries };
+      setEntries(connecteamEntries);
+      setTimeEntriesCache(cache);
+      savePersistedData(cache);
+      setCurrentPage(1);
+      toast.success(`Loaded ${connecteamEntries.length} entries from Connecteam for this location.`);
+    } catch (err) {
+      const msg = err.response?.data?.error || err.message;
+      toast.error('Fetch from Connecteam failed: ' + msg);
+    } finally {
+      setFetchingConnecteam(false);
     }
   };
 
@@ -286,9 +316,9 @@ export default function TimeEntries() {
         </div>
       </Card>
 
-      <Card title="Load from Connecteams API">
+      <Card title="Connecteams & DB">
         <p className="mb-3 text-sm text-slate-600 dark:text-slate-400">
-          Sync employees and time entries for the 4 locations (Oranjestad, Casa del Mar, The Cove, Drive Thru) from Connecteams for the date range above. Existing synced entries in the range will be replaced.
+          <strong>Save to DB:</strong> Sync time entries from Connecteams for the date range above into the database (all 4 locations). Existing entries in the range are replaced. <strong>Load range</strong> above reads from DB. After saving, the table refreshes from DB.
         </p>
         <div className="flex flex-wrap items-end gap-4">
           <Button
@@ -299,16 +329,31 @@ export default function TimeEntries() {
             {syncing ? (
               <>
                 {spinner}
-                Syncing…
+                Saving to DB…
               </>
             ) : (
-              'Load from Connecteams'
+              'Save to DB (sync from Connecteams)'
+            )}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleFetchFromConnecteam}
+            disabled={fetchingConnecteam}
+          >
+            {fetchingConnecteam ? (
+              <>
+                {spinner}
+                Fetching…
+              </>
+            ) : (
+              'Preview from Connecteam (this location, not saved)'
             )}
           </Button>
         </div>
       </Card>
 
-      <Card title="Time entries (from Connecteams)">
+      <Card title="Time entries">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-4">
           <span className="text-sm text-slate-500 dark:text-slate-400">
             {viewStartDate} – {viewEndDate} · {employeeRows.length} employee(s)
@@ -368,7 +413,7 @@ export default function TimeEntries() {
           </table>
         </div>
         {employeeRows.length === 0 && (
-          <p className="py-8 text-center text-slate-500 dark:text-slate-400">No entries for this location and date range. Sync from Connecteams or adjust the range.</p>
+          <p className="py-8 text-center text-slate-500 dark:text-slate-400">No entries for this location and date range. Use <strong>Load range</strong> to read from DB, or <strong>Save to DB</strong> to sync from Connecteams.</p>
         )}
         {employeeRows.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">

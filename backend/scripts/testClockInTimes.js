@@ -7,7 +7,7 @@
  */
 
 const BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
-const USER_ID = process.env.USER_ID || '12023123';
+const USER_ID = process.env.USER_ID || '13758036';
 const START_DATE = process.env.START_DATE || '2026-02-02';
 const END_DATE = process.env.END_DATE || '2026-02-08';
 const LOCATION_NAME = process.env.LOCATION_NAME || 'Casa del Mar';
