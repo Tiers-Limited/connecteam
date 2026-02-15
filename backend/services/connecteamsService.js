@@ -648,9 +648,32 @@ async function getWeeklyTardinessFromConnecteams(weekStart, locationKeyFilter = 
   };
 }
 
+/**
+ * Get count of active users from Connecteam API (paginates until no more).
+ * @returns {Promise<number>}
+ */
+async function getActiveUsersCount() {
+  if (!connecteamsApiKey) return 0;
+  let count = 0;
+  let offset = 0;
+  const limit = 100;
+  let hasMore = true;
+  while (hasMore) {
+    const path = `/users/v1/users?limit=${limit}&offset=${offset}&order=asc&userStatus=active`;
+    const usersData = await connecteamsFetch(path);
+    const uRaw = usersData.data != null ? usersData.data : usersData;
+    const userList = Array.isArray(uRaw) ? uRaw : (uRaw.users || uRaw.items || []);
+    count += userList.length;
+    hasMore = userList.length >= limit;
+    offset += limit;
+  }
+  return count;
+}
+
 module.exports = {
   connecteamsFetch,
   getTimeEntriesFromConnecteams,
   getWeeklyTardinessFromConnecteams,
+  getActiveUsersCount,
   LOCATIONS: LOCATIONS,
 };

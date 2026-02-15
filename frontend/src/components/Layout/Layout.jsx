@@ -6,6 +6,7 @@ const navItems = [
   { to: '/daily-tips', label: 'Daily Tips' },
   { to: '/weekly-payout', label: 'Weekly Payout' },
   { to: '/weekly-tardiness', label: 'Weekly Tardiness' },
+  { to: '/production-pool', label: 'Production Pool' },
 ];
 
 export default function Layout() {
