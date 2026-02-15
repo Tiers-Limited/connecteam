@@ -1,9 +1,9 @@
 const mongoose = require('mongoose');
 
 /**
- * Cached response of weekly tardiness (from Connecteam API).
+ * DB collection: persisted weekly tardiness data (from Connecteam via Weekly Tardiness page).
  * Key: weekStart (YYYY-MM-DD) + locationId (ObjectId or null for "all locations").
- * Used so the frontend can load the same week/location from DB instead of calling the API every time.
+ * payload: { entries, dailyTotals, weekTotal }. Production Pool and front staff read from here.
  */
 const weeklyTardinessCacheSchema = new mongoose.Schema(
   {

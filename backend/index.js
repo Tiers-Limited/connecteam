@@ -6,6 +6,7 @@ const routes = require('./routes');
 const errorHandler = require('./middlewares/errorHandler');
 const { port } = require('./config/env');
 const { seedLocations } = require('./scripts/seedLocations');
+const { seedProductionStaff } = require('./scripts/seedProductionStaff');
 
 const app = express();
 app.use(cors());
@@ -20,6 +21,7 @@ app.use(errorHandler);
 async function start() {
   await connectDB();
   await seedLocations();
+  await seedProductionStaff();
   app.listen(port, () => {
     console.log(`Server running on http://localhost:${port}`);
   });

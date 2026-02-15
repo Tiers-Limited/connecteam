@@ -8,6 +8,7 @@ const ManualDeduction = require('../models/ManualDeduction');
 const Employee = require('../models/Employee');
 const Location = require('../models/Location');
 const DailyTipAudit = require('../models/DailyTipAudit');
+const ProductionStaff = require('../models/ProductionStaff');
 const connecteamsService = require('./connecteamsService');
 const { PRODUCTION_DEDUCTION_PERCENT, SHIFT_BOUNDARIES, TARDINESS_TIERS, ROUND_DECIMALS, LOCATIONS } = require('../utils/constants');
 const { getWeekStart, getWeekEnd, timeToMinutes, toDateString, isDateInWeek } = require('../utils/dateUtils');
@@ -73,6 +74,18 @@ function getTardinessDeductionPercent(minutes) {
 function toUTCDate(date) {
   const d = typeof date === 'string' ? date.slice(0, 10) : toDateString(date);
   return new Date(d + 'T00:00:00.000Z');
+}
+
+/** Set of active production staff names (excluded from Daily Tips and Weekly Payout). */
+let productionStaffNamesCache = null;
+async function getProductionStaffNames() {
+  if (productionStaffNamesCache) return productionStaffNamesCache;
+  const staff = await ProductionStaff.find({ isActive: true }).select('name').lean();
+  productionStaffNamesCache = new Set(staff.map((s) => (s.name || '').toString().trim()).filter(Boolean));
+  return productionStaffNamesCache;
+}
+function clearProductionStaffNamesCache() {
+  productionStaffNamesCache = null;
 }
 
 /**
@@ -202,6 +215,14 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     manualAMTipsTotal += manual.amTips;
     manualPMTipsTotal += manual.pmTips;
   }
+
+  // Exclude production staff: they are paid from Production Pool only, not from Daily Tips
+  const productionNames = await getProductionStaffNames();
+  const keysToRemove = [];
+  for (const [key, row] of employeeHours.entries()) {
+    if (productionNames.has((row.employeeName || '').toString().trim())) keysToRemove.push(key);
+  }
+  keysToRemove.forEach((k) => employeeHours.delete(k));
 
   // Step 5: Location-level total hours
   let totalAMHours = 0;
@@ -337,7 +358,9 @@ async function getWeeklyPayout(locationId, weekStartDate) {
   const [y, mo, day] = weekStartStr.split('-').map(Number);
   const weekStart = new Date(Date.UTC(y, mo - 1, day, 0, 0, 0, 0));
 
-  const employees = await Employee.find({ locationId, isActive: true });
+  let employees = await Employee.find({ locationId, isActive: true });
+  const productionNames = await getProductionStaffNames();
+  employees = employees.filter((emp) => !productionNames.has((emp.name || '').toString().trim()));
   const manualDeductions = await ManualDeduction.find({ locationId, weekStart });
 
   const tardinessMap = new Map();
@@ -562,4 +585,5 @@ module.exports = {
   getDailyTipCalculation,
   getEmployeeDailyTipsForDate,
   getWeeklyPayout,
+  clearProductionStaffNamesCache,
 };
