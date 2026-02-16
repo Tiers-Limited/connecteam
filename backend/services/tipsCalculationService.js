@@ -354,7 +354,13 @@ async function getEmployeeDailyTipsForDate(employeeId, locationId, date) {
  * Uses calendar dates (YYYY-MM-DD) and UTC so the week is consistent regardless of server TZ.
  */
 async function getWeeklyPayout(locationId, weekStartDate) {
-  const weekStartStr = typeof weekStartDate === 'string' ? weekStartDate.slice(0, 10) : toDateString(weekStartDate);
+  const inputStr = typeof weekStartDate === 'string' ? weekStartDate.slice(0, 10) : toDateString(weekStartDate);
+  // Normalize to Monday (UTC) so week is always Mon–Sun. Fixes tip for Sunday showing under Monday.
+  const d = new Date(inputStr + 'T12:00:00.000Z');
+  const utcDay = d.getUTCDay();
+  const daysToMonday = utcDay === 0 ? 6 : utcDay - 1;
+  d.setUTCDate(d.getUTCDate() - daysToMonday);
+  const weekStartStr = d.toISOString().slice(0, 10);
   const [y, mo, day] = weekStartStr.split('-').map(Number);
   const weekStart = new Date(Date.UTC(y, mo - 1, day, 0, 0, 0, 0));
 
