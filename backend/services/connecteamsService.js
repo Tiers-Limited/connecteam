@@ -5,6 +5,11 @@ const { toDateString, getWeekEnd, timeToMinutes } = require('../utils/dateUtils'
 
 const DEFAULT_TIMEZONE = 'America/Aruba';
 
+/** Cache and in-flight dedupe for getTimeEntriesFromConnecteams to avoid repeated API hits for same range. */
+const CONNECTEAM_ENTRIES_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const connecteamEntriesCache = new Map();
+const connecteamEntriesInFlight = new Map();
+
 let connecteamCallCount = 0;
 
 /**
@@ -205,12 +210,10 @@ function getDateRangeBoundsUnixSeconds(startStr, endStr) {
 }
 
 /**
- * Fetch time entries from Connecteams API for the given date range.
+ * Fetch time entries from Connecteams API for the given date range (uncached).
  * Returns array of { connecteamsUserId, employeeName, locationKey, date, clockIn, clockOut }.
- * Multiple entries per (user, location, date) when there are multiple punch pairs.
- * Only includes the 4 fixed locations: Oranjestad, Casa del Mar, The Cove, Drive Thru.
  */
-async function getTimeEntriesFromConnecteams(startDate, endDate) {
+async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
   if (!connecteamsApiKey) {
     throw new Error('CONNECTEAMS_API_KEY is not set');
   }
@@ -543,6 +546,38 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
   console.log('─'.repeat(60) + '\n');
 
   return entries;
+}
+
+/**
+ * Fetch time entries from Connecteams API for the given date range.
+ * Results are cached for 2 minutes and in-flight requests for the same range are deduplicated.
+ */
+async function getTimeEntriesFromConnecteams(startDate, endDate) {
+  const start = (startDate || '').toString().trim();
+  const end = (endDate || '').toString().trim();
+  const key = `${start}_${end}`;
+
+  const cached = connecteamEntriesCache.get(key);
+  if (cached && Date.now() - cached.ts < CONNECTEAM_ENTRIES_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  let promise = connecteamEntriesInFlight.get(key);
+  if (promise) {
+    return promise;
+  }
+
+  promise = getTimeEntriesFromConnecteamsUncached(start, end)
+    .then((data) => {
+      connecteamEntriesCache.set(key, { data, ts: Date.now() });
+      return data;
+    })
+    .finally(() => {
+      connecteamEntriesInFlight.delete(key);
+    });
+
+  connecteamEntriesInFlight.set(key, promise);
+  return promise;
 }
 
 function getDatesInRange(startStr, endStr) {
