@@ -27,6 +27,12 @@ router.get(
   productionController.getDailyPool
 );
 router.get(
+  '/location-wise-pool/:weekStart',
+  param('weekStart').matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('weekStart must be YYYY-MM-DD (Monday)'),
+  validate,
+  productionController.getLocationWisePool
+);
+router.get(
   '/manual-deductions/:weekStart',
   param('weekStart').matches(/^\d{4}-\d{2}-\d{2}$/),
   validate,

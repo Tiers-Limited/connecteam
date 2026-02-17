@@ -3,10 +3,11 @@ import toast from 'react-hot-toast';
 import {
   getWeeklyProductionPayout,
   getProductionManualDeductions,
+  getLocationWiseProductionPool,
   upsertProductionManualDeduction,
   updateProductionStaff,
 } from '../services/productionService';
-import { getWeekStart, toDateString, formatWeekRange } from '../utils/dateUtils';
+import { getWeekStart, toDateString, formatWeekRange, getWeekDateColumns } from '../utils/dateUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
@@ -27,16 +28,22 @@ export default function ProductionPool() {
   const [editManualReason, setEditManualReason] = useState('');
   const [manualEdits, setManualEdits] = useState({});
   const [saving, setSaving] = useState(false);
+  const [locationWisePool, setLocationWisePool] = useState([]);
 
   const loadPayout = useCallback(() => {
     setLoading(true);
-    getWeeklyProductionPayout(weekStart)
-      .then((res) => {
+    Promise.all([
+      getWeeklyProductionPayout(weekStart),
+      getLocationWiseProductionPool(weekStart),
+    ])
+      .then(([res, locationList]) => {
         setData(res);
+        setLocationWisePool(Array.isArray(locationList) ? locationList : []);
         toast.success(`Loaded production payout for ${res?.payouts?.length ?? 0} staff.`);
       })
       .catch(() => {
         setData(null);
+        setLocationWisePool([]);
         toast.error('Failed to load production payout');
       })
       .finally(() => setLoading(false));
@@ -229,6 +236,47 @@ export default function ProductionPool() {
             {payouts.length === 0 && (
               <p className="py-8 text-center text-slate-500 dark:text-slate-400">
                 No production staff configured or no pool data for this week. Seed production staff (Marina, Laura, Bruna) and enter daily tips for all locations.
+              </p>
+            )}
+          </Card>
+
+          <Card title="Location-wise tip pool">
+            <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
+              4% of gross tips (AM + PM) per location for this week. Combined across locations = total production pool.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[600px] text-sm">
+                <thead>
+                  <tr className="border-b-2 border-slate-200 dark:border-slate-700">
+                    <th className="whitespace-nowrap pb-3 pr-4 text-left font-semibold text-slate-700 dark:text-slate-300">Location</th>
+                    {getWeekDateColumns(weekStart).map((col) => (
+                      <th key={col.dateKey} className="whitespace-nowrap pb-3 pr-3 text-right font-semibold text-slate-700 dark:text-slate-300">
+                        {col.label}
+                      </th>
+                    ))}
+                    <th className="whitespace-nowrap pb-3 pl-3 text-right font-semibold text-slate-700 dark:text-slate-300">Weekly total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {locationWisePool.map((row) => (
+                    <tr key={row.locationId} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                      <td className="py-3 pr-4 font-medium text-slate-800 dark:text-slate-100">{row.locationName}</td>
+                      {(row.dailyByDay || []).map((val, i) => (
+                        <td key={i} className="py-3 pr-3 text-right tabular-nums text-slate-700 dark:text-slate-300">
+                          {formatMoney(val)}
+                        </td>
+                      ))}
+                      <td className="py-3 pl-3 text-right tabular-nums font-semibold text-slate-900 dark:text-slate-100">
+                        {formatMoney(row.weeklyPool ?? 0)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {locationWisePool.length === 0 && (
+              <p className="py-6 text-center text-slate-500 dark:text-slate-400">
+                No daily tips entered for this week at any location. Enter tips on Daily Tips to see location-wise pool.
               </p>
             )}
           </Card>

@@ -20,6 +20,11 @@ export async function getDailyProductionPool(date) {
   return data.data;
 }
 
+export async function getLocationWiseProductionPool(weekStart) {
+  const { data } = await api.get(`/production/location-wise-pool/${weekStart}`);
+  return data.data;
+}
+
 export async function getProductionManualDeductions(weekStart) {
   const { data } = await api.get(`/production/manual-deductions/${weekStart}`);
   return data.data;

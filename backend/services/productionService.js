@@ -1,4 +1,5 @@
 const DailyTipInput = require('../models/DailyTipInput');
+const Location = require('../models/Location');
 const ProductionStaff = require('../models/ProductionStaff');
 const ProductionManualDeduction = require('../models/ProductionManualDeduction');
 /** DB collection where Weekly Tardiness page saves data (weekStart + locationId → payload.entries) */
@@ -33,6 +34,56 @@ async function getDailyProductionPool(dateStr) {
     pool += (Number(row.pmGrossTips) || 0) * PRODUCTION_DEDUCTION_PERCENT;
   }
   return roundMoney(pool);
+}
+
+/**
+ * Location-wise tip pool for a week: 4% of (AM + PM gross tips) per location, per day and weekly total.
+ * @param {string} weekStartStr - YYYY-MM-DD (Monday)
+ * @returns {Promise<Array<{ locationId, locationName, weeklyPool, dailyByDay }>>}
+ */
+async function getLocationWiseProductionPool(weekStartStr) {
+  const d = typeof weekStartStr === 'string' ? weekStartStr.slice(0, 10) : toDateString(weekStartStr);
+  const [y, mo, day] = d.split('-').map(Number);
+  const dateStarts = [];
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(Date.UTC(y, mo - 1, day + i, 0, 0, 0, 0));
+    dateStarts.push(date.toISOString().slice(0, 10));
+  }
+  const weekStartDate = new Date(Date.UTC(y, mo - 1, day, 0, 0, 0, 0));
+  const weekEndDate = new Date(Date.UTC(y, mo - 1, day + 6, 23, 59, 59, 999));
+  const inputs = await DailyTipInput.find({
+    date: { $gte: weekStartDate, $lte: weekEndDate },
+  }).lean();
+  const byLocation = new Map();
+  for (const row of inputs) {
+    const locId = (row.locationId && row.locationId._id ? row.locationId._id : row.locationId)?.toString();
+    if (!locId) continue;
+    const dateStr = (row.date && row.date.toISOString) ? row.date.toISOString().slice(0, 10) : String(row.date).slice(0, 10);
+    const dayPool = roundMoney(
+      ((Number(row.amGrossTips) || 0) + (Number(row.pmGrossTips) || 0)) * PRODUCTION_DEDUCTION_PERCENT
+    );
+    if (!byLocation.has(locId)) {
+      byLocation.set(locId, { dailyByDay: [0, 0, 0, 0, 0, 0, 0] });
+    }
+    const rec = byLocation.get(locId);
+    const dayIndex = dateStarts.indexOf(dateStr);
+    if (dayIndex >= 0) rec.dailyByDay[dayIndex] = dayPool;
+  }
+  for (const rec of byLocation.values()) {
+    rec.weeklyPool = roundMoney(rec.dailyByDay.reduce((s, v) => s + v, 0));
+  }
+  const locationIds = [...byLocation.keys()];
+  const locations = await Location.find({ _id: { $in: locationIds } }).select('name').lean();
+  const nameById = Object.fromEntries(locations.map((l) => [l._id.toString(), l.name || '—']));
+  return locationIds.map((locationId) => {
+    const rec = byLocation.get(locationId);
+    return {
+      locationId,
+      locationName: nameById[locationId] || '—',
+      weeklyPool: rec.weeklyPool,
+      dailyByDay: rec.dailyByDay,
+    };
+  }).sort((a, b) => (a.locationName || '').localeCompare(b.locationName || ''));
 }
 
 /**
@@ -217,6 +268,7 @@ async function getProductionManualDeductions(weekStart) {
 
 module.exports = {
   getDailyProductionPool,
+  getLocationWiseProductionPool,
   getProductionStaff,
   getWeeklyProductionPayout,
   upsertProductionManualDeduction,
