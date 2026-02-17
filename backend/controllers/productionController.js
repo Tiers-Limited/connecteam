@@ -51,6 +51,17 @@ async function getDailyPool(req, res, next) {
   }
 }
 
+async function getLocationWisePool(req, res, next) {
+  try {
+    const { weekStart } = req.params;
+    const weekStartStr = typeof weekStart === 'string' ? weekStart.slice(0, 10) : String(weekStart).slice(0, 10);
+    const list = await productionService.getLocationWiseProductionPool(weekStartStr);
+    res.json({ success: true, data: list });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getManualDeductions(req, res, next) {
   try {
     const { weekStart } = req.params;
@@ -87,6 +98,7 @@ module.exports = {
   updateStaff,
   getWeeklyPayout,
   getDailyPool,
+  getLocationWisePool,
   getManualDeductions,
   upsertManualDeduction,
 };
