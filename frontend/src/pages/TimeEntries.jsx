@@ -154,13 +154,6 @@ export default function TimeEntries() {
     setFetchingConnecteam(true);
     try {
       const connecteamEntries = await getConnecteamTimeEntries(selectedLocationId, start, end);
-      if (connecteamEntries?.length > 0) {
-        console.log('[TimeEntries] Connecteam time-entries API', {
-          api: 'GET /api/connecteams/time-entries',
-          params: { locationId: selectedLocationId, startDate: start, endDate: end },
-          firstEntry: connecteamEntries[0],
-        });
-      }
       const cache = { locationId: selectedLocationId, startDate: start, endDate: end, entries: connecteamEntries };
       setEntries(connecteamEntries);
       setTimeEntriesCache(cache);
