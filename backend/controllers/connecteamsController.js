@@ -3,6 +3,7 @@ const connecteamsService = require('../services/connecteamsService');
 const locationService = require('../services/locationService');
 const employeeService = require('../services/employeeService');
 const timeEntryService = require('../services/timeEntryService');
+const weeklyPayoutService = require('../services/weeklyPayoutService');
 const TimeEntry = require('../models/TimeEntry');
 const Employee = require('../models/Employee');
 const WeeklyTardinessCache = require('../models/WeeklyTardinessCache');
@@ -70,6 +71,7 @@ async function getWeeklyTardiness(req, res, next) {
       { $set: { payload: data } },
       { upsert: true, new: true }
     );
+    await weeklyPayoutService.persistTardinessFromPayload(data, weekStartNorm);
 
     res.json({ success: true, data, fromCache: false });
   } catch (err) {

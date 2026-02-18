@@ -20,8 +20,6 @@ let connecteamCallCount = 0;
 function connecteamsFetch(path) {
   const url = new URL(path.startsWith('http') ? path : path, connecteamsBase);
   connecteamCallCount += 1;
-  const shortPath = url.pathname + url.search;
-  console.log(`  ${String(connecteamCallCount).padStart(2)}. GET ${shortPath}`);
   return new Promise((resolve, reject) => {
     const options = {
       hostname: url.hostname,
@@ -219,14 +217,9 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
   }
 
   connecteamCallCount = 0;
-  console.log('\n' + '═'.repeat(60));
-  console.log('Connecteam API — getTimeEntriesFromConnecteams');
-  console.log('  Date range: ' + startDate + ' → ' + endDate);
-  console.log('  Base URL:   ' + connecteamsBase);
-  console.log('═'.repeat(60));
-  console.log('Calls:');
-
   const locationKeys = LOCATIONS.map((l) => l.key);
+  /** First user flow: log only for the first user that has shifts (for debugging). */
+  const firstUserFlow = { userId: null, userName: null, userFromApi: null, timeActivitiesResponse: null, jobIds: null, jobResponses: [] };
   const datesInRange = getDatesInRange(startDate, endDate);
   const dayBounds = getDateRangeBoundsUnixSeconds(startDate, endDate);
 
@@ -274,6 +267,11 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
     .slice(0, 25)
     .map((c) => (c.id != null ? c.id : c.timeClockId))
     .filter(Boolean);
+
+  // User IDs that belong to our locations (for time-activities filter)
+  const locationFilteredUserIds = Object.keys(userMap).filter((ukey) =>
+    userBelongsToLocations(userMap[ukey], locationKeys)
+  );
 
   // 3. Schedulers + Shifts -> scheduleMap[userId][date] = { locationKey, timezone }
   const scheduleMap = {};
@@ -368,110 +366,15 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
     .slice(0, 3)
     .map(([ukey, dates]) => ({ userId: ukey, dates: Object.keys(dates).slice(0, 5) }));
 
-  // 4. Timesheet + Time-activities -> build list of (userId, date, clockIn, clockOut, locationKey)
-  const entries = [];
-  const assignedUserIdsByClock = {};
-  let timesheetFlatRecordsTotal = 0;
-  let timesheetSchedMatchCount = 0;
-  let timesheetSchedMissCount = 0;
-  timeClocksList.forEach((tc) => {
-    const tid = tc.id ?? tc.timeClockId;
-    if (tid == null) return;
-    const uids =
-      tc.assignedUserIds || tc.userIds || (tc.assignedUserId != null ? [tc.assignedUserId] : []);
-    assignedUserIdsByClock[tid] = uids;
-  });
-
+  // 4. Time-activities (per time clock): startDate, endDate, userIds -> get shifts with jobId
+  const allShiftsWithUser = [];
   for (const tcId of timeClockIds) {
     try {
-      const tsPath = `/time-clock/v1/time-clocks/${tcId}/timesheet?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
-      const tsData = await connecteamsFetch(tsPath);
-      const tsRaw = tsData.data != null ? tsData.data : tsData;
-      const flatRecords = [];
-      const usersList = tsRaw.users || [];
-      for (const userEntry of usersList) {
-        const uid = userEntry.userId ?? userEntry.user_id;
-        if (uid == null) continue;
-        const dailyRecords = userEntry.dailyRecords || userEntry.days || [];
-        for (const day of dailyRecords) {
-          const recordDateNorm = toDateString(day.date) || startDate;
-          if (!datesInRange.includes(recordDateNorm)) continue;
-          const records = day.records || day.punches || day.activities || [];
-          for (const rec of records) {
-            flatRecords.push({ ...rec, _date: recordDateNorm, _userId: uid });
-          }
-        }
-      }
-      if (flatRecords.length === 0) {
-        const dailyRecords =
-          tsRaw.dailyRecords ||
-          tsRaw.days ||
-          (Array.isArray(tsRaw) ? tsRaw : (tsRaw.records || []));
-        for (const day of dailyRecords) {
-          const recordDateNorm =
-            toDateString(day.date) ||
-            (day.records &&
-              day.records[0] &&
-              day.records[0].start &&
-              dateFromTimestamp(day.records[0].start.timestamp)) ||
-            startDate;
-          if (!datesInRange.includes(recordDateNorm)) continue;
-          const records = day.records || day.punches || day.activities || [];
-          for (const rec of records) {
-            flatRecords.push({ ...rec, _date: recordDateNorm });
-          }
-        }
-      }
-      timesheetFlatRecordsTotal += flatRecords.length;
-      for (const rec of flatRecords) {
-        const clockInMs = getClockInMsFromRecord(rec);
-        const clockOutMs = getClockOutMsFromRecord(rec);
-        if (clockInMs == null) continue;
-        const recordDate = rec._date || startDate;
-        const uid =
-          rec._userId ??
-          rec.userId ??
-          rec.user_id ??
-          (assignedUserIdsByClock[tcId] && assignedUserIdsByClock[tcId].length === 1
-            ? assignedUserIdsByClock[tcId][0]
-            : null);
-        if (uid == null) continue;
-        const ukey = String(uid);
-        const userInfo = userMap[ukey];
-        if (!userBelongsToLocations(userInfo, locationKeys)) continue;
-        const sched = (scheduleMap[ukey] || {})[recordDate];
-        if (sched) timesheetSchedMatchCount++;
-        else timesheetSchedMissCount++;
-        const tz = (sched && sched.timezone) ? sched.timezone : DEFAULT_TIMEZONE;
-        const locationKeysForPunch = getLocationKeysForPunch(userInfo, sched && sched.locationKey, locationKeys);
-        const clockOutMsUse = clockOutMs != null ? clockOutMs : clockInMs + 8 * 60 * 60 * 1000;
-        const clockInStr = formatTimeInTimezone(clockInMs, tz);
-        const clockOutStr = formatTimeInTimezone(clockOutMsUse, tz);
-        if (clockInStr === '—') continue;
-        const scheduledTimeStr = (sched && sched.scheduledStartMs != null) ? formatTimeInTimezone(sched.scheduledStartMs, tz) : '—';
-        for (const locationKey of locationKeysForPunch) {
-          entries.push({
-            connecteamsUserId: ukey,
-            employeeName: userInfo ? userInfo.name : 'User ' + ukey,
-            locationKey,
-            date: recordDate,
-            clockIn: clockInStr,
-            clockOut: clockOutStr,
-            scheduledTime: scheduledTimeStr !== '—' ? scheduledTimeStr : undefined,
-            scheduledStartMs: sched && sched.scheduledStartMs != null ? sched.scheduledStartMs : undefined,
-            clockInMs,
-          });
-        }
-      }
-    } catch (err) {
-    }
-  }
-
-  // 5. Time-activities (fallback for punch pairs)
-  const entriesBeforeTimeActivities = entries.length;
-  for (const tcId of timeClockIds) {
-    try {
-      const actPath = `/time-clock/v1/time-clocks/${tcId}/time-activities?startDate=${startDate}&endDate=${endDate}`;
+      const userIdsParam =
+        locationFilteredUserIds.length > 0
+          ? locationFilteredUserIds.map((id) => `userIds=${encodeURIComponent(id)}`).join('&')
+          : '';
+      const actPath = `/time-clock/v1/time-clocks/${tcId}/time-activities?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}${userIdsParam ? '&' + userIdsParam : ''}`;
       const actData = await connecteamsFetch(actPath);
       const actRaw = actData.data != null ? actData.data : actData;
       const byUsers =
@@ -488,62 +391,90 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
         if (!userBelongsToLocations(userInfo, locationKeys)) continue;
         const shifts =
           userObj.shifts || userObj.activities || userObj.records || userObj.timeActivities || [];
+        if (shifts.length > 0 && firstUserFlow.userId === null) {
+          firstUserFlow.userId = ukey;
+          firstUserFlow.userName = userInfo ? userInfo.name : 'User ' + ukey;
+          firstUserFlow.userFromApi = userMap[ukey];
+          firstUserFlow.timeActivitiesResponse = actRaw;
+          firstUserFlow.jobIds = [...new Set(shifts.map((s) => s.jobId).filter(Boolean))];
+        }
         for (const shift of shifts) {
-          const clockInTs =
-            getClockInMsFromRecord(shift) ??
-            (shift.clockInTimestamp != null
-              ? shift.clockInTimestamp < 1e12
-                ? shift.clockInTimestamp * 1000
-                : shift.clockInTimestamp
-              : null);
-          if (clockInTs == null) continue;
-          const start = shift.start || {};
-          const tz = (start.timezone || shift.timezone) || DEFAULT_TIMEZONE;
-          const shiftDate =
-            toDateString(dateFromTimestampInTimezone(Math.floor(clockInTs / 1000), tz)) ||
-            startDate;
-          if (!datesInRange.includes(shiftDate)) continue;
-          const clockOutTs = getClockOutMsFromRecord(shift);
-          const clockOutMsUse =
-            clockOutTs != null ? clockOutTs : clockInTs + 8 * 60 * 60 * 1000;
-          const sched = (scheduleMap[ukey] || {})[shiftDate];
-          const locationKeysForPunch = getLocationKeysForPunch(userInfo, sched && sched.locationKey, locationKeys);
-          const scheduledTimeStr = (sched && sched.scheduledStartMs != null) ? formatTimeInTimezone(sched.scheduledStartMs, tz) : undefined;
-          for (const locationKey of locationKeysForPunch) {
-            entries.push({
-              connecteamsUserId: ukey,
-              employeeName: userInfo ? userInfo.name : 'User ' + ukey,
-              locationKey,
-              date: shiftDate,
-              clockIn: formatTimeInTimezone(clockInTs, tz),
-              clockOut: formatTimeInTimezone(clockOutMsUse, tz),
-              scheduledTime: scheduledTimeStr,
-              scheduledStartMs: sched && sched.scheduledStartMs != null ? sched.scheduledStartMs : undefined,
-              clockInMs: clockInTs,
-            });
-          }
+          allShiftsWithUser.push({ shift, ukey, userInfo });
         }
       }
     } catch (_) {
-      // skip
+      // skip this time clock
     }
   }
-  const withScheduled = entries.filter((e) => e.scheduledTime || e.scheduledStartMs != null);
-  const byLocationKey = {};
-  for (const e of entries) {
-    const k = e.locationKey || 'unknown';
-    byLocationKey[k] = (byLocationKey[k] || 0) + 1;
+
+  // 5. Get unique jobIds from shifts, then fetch each job -> job.title = location
+  const uniqueJobIds = [...new Set(allShiftsWithUser.map(({ shift }) => shift.jobId).filter(Boolean))];
+  const jobIdToLocationKey = {};
+  const firstUserJobIdSet = firstUserFlow.jobIds ? new Set(firstUserFlow.jobIds) : null;
+  for (const jobId of uniqueJobIds) {
+    try {
+      const jobRes = await connecteamsFetch(`/jobs/v1/jobs/${encodeURIComponent(jobId)}`);
+      if (firstUserJobIdSet && firstUserJobIdSet.has(jobId)) {
+        firstUserFlow.jobResponses.push({ jobId, response: jobRes });
+      }
+      const jobData = jobRes.data != null ? jobRes.data : jobRes;
+      const job = jobData.job || jobData;
+      const title = (job && (job.title || job.name)) ? String(job.title || job.name).trim() : '';
+      if (title) {
+        const locKey = normalizeLocationKey(title);
+        if (locKey && locationKeys.includes(locKey)) {
+          jobIdToLocationKey[jobId] = locKey;
+        }
+      }
+    } catch (_) {
+      // job not found or API error
+    }
   }
 
-  console.log('\n' + '─'.repeat(60));
-  console.log('Connecteam getTimeEntriesFromConnecteams — RESULT');
-  console.log('─'.repeat(60));
-  console.log('  Total entries:', entries.length);
-  console.log('  By location:  ', JSON.stringify(byLocationKey));
-  console.log('  From time-activities (fallback):', entries.length - entriesBeforeTimeActivities);
-  console.log('  With scheduled time:            ', withScheduled.length);
-  console.log('  Sample dates:', entries.slice(0, 5).map((e) => e.date).join(', '));
-  console.log('─'.repeat(60) + '\n');
+  // 6. Build entries from time-activities shifts; location from job.title
+  const entries = [];
+  for (const { shift, ukey, userInfo } of allShiftsWithUser) {
+    const clockInTs =
+      getClockInMsFromRecord(shift) ??
+      (shift.clockInTimestamp != null
+        ? shift.clockInTimestamp < 1e12
+          ? shift.clockInTimestamp * 1000
+          : shift.clockInTimestamp
+        : null);
+    if (clockInTs == null) continue;
+    const start = shift.start || {};
+    const tz = (start.timezone || shift.timezone) || DEFAULT_TIMEZONE;
+    const shiftDate =
+      toDateString(dateFromTimestampInTimezone(Math.floor(clockInTs / 1000), tz)) || startDate;
+    if (!datesInRange.includes(shiftDate)) continue;
+
+    const jobId = shift.jobId;
+    let locationKey = jobId && jobIdToLocationKey[jobId] ? jobIdToLocationKey[jobId] : null;
+    if (!locationKey) {
+      const sched = (scheduleMap[ukey] || {})[shiftDate];
+      const locationKeysForPunch = getLocationKeysForPunch(userInfo, sched && sched.locationKey, locationKeys);
+      if (locationKeysForPunch.length > 0) locationKey = locationKeysForPunch[0];
+      else continue;
+    }
+
+    const clockOutTs = getClockOutMsFromRecord(shift);
+    const clockOutMsUse = clockOutTs != null ? clockOutTs : clockInTs + 8 * 60 * 60 * 1000;
+    const sched = (scheduleMap[ukey] || {})[shiftDate];
+    const scheduledTimeStr =
+      sched && sched.scheduledStartMs != null ? formatTimeInTimezone(sched.scheduledStartMs, tz) : undefined;
+
+    entries.push({
+      connecteamsUserId: ukey,
+      employeeName: userInfo ? userInfo.name : 'User ' + ukey,
+      locationKey,
+      date: shiftDate,
+      clockIn: formatTimeInTimezone(clockInTs, tz),
+      clockOut: formatTimeInTimezone(clockOutMsUse, tz),
+      scheduledTime: scheduledTimeStr,
+      scheduledStartMs: sched && sched.scheduledStartMs != null ? sched.scheduledStartMs : undefined,
+      clockInMs: clockInTs,
+    });
+  }
 
   return entries;
 }
@@ -599,8 +530,9 @@ function getDatesInRange(startStr, endStr) {
 const DAY_KEY_BY_JS_DAY = { 0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat' };
 
 /**
- * Get weekly tardiness from Connecteams: detail rows (employee, location/job, scheduled, clock-in, minutes late)
- * and daily totals Mon–Sun plus week total.
+ * Get weekly tardiness from Connecteams using the same flow and data extraction as Time Entries:
+ * same getTimeEntriesFromConnecteams source, same location filter (case-insensitive), and same
+ * collapse to first punch (earliest clock-in) per employee per day.
  * @param {string} weekStart - Monday date YYYY-MM-DD
  * @param {string|null} locationKeyFilter - optional location key to filter (e.g. 'oranjestad')
  * @returns {Promise<{ entries: Array<{ employeeName, locationName, locationKey, date, scheduledTime, clockIn, minutesLate }>, dailyTotals: Record<string, number>, weekTotal: number }>}
@@ -611,50 +543,49 @@ async function getWeeklyTardinessFromConnecteams(weekStart, locationKeyFilter = 
   const weekEndDate = getWeekEnd(weekStartDate);
   const endDate = toDateString(weekEndDate);
 
+  // Same raw source as Time Entries page
   const rawEntries = await getTimeEntriesFromConnecteams(startDate, endDate);
 
-  const withScheduled = rawEntries.filter((e) => e.scheduledTime || e.scheduledStartMs != null);
-  const withBoth = rawEntries.filter(
-    (e) => (e.scheduledStartMs != null && e.clockInMs != null) || (e.scheduledTime && e.clockIn)
-  );
+  // Same location filter as getConnecteamTimeEntries (case-insensitive)
+  let filtered = rawEntries;
+  if (locationKeyFilter != null && String(locationKeyFilter).trim() !== '') {
+    const locLower = String(locationKeyFilter).toLowerCase().trim();
+    filtered = rawEntries.filter(
+      (e) => (e.locationKey || '').toLowerCase().trim() === locLower
+    );
+  }
+
+  // Same collapse as Time Entries: one row per (employee, date) = earliest clock-in (first punch) of the day
+  const firstPunchByKey = new Map();
+  for (const e of filtered) {
+    const key = `${e.connecteamsUserId}|${e.date}`;
+    const clockInMins = e.clockInMs != null ? Math.floor(e.clockInMs / 60000) : timeToMinutes(e.clockIn);
+    const existing = firstPunchByKey.get(key);
+    if (existing == null || (clockInMins !== undefined && !Number.isNaN(clockInMins) && clockInMins < (existing._clockInMins ?? Infinity))) {
+      firstPunchByKey.set(key, {
+        ...e,
+        _clockInMins: typeof clockInMins === 'number' && !Number.isNaN(clockInMins) ? clockInMins : (timeToMinutes(e.clockIn) ?? Infinity),
+      });
+    }
+  }
 
   const locationNameByKey = Object.fromEntries(LOCATIONS.map((l) => [l.key, l.name]));
-
   const entries = [];
   const dailyTotals = { mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0, sun: 0 };
-  /** First punch per (employee, date) only — for correct daily totals (match UI: one tardiness per employee per day) */
-  const firstPunchMinutesByKey = new Map();
 
-  let skippedLocation = 0;
-  let skippedNoLate = 0;
-  for (const e of rawEntries) {
-    if (locationKeyFilter != null && e.locationKey !== locationKeyFilter) {
-      skippedLocation++;
-      continue;
-    }
+  for (const e of firstPunchByKey.values()) {
     let minutesLate = 0;
     if (e.scheduledStartMs != null && e.clockInMs != null) {
-      // Use floor so 0–59 seconds late = 0 min (07:00 → 07:00 shows 0, not 1)
       minutesLate = Math.max(0, Math.floor((e.clockInMs - e.scheduledStartMs) / 60000));
     } else if (e.scheduledTime && e.clockIn) {
       const scheduledMins = timeToMinutes(e.scheduledTime);
       const clockInMins = timeToMinutes(e.clockIn);
-      minutesLate = Math.max(0, clockInMins - scheduledMins);
+      minutesLate = Math.max(0, (clockInMins || 0) - (scheduledMins || 0));
     }
-    // Same time (e.g. 07:00 → 07:00) = 0 min for entries and for daily/week totals
     const scheduledStr = (e.scheduledTime ?? '').toString().trim();
     const clockInStr = (e.clockIn ?? '').toString().trim();
     if (scheduledStr && clockInStr && scheduledStr === clockInStr) minutesLate = 0;
-    if (minutesLate === 0) skippedNoLate++;
 
-    const clockInMins = (e.clockIn && timeToMinutes(e.clockIn)) ?? Infinity;
-    const key = `${e.employeeName}|${e.date}`;
-    const existing = firstPunchMinutesByKey.get(key);
-    if (existing == null || clockInMins < existing.clockInMins) {
-      firstPunchMinutesByKey.set(key, { minutesLate, clockInMins, date: e.date });
-    }
-
-    // Include all entries with scheduled + clock-in (including on-time/early) so the UI can show first punch and 0 min late
     const locationName = locationNameByKey[e.locationKey] || e.locationKey || '—';
     entries.push({
       connecteamsUserId: e.connecteamsUserId,
@@ -666,10 +597,8 @@ async function getWeeklyTardinessFromConnecteams(weekStart, locationKeyFilter = 
       clockIn: e.clockIn,
       minutesLate,
     });
-  }
 
-  for (const { minutesLate, date } of firstPunchMinutesByKey.values()) {
-    const d = new Date(date + 'T12:00:00');
+    const d = new Date(e.date + 'T12:00:00');
     const dayKey = DAY_KEY_BY_JS_DAY[d.getDay()];
     if (dayKey) dailyTotals[dayKey] = (dailyTotals[dayKey] || 0) + minutesLate;
   }
