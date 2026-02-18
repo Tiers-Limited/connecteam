@@ -102,9 +102,15 @@ export default function Dashboard() {
 
   const payoutByLocation = summary?.payoutByLocation ?? [];
   const dailyTipsLast7 = summary?.dailyTipsLast7 ?? [];
-  const weekLabel = summary?.currentWeekStart
-    ? `${formatDate(summary.currentWeekStart)} week`
-    : 'This week';
+  const weekLabel =
+    summary?.currentWeekStart && summary?.weekEnd
+      ? (() => {
+          const startDay = parseInt(summary.currentWeekStart.slice(8, 10), 10) || 0;
+          const endDay = parseInt(summary.weekEnd.slice(8, 10), 10) || 0;
+          const month = new Date(summary.weekEnd + 'T12:00:00').toLocaleDateString('en-GB', { month: 'short' });
+          return `Previous week (${startDay}–${endDay} ${month})`;
+        })()
+      : 'Previous week';
 
   const payoutChartData = payoutByLocation.map((l) => ({ name: l.locationName, payout: l.totalPayable }));
   const dailyChartData = dailyTipsLast7.map((d) => ({
@@ -119,7 +125,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-800 dark:text-slate-100">Dashboard</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Tips, payouts, and production pool. Load data from Weekly Payout and Production Pool for charts.
+            Previous week analysis: tips, payouts, and production pool. Load data from Weekly Payout and Production Pool for the prior week.
           </p>
         </div>
         {refreshing && (
@@ -181,7 +187,7 @@ export default function Dashboard() {
         {/* Weekly Payout by Location */}
         <Card title="Weekly payout by location" className="flex flex-col">
           <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-            Current week tips payable per location.
+            Previous week (Mon–Sun) tips payable per location.
           </p>
           <div className="min-h-[280px] flex-1">
             {payoutChartData.length > 0 ? (
@@ -231,9 +237,9 @@ export default function Dashboard() {
         </Card>
 
         {/* Daily gross tips – last 7 days */}
-        <Card title="Daily gross tips (last 7 days)" className="flex flex-col">
+        <Card title="Daily gross tips (previous week)" className="flex flex-col">
           <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-            AM + PM gross tips across all locations.
+            AM + PM gross tips by day for the previous week (Mon–Sun), all locations.
           </p>
           <div className="min-h-[280px] flex-1">
             {dailyChartData.length > 0 ? (

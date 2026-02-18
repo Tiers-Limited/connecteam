@@ -241,7 +241,7 @@ export default function WeeklyPayout() {
               {locationName} — {formatWeekRange(weekStart)}
             </p>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              Weekly Gross Tips = Σ Daily Tips (Mon–Sun). Tardiness: 0–5 min → 0%; &gt;5–10 min → 15%; &gt;10 min → 20%. One tier per week. Tardiness deductions are redistributed to eligible staff (≤5 min tardiness, worked hours &gt; 0) by worked hours. Final Weekly Tips Payable = Net + Redistribution.
+              Weekly Gross Tips = Σ Daily Tips (Mon–Sun). Tardiness: 0–5 min → 0%; &gt;5–10 min → 15%; &gt;10 min → 20%. One tier per week. Tardiness deductions are redistributed to eligible staff (≤5 min tardiness, total working hours &gt; 0) by <strong>total working hours</strong> from Weekly Tardiness. Final Weekly Tips Payable = Net + Redistribution.
             </p>
           </div>
         </div>
@@ -262,7 +262,7 @@ export default function WeeklyPayout() {
               <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-800/50">
                 <p className="font-medium text-slate-700 dark:text-slate-300">Tardiness Redistribution (Staff Tips)</p>
                 <p className="mt-1 text-slate-600 dark:text-slate-400">
-                  Redistribution pool: <strong>{formatMoney(data.redistributionPool ?? 0)}</strong> (Σ tardiness deductions). Distributed to eligible staff (weekly tardiness ≤5 min, worked hours &gt; 0) by proportion of worked hours. Employees with a tardiness deduction receive $0.00 redistribution.
+                  Redistribution pool: <strong>{formatMoney(data.redistributionPool ?? 0)}</strong> (Σ tardiness deductions). Distributed to eligible staff (weekly tardiness ≤5 min, total working hours &gt; 0) by proportion of <strong>total working hours</strong> from Weekly Tardiness (Connecteam). Employees with a tardiness deduction receive $0.00 redistribution.
                 </p>
               </div>
             )}
@@ -338,6 +338,9 @@ export default function WeeklyPayout() {
                     <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-700 dark:text-slate-300" title="Σ Daily Tips (Mon–Sun), basis for deductions">
                       Weekly Gross Tips
                     </th>
+                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-700 dark:text-slate-300" title="Total working hours for the week (from Weekly Tardiness / Connecteam); used for redistribution">
+                      Working hours
+                    </th>
                     <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-700 dark:text-slate-300">
                       Weekly Tardiness (min)
                     </th>
@@ -394,6 +397,15 @@ export default function WeeklyPayout() {
                       <td className="py-3 pr-4 text-right tabular-nums font-medium text-slate-800 dark:text-slate-200" title="Sum of Mon–Sun">
                         {formatMoney(p.weeklyGrossTips ?? p.dailyTipsMonToSun)}
                       </td>
+                      <td className="py-3 pr-4 text-right tabular-nums text-slate-700 dark:text-slate-300" title="From Weekly Tardiness (Connecteam); used for redistribution">
+                        {(() => {
+                          const mins = p.totalWorkingMinutes ?? 0;
+                          if (mins <= 0) return '–';
+                          const h = Math.floor(mins / 60);
+                          const m = mins % 60;
+                          return `${h}h${m ? ` ${m}m` : ''}`;
+                        })()}
+                      </td>
                       <td className="py-3 pr-4 text-right tabular-nums">
                         {p.weeklyTardinessMinutes ?? 0}
                       </td>
@@ -412,7 +424,7 @@ export default function WeeklyPayout() {
                       <td className="py-3 pr-4 text-right tabular-nums">
                         {formatMoney(p.netWeeklyTips)}
                       </td>
-                      <td className="py-3 pr-4 text-right tabular-nums text-emerald-600 dark:text-emerald-400" title={((p.weeklyTardinessMinutes ?? 0) > 5 ? 'Not eligible (tardiness deduction applied)' : 'Tips received from redistribution pool')}>
+                      <td className="py-3 pr-4 text-right tabular-nums text-emerald-600 dark:text-emerald-400" title={((p.weeklyTardinessMinutes ?? 0) > 5 ? 'Not eligible (tardiness deduction applied)' : (p.totalWorkingMinutes ?? 0) <= 0 ? 'Not eligible (no working hours from Weekly Tardiness)' : 'Tips received from redistribution pool by share of working hours')}>
                         {formatMoney(p.tardinessRedistribution ?? 0)}
                       </td>
                       <td className="py-3 pl-4 text-right tabular-nums font-semibold text-slate-900 dark:text-slate-100">

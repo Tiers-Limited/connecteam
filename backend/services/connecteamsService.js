@@ -473,6 +473,7 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
       scheduledTime: scheduledTimeStr,
       scheduledStartMs: sched && sched.scheduledStartMs != null ? sched.scheduledStartMs : undefined,
       clockInMs: clockInTs,
+      clockOutMs: clockOutMsUse,
     });
   }
 
@@ -569,6 +570,83 @@ async function getWeeklyTardinessFromConnecteams(weekStart, locationKeyFilter = 
     }
   }
 
+  // Working minutes: same as TimeEntries — group by (employee, location, date), first clock-in / last clock-out per day, then interval = last - first, sum over week. Use timestamps (clockInMs/clockOutMs) when present so duration is correct.
+  const dayPunchesByKey = new Map();
+  for (const e of filtered) {
+    const key = `${String(e.connecteamsUserId || '').trim()}|${(e.locationKey || '').toString().toLowerCase().trim()}|${(e.date || '').slice(0, 10)}`;
+    const clockInMs = e.clockInMs != null ? e.clockInMs : null;
+    const clockOutMs = e.clockOutMs != null ? e.clockOutMs : null;
+    const clockInMins = clockInMs != null ? Math.floor(clockInMs / 60000) : timeToMinutes(e.clockIn);
+    const clockOutMins = clockOutMs != null ? Math.floor(clockOutMs / 60000) : timeToMinutes(e.clockOut);
+    if (!key || key.endsWith('||')) continue;
+    if (!dayPunchesByKey.has(key)) {
+      dayPunchesByKey.set(key, {
+        clockInMs: clockInMs ?? null,
+        clockOutMs: clockOutMs ?? null,
+        clockInMins: Number.isNaN(clockInMins) ? Infinity : clockInMins,
+        clockOutMins: Number.isNaN(clockOutMins) || clockOutMins <= 0 ? -1 : clockOutMins,
+        employeeName: (e.employeeName || '').trim(),
+      });
+    } else {
+      const row = dayPunchesByKey.get(key);
+      if (clockInMs != null && (row.clockInMs == null || clockInMs < row.clockInMs)) {
+        row.clockInMs = clockInMs;
+        row.clockInMins = Math.floor(clockInMs / 60000);
+      } else if (row.clockInMs == null && !Number.isNaN(clockInMins) && clockInMins < row.clockInMins) row.clockInMins = clockInMins;
+      if (clockOutMs != null && (row.clockOutMs == null || clockOutMs > row.clockOutMs)) {
+        row.clockOutMs = clockOutMs;
+        row.clockOutMins = Math.floor(clockOutMs / 60000);
+      } else if (row.clockOutMs == null && !Number.isNaN(clockOutMins) && clockOutMins > row.clockOutMins) row.clockOutMins = clockOutMins;
+    }
+  }
+  const workingMinutesByEmpLoc = new Map();
+  const workingMinutesByEmployee = new Map();
+  for (const [key, row] of dayPunchesByKey) {
+    let durationMins = 0;
+    if (row.clockInMs != null && row.clockOutMs != null && row.clockOutMs > row.clockInMs) {
+      durationMins = Math.max(0, Math.floor((row.clockOutMs - row.clockInMs) / 60000));
+    } else if (row.clockOutMins >= 0 && row.clockInMins < Infinity) {
+      durationMins = Math.max(0, row.clockOutMins - row.clockInMins);
+    }
+    const parts = key.split('|');
+    const connecteamsUserId = parts[0] || '';
+    const locationKey = parts[1] || '';
+    const empName = row.employeeName || connecteamsUserId;
+    if (connecteamsUserId && locationKey) {
+      const empLocKey = `${connecteamsUserId}|${locationKey}`;
+      workingMinutesByEmpLoc.set(empLocKey, (workingMinutesByEmpLoc.get(empLocKey) || 0) + durationMins);
+    }
+    if (empName) {
+      workingMinutesByEmployee.set(empName, (workingMinutesByEmployee.get(empName) || 0) + durationMins);
+    }
+  }
+  const employeeTotalWorkingMinutes = [];
+  const seenEmpLoc = new Set();
+  for (const [empLocKey, totalWorkingMinutes] of workingMinutesByEmpLoc) {
+    if (seenEmpLoc.has(empLocKey)) continue;
+    seenEmpLoc.add(empLocKey);
+    const idx = empLocKey.indexOf('|');
+    const connecteamsUserId = idx >= 0 ? empLocKey.slice(0, idx) : empLocKey;
+    const locationKey = idx >= 0 ? empLocKey.slice(idx + 1) : '';
+    const employeeName = filtered.find((e) => String(e.connecteamsUserId) === connecteamsUserId)?.employeeName || connecteamsUserId;
+    employeeTotalWorkingMinutes.push({
+      connecteamsUserId,
+      employeeName,
+      locationKey,
+      totalWorkingMinutes,
+    });
+  }
+  const totalWorkingMinutesByEmployee = Object.fromEntries(workingMinutesByEmployee);
+
+  const sampleNames = [...firstPunchByKey.values()].slice(0, 2).map((e) => e.employeeName);
+  console.log('[getWeeklyTardinessFromConnecteams] DEBUG working hours:', {
+    filteredCount: filtered.length,
+    dayPunchesCount: dayPunchesByKey.size,
+    workingMinutesByEmployeeKeys: [...workingMinutesByEmployee.keys()],
+    totalWorkingMinutesByEmployee,
+    sampleEntryNames: sampleNames,
+  });
+
   const locationNameByKey = Object.fromEntries(LOCATIONS.map((l) => [l.key, l.name]));
   const entries = [];
   const dailyTotals = { mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0, sun: 0 };
@@ -609,6 +687,8 @@ async function getWeeklyTardinessFromConnecteams(weekStart, locationKeyFilter = 
     entries,
     dailyTotals,
     weekTotal,
+    employeeTotalWorkingMinutes,
+    totalWorkingMinutesByEmployee,
   };
 }
 

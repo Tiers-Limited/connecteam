@@ -453,11 +453,18 @@ async function getWeeklyPayout(locationId, weekStartDate) {
   });
 
   const tardinessMap = new Map();
+  const workingMinutesMap = new Map();
   const tardinessRecords = await WeeklyTardiness.find({
     locationId: locationIdObj,
     weekStart,
   }).lean();
-  tardinessRecords.forEach((t) => tardinessMap.set(t.employeeId.toString(), t.totalTardinessMinutes));
+  tardinessRecords.forEach((t) => {
+    const eid = t.employeeId?.toString?.() ?? t.employeeId;
+    if (eid) {
+      tardinessMap.set(eid, t.totalTardinessMinutes);
+      workingMinutesMap.set(eid, Number(t.totalWorkingMinutes) || 0);
+    }
+  });
   console.log('[getWeeklyPayout] Tardiness from DB:', { count: tardinessRecords.length, weekStart: weekStartStr });
 
   const manualDeductionsList = await ManualDeduction.find({ locationId: locationIdObj, weekStart });
@@ -549,6 +556,8 @@ async function getWeeklyPayout(locationId, weekStartDate) {
       dailyTipsByDay: [0, 0, 0, 0, 0, 0, 0],
     };
     const tardinessMinutes = tardinessMap.get(id) ?? 0;
+    const totalWorkingMinutes = workingMinutesMap.get(id) ?? 0;
+    const workingHoursForRedistribution = totalWorkingMinutes / 60;
     const deductionPercent = getTardinessDeductionPercent(tardinessMinutes);
     const tardinessDeductionAmount = roundMoney(weeklyGrossTips * deductionPercent);
     const weeklyAfterTardiness = roundMoney(weeklyGrossTips - tardinessDeductionAmount);
@@ -571,13 +580,15 @@ async function getWeeklyPayout(locationId, weekStartDate) {
       manualDeductionReason: manual.reason,
       netWeeklyTips,
       weeklyWorkedHours,
-      eligibleForRedistribution: tardinessMinutes <= 5 && weeklyWorkedHours > 0,
+      totalWorkingMinutes,
+      workingHoursForRedistribution,
+      eligibleForRedistribution: tardinessMinutes <= 5 && workingHoursForRedistribution > 0,
     });
   }
 
-  // Tardiness Redistribution: pool = Σ tardiness deductions; eligible = tardiness ≤5 min AND worked hours > 0; share by worked hours. If no one has hours, distribute equally to all with tardiness ≤5 min.
+  // Tardiness Redistribution: pool = Σ tardiness deductions; eligible = tardiness ≤5 min AND total working hours (from Weekly Tardiness) > 0; share by total working hours. If no one has hours, distribute equally to all with tardiness ≤5 min.
   const eligibleEmployees = rows.filter((r) => r.eligibleForRedistribution);
-  let eligibleTotalHours = eligibleEmployees.reduce((sum, r) => sum + r.weeklyWorkedHours, 0);
+  let eligibleTotalHours = eligibleEmployees.reduce((sum, r) => sum + r.workingHoursForRedistribution, 0);
 
   // Fallback: if no one has worked hours but pool > 0, treat everyone with tardiness ≤5 min as eligible (equal share)
   let equalShareEligible = [];
@@ -595,7 +606,7 @@ async function getWeeklyPayout(locationId, weekStartDate) {
     let redistributed = 0;
     if (totalRedistributionPool > 0) {
       if (eligibleTotalHours > 0 && row.eligibleForRedistribution) {
-        redistributed = (row.weeklyWorkedHours / eligibleTotalHours) * totalRedistributionPool;
+        redistributed = (row.workingHoursForRedistribution / eligibleTotalHours) * totalRedistributionPool;
       } else if (equalShareEligible.length > 0 && (row.weeklyTardinessMinutes ?? 0) <= 5) {
         redistributed = totalRedistributionPool / equalShareEligible.length;
       }
@@ -650,6 +661,7 @@ async function getWeeklyPayout(locationId, weekStartDate) {
       netWeeklyTips: r.netWeeklyTips,
       tardinessRedistribution: r.tardinessRedistribution,
       finalWeeklyTipsPayable: r.finalWeeklyTipsPayable,
+      totalWorkingMinutes: r.totalWorkingMinutes,
     })),
   };
 }
