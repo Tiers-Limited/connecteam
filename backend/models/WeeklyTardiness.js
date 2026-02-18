@@ -21,6 +21,12 @@ const weeklyTardinessSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    /** Total working minutes for the week (from clock-in/clock-out). */
+    totalWorkingMinutes: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   { timestamps: true }
 );

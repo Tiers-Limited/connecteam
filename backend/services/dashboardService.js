@@ -12,8 +12,9 @@ function toDateString(d) {
 }
 
 /**
- * Get dashboard summary: locations, employee count, current week payout by location,
- * production total, daily gross tips for last 7 days.
+ * Get dashboard summary: locations, employee count, **previous week** payout by location,
+ * production total, and daily gross tips for the **previous week** (Mon–Sun).
+ * Uses the completed week before the current one (e.g. if today is Wed 18 Feb, shows 9–15 Feb).
  */
 async function getDashboardSummary() {
   const locations = await Location.find({ isActive: true }).lean();
@@ -24,14 +25,20 @@ async function getDashboardSummary() {
     employeesCount = await Employee.countDocuments({ isActive: true });
   }
   const now = new Date();
-  const weekStart = getWeekStart(now);
-  const currentWeekStart = toDateString(weekStart);
+  const thisWeekStart = getWeekStart(now);
+  const prevMon = new Date(thisWeekStart.getFullYear(), thisWeekStart.getMonth(), thisWeekStart.getDate() - 7);
+  const previousWeekStart =
+    prevMon.getFullYear() +
+    '-' +
+    String(prevMon.getMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(prevMon.getDate()).padStart(2, '0');
 
   const payoutByLocation = [];
   for (const loc of locations) {
     const cached = await WeeklyPayoutCache.findOne({
       locationId: loc._id,
-      weekStart: currentWeekStart,
+      weekStart: previousWeekStart,
     }).lean();
     let totalPayable = 0;
     if (cached?.payload?.payouts) {
@@ -49,7 +56,7 @@ async function getDashboardSummary() {
 
   let productionTotal = 0;
   try {
-    const prod = await productionService.getWeeklyProductionPayout(currentWeekStart);
+    const prod = await productionService.getWeeklyProductionPayout(previousWeekStart);
     if (prod?.payouts) {
       productionTotal = prod.payouts.reduce(
         (sum, p) => sum + (Number(p.finalWeeklyProductionPayout) || 0),
@@ -61,16 +68,14 @@ async function getDashboardSummary() {
     // ignore
   }
 
-  const sevenDaysAgo = new Date(now);
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-  sevenDaysAgo.setHours(0, 0, 0, 0);
-  const endOfToday = new Date(now);
-  endOfToday.setHours(23, 59, 59, 999);
+  const [y, mo, day] = previousWeekStart.split('-').map(Number);
+  const startOfPrevWeek = new Date(Date.UTC(y, mo - 1, day, 0, 0, 0, 0));
+  const prevWeekEnd = new Date(Date.UTC(y, mo - 1, day + 6, 23, 59, 59, 999));
 
   const dailyTips = await DailyTipInput.aggregate([
     {
       $match: {
-        date: { $gte: sevenDaysAgo, $lte: endOfToday },
+        date: { $gte: startOfPrevWeek, $lte: prevWeekEnd },
       },
     },
     {
@@ -89,10 +94,19 @@ async function getDashboardSummary() {
 
   const totalPayoutThisWeek = payoutByLocation.reduce((s, l) => s + l.totalPayable, 0);
 
+  const weekEndStr =
+    prevWeekEnd.getUTCFullYear() +
+    '-' +
+    String(prevWeekEnd.getUTCMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(prevWeekEnd.getUTCDate()).padStart(2, '0');
+
   return {
     locationsCount: locations.length,
     employeesCount,
-    currentWeekStart,
+    currentWeekStart: previousWeekStart,
+    previousWeekStart,
+    weekEnd: weekEndStr,
     totalPayoutThisWeek: Math.round(totalPayoutThisWeek * 100) / 100,
     payoutByLocation,
     productionTotal,

@@ -13,13 +13,14 @@ function toWeekStartUTC(weekStart) {
 }
 
 /**
- * Persist weekly tardiness from Connecteam payload into WeeklyTardiness collection
- * so Weekly Payout can read it. Groups by (employee, location), first punch per day, sums minutes.
- * @param {{ entries: Array<{ connecteamsUserId?: string, employeeName?: string, locationKey?: string, date?: string, clockIn?: string, minutesLate?: number }> }} payload
+ * Persist weekly tardiness and working hours from Connecteam payload into WeeklyTardiness collection.
+ * Tardiness: groups by (employee, location), first punch per day, sums minutes late.
+ * Working hours: from payload.employeeTotalWorkingMinutes (first clock-in / last clock-out per day, sum over week).
+ * @param {{ entries: Array<...>, employeeTotalWorkingMinutes?: Array<{ connecteamsUserId, employeeName, locationKey, totalWorkingMinutes }> }} payload
  * @param {string} weekStartStr - YYYY-MM-DD (Monday)
  */
 async function persistTardinessFromPayload(payload, weekStartStr) {
-  if (!payload || !Array.isArray(payload.entries) || payload.entries.length === 0) return;
+  if (!payload) return;
   const ws = toWeekStartUTC(weekStartStr);
   const locationIdByKey = {};
   for (const { key, name } of LOCATIONS) {
@@ -31,37 +32,58 @@ async function persistTardinessFromPayload(payload, weekStartStr) {
     const [h, m] = t.split(':').map(Number);
     return (h || 0) * 60 + (m || 0);
   };
-  const firstPunchByKey = new Map();
-  for (const e of payload.entries) {
-    const locKey = (e.locationKey || '').toString().toLowerCase().trim();
-    if (!locKey || !locationIdByKey[locKey]) continue;
-    const empKey = String(e.connecteamsUserId || e.employeeName || '').trim();
-    if (!empKey) continue;
-    const dateStr = (e.date || '').toString().slice(0, 10);
-    const key = `${empKey}|${locKey}|${dateStr}`;
-    const clockInMins = timeToMins(e.clockIn);
-    const minutesLate = Math.max(0, Number(e.minutesLate) || 0);
-    const existing = firstPunchByKey.get(key);
-    if (existing == null || clockInMins < existing.clockInMins) {
-      firstPunchByKey.set(key, { clockInMins, minutesLate, connecteamsUserId: e.connecteamsUserId, employeeName: e.employeeName, locationKey: locKey });
-    }
-  }
+
   const totalByEmployeeLocation = new Map();
-  for (const [, v] of firstPunchByKey) {
-    const key = `${v.connecteamsUserId || v.employeeName}|${v.locationKey}`;
-    const existing = totalByEmployeeLocation.get(key);
-    if (!existing) {
-      totalByEmployeeLocation.set(key, { totalMinutes: v.minutesLate, employeeName: v.employeeName || '' });
-    } else {
-      existing.totalMinutes += v.minutesLate;
+  if (Array.isArray(payload.entries) && payload.entries.length > 0) {
+    const firstPunchByKey = new Map();
+    for (const e of payload.entries) {
+      const locKey = (e.locationKey || '').toString().toLowerCase().trim();
+      if (!locKey || !locationIdByKey[locKey]) continue;
+      const empKey = String(e.connecteamsUserId || e.employeeName || '').trim();
+      if (!empKey) continue;
+      const dateStr = (e.date || '').toString().slice(0, 10);
+      const key = `${empKey}|${locKey}|${dateStr}`;
+      const clockInMins = timeToMins(e.clockIn);
+      const minutesLate = Math.max(0, Number(e.minutesLate) || 0);
+      const existing = firstPunchByKey.get(key);
+      if (existing == null || clockInMins < existing.clockInMins) {
+        firstPunchByKey.set(key, { clockInMins, minutesLate, connecteamsUserId: e.connecteamsUserId, employeeName: e.employeeName, locationKey: locKey });
+      }
+    }
+    for (const [, v] of firstPunchByKey) {
+      const key = `${v.connecteamsUserId || v.employeeName}|${v.locationKey}`;
+      const existing = totalByEmployeeLocation.get(key);
+      if (!existing) {
+        totalByEmployeeLocation.set(key, { totalMinutes: v.minutesLate, employeeName: v.employeeName || '' });
+      } else {
+        existing.totalMinutes += v.minutesLate;
+      }
     }
   }
-  for (const [empLocKey, { totalMinutes, employeeName: empName }] of totalByEmployeeLocation) {
+
+  const workingMinutesByEmpLoc = new Map();
+  const empTotalWorking = payload.employeeTotalWorkingMinutes || [];
+  for (const item of empTotalWorking) {
+    const empKey = String(item.connecteamsUserId || item.employeeName || '').trim();
+    const locKey = (item.locationKey || '').toString().toLowerCase().trim();
+    if (empKey && locKey) {
+      const key = `${empKey}|${locKey}`;
+      workingMinutesByEmpLoc.set(key, (workingMinutesByEmpLoc.get(key) || 0) + (Number(item.totalWorkingMinutes) || 0));
+    }
+  }
+
+  const allEmpLocKeys = new Set([...totalByEmployeeLocation.keys(), ...workingMinutesByEmpLoc.keys()]);
+  for (const empLocKey of allEmpLocKeys) {
     const lastPipe = empLocKey.lastIndexOf('|');
     const empIdOrName = lastPipe >= 0 ? empLocKey.slice(0, lastPipe) : empLocKey;
-    const locKey = lastPipe >= 0 ? empLocKey.slice(lastPipe + 1) : '';
+    const locKeyRaw = lastPipe >= 0 ? empLocKey.slice(lastPipe + 1) : '';
+    const locKey = (locKeyRaw || '').toString().toLowerCase().trim();
     const locationId = locationIdByKey[locKey];
     if (!locationId) continue;
+
+    const { totalMinutes = 0, employeeName: empName = '' } = totalByEmployeeLocation.get(empLocKey) || {};
+    const totalWorkingMinutes = workingMinutesByEmpLoc.get(empLocKey) || workingMinutesByEmpLoc.get(`${empIdOrName}|${locKey}`) || 0;
+
     let employee = await Employee.findOne({
       connecteamsUserId: String(empIdOrName),
       locationId,
@@ -75,8 +97,9 @@ async function persistTardinessFromPayload(payload, weekStartStr) {
       }).lean();
     }
     if (!employee) {
+      const item = empTotalWorking.find((i) => String(i.connecteamsUserId || i.employeeName).trim() === empIdOrName && (i.locationKey || '').toLowerCase().trim() === locKey);
       try {
-        const created = await employeeService.findOrCreateByConnecteams(String(empIdOrName), locationId, empName || empIdOrName);
+        const created = await employeeService.findOrCreateByConnecteams(String(empIdOrName), locationId, (item && item.employeeName) || empName || empIdOrName);
         employee = created && typeof created.toObject === 'function' ? created.toObject() : created;
       } catch (err) {
         console.warn('[persistTardinessFromPayload] Could not create employee:', empIdOrName, err.message);
@@ -84,9 +107,10 @@ async function persistTardinessFromPayload(payload, weekStartStr) {
       }
     }
     if (!employee) continue;
+
     await WeeklyTardiness.findOneAndUpdate(
       { employeeId: employee._id, locationId, weekStart: ws },
-      { $set: { totalTardinessMinutes: totalMinutes } },
+      { $set: { totalTardinessMinutes: totalMinutes, totalWorkingMinutes } },
       { upsert: true, new: true }
     );
   }

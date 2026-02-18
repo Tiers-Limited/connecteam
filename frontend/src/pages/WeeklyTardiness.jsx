@@ -122,6 +122,16 @@ export default function WeeklyTardiness() {
     a.employeeName.localeCompare(b.employeeName)
   );
 
+  const workingByEmployee = data?.totalWorkingMinutesByEmployee || {};
+  if (data && employeeRows.length > 0) {
+    console.log('[WeeklyTardiness] DEBUG working hours:', {
+      hasWorkingByEmployee: !!data.totalWorkingMinutesByEmployee,
+      keys: Object.keys(workingByEmployee),
+      firstRowName: employeeRows[0]?.employeeName,
+      lookupFirst: workingByEmployee[employeeRows[0]?.employeeName],
+    });
+  }
+
   // When filtering by location, recompute dailyTotals and weekTotal from filtered entries.
   const dailyTotals = { mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0, sun: 0 };
   if (selectedLocationId && location) {
@@ -298,6 +308,9 @@ export default function WeeklyTardiness() {
                     <th className="whitespace-nowrap pb-3 pl-2 text-right font-semibold text-slate-700 dark:text-slate-300">
                       Week total
                     </th>
+                    <th className="whitespace-nowrap pb-3 pl-2 text-right font-semibold text-slate-700 dark:text-slate-300">
+                      Working hours
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -349,6 +362,19 @@ export default function WeeklyTardiness() {
                         })}
                         <td className="py-2.5 pl-2 text-right tabular-nums font-medium">
                           {rowTotal}
+                        </td>
+                        <td className="py-2.5 pl-2 text-right tabular-nums text-slate-700 dark:text-slate-300">
+                          {(() => {
+                            const byEmployee = data?.totalWorkingMinutesByEmployee || {};
+                            const exact = byEmployee[rec.employeeName];
+                            const trimmedMatch = exact == null && typeof byEmployee === 'object' && Object.keys(byEmployee).length > 0
+                              ? Object.entries(byEmployee).find(([key]) => (key || '').trim() === (rec.employeeName || '').trim())?.[1]
+                              : undefined;
+                            const mins = exact ?? trimmedMatch ?? 0;
+                            const hours = Math.floor(mins / 60);
+                            const m = mins % 60;
+                            return mins > 0 ? `${hours}h${m ? ` ${m}m` : ''}` : '–';
+                          })()}
                         </td>
                       </tr>
                     );

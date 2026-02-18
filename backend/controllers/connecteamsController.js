@@ -42,11 +42,23 @@ async function getWeeklyTardiness(req, res, next) {
         locationId: cacheLocationId,
       }).lean();
       if (cached && cached.payload) {
-        return res.json({ success: true, data: cached.payload, fromCache: true });
+        const payload = cached.payload;
+        if (!payload.totalWorkingMinutesByEmployee) {
+          console.log('[getWeeklyTardiness] DEBUG cache missing totalWorkingMinutesByEmployee');
+          payload.totalWorkingMinutesByEmployee = {};
+        }
+        if (!Array.isArray(payload.employeeTotalWorkingMinutes)) payload.employeeTotalWorkingMinutes = [];
+        return res.json({ success: true, data: payload, fromCache: true });
       }
       return res.json({
         success: true,
-        data: { entries: [], dailyTotals: { mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0, sun: 0 }, weekTotal: 0 },
+        data: {
+          entries: [],
+          dailyTotals: { mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0, sun: 0 },
+          weekTotal: 0,
+          employeeTotalWorkingMinutes: [],
+          totalWorkingMinutesByEmployee: {},
+        },
         fromCache: false,
       });
     }
