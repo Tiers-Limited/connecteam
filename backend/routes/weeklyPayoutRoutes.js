@@ -5,17 +5,25 @@ const validate = require('../middlewares/validate');
 
 const router = express.Router();
 
+/** Accept YYYY-MM-DD (Monday date) for weekStart */
+const weekStartParam = param('weekStart')
+  .matches(/^\d{4}-\d{2}-\d{2}$/)
+  .withMessage('weekStart must be YYYY-MM-DD (Monday)');
+const weekStartBody = body('weekStart')
+  .matches(/^\d{4}-\d{2}-\d{2}$/)
+  .withMessage('weekStart must be YYYY-MM-DD');
+
 router.get(
   '/:locationId/:weekStart',
   param('locationId').isMongoId(),
-  param('weekStart').isISO8601().withMessage('weekStart must be ISO date (Monday)'),
+  weekStartParam,
   validate,
   weeklyPayoutController.getPayout
 );
 router.get(
   '/:locationId/:weekStart/tardiness',
   param('locationId').isMongoId(),
-  param('weekStart').isISO8601(),
+  weekStartParam,
   validate,
   weeklyPayoutController.getTardiness
 );
@@ -23,7 +31,7 @@ router.post(
   '/tardiness',
   body('employeeId').isMongoId(),
   body('locationId').isMongoId(),
-  body('weekStart').isISO8601(),
+  weekStartBody,
   body('totalTardinessMinutes').isFloat({ min: 0 }),
   validate,
   weeklyPayoutController.upsertTardiness
@@ -31,7 +39,7 @@ router.post(
 router.get(
   '/:locationId/:weekStart/manual-deductions',
   param('locationId').isMongoId(),
-  param('weekStart').isISO8601(),
+  weekStartParam,
   validate,
   weeklyPayoutController.getManualDeductions
 );
@@ -39,7 +47,7 @@ router.post(
   '/manual-deduction',
   body('employeeId').isMongoId(),
   body('locationId').isMongoId(),
-  body('weekStart').isISO8601(),
+  weekStartBody,
   body('amount').isFloat({ min: 0 }),
   body('reason').custom((value, { req }) => {
     if (Number(req.body?.amount) > 0 && !(value && String(value).trim())) {
