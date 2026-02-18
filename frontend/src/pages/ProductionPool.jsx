@@ -135,6 +135,8 @@ export default function ProductionPool() {
   }, [modalRow, closeModal]);
 
   const payouts = data?.payouts ?? [];
+  const totalPoolFromLocations = locationWisePool.reduce((sum, row) => sum + (Number(row.weeklyPool) || 0), 0);
+  const totalToDistribute = Number(data?.redistributionPool) ?? 0;
 
   return (
     <div className="space-y-6">
@@ -171,9 +173,23 @@ export default function ProductionPool() {
             <p className="font-medium text-slate-800 dark:text-slate-100">
               {formatWeekRange(weekStart)} — Production (all locations)
             </p>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              Redistribution pool: <strong>{formatMoney(data.redistributionPool ?? 0)}</strong>. Distributed by allocation % to eligible staff (tardiness ≤5 min or exempt, gross &gt; 0).
-            </p>
+            <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-400">
+              {locationWisePool.length > 0 && (
+                <p>
+                  <span className="font-medium text-slate-700 dark:text-slate-300">4% from each location:</span>{' '}
+                  {locationWisePool.map((row) => `${row.locationName}: ${formatMoney(row.weeklyPool ?? 0)}`).join(' · ')}
+                </p>
+              )}
+              <p>
+                <span className="font-medium text-slate-700 dark:text-slate-300">Total pool (4% all locations):</span>{' '}
+                <strong className="text-slate-800 dark:text-slate-100">{formatMoney(totalPoolFromLocations)}</strong>
+              </p>
+              <p>
+                <span className="font-medium text-slate-700 dark:text-slate-300">Total to distribute:</span>{' '}
+                <strong className="text-emerald-700 dark:text-emerald-300">{formatMoney(totalToDistribute)}</strong>
+                {' '}(redistribution pool to eligible staff after tardiness deductions)
+              </p>
+            </div>
           </Card>
 
           <Card title="Weekly Production Payout Table">
@@ -271,6 +287,19 @@ export default function ProductionPool() {
                       </td>
                     </tr>
                   ))}
+                  {locationWisePool.length > 0 && (
+                    <tr className="border-t-2 border-slate-300 bg-slate-100 font-semibold dark:border-slate-600 dark:bg-slate-800/70">
+                      <td className="py-3 pr-4 text-slate-800 dark:text-slate-100">Total</td>
+                      {getWeekDateColumns(weekStart).map((_, i) => (
+                        <td key={i} className="py-3 pr-3 text-right tabular-nums text-slate-800 dark:text-slate-100">
+                          {formatMoney(locationWisePool.reduce((s, row) => s + (Number((row.dailyByDay || [])[i]) || 0), 0))}
+                        </td>
+                      ))}
+                      <td className="py-3 pl-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                        {formatMoney(totalPoolFromLocations)}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

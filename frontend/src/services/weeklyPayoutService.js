@@ -7,8 +7,15 @@ import api from './api';
  */
 export async function getWeeklyPayout(locationId, weekStart, refresh = false) {
   const params = refresh ? { refresh: 'true' } : {};
-  const { data } = await api.get(`/weekly-payout/${locationId}/${weekStart}`, { params });
-  return data.data;
+  const response = await api.get(`/weekly-payout/${locationId}/${weekStart}`, { params });
+  const body = response?.data;
+  const payload = body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'data')
+    ? body.data
+    : body;
+  if (payload && typeof payload === 'object' && !Array.isArray(payload.payouts)) {
+    return { ...payload, payouts: Array.isArray(payload.payouts) ? payload.payouts : [] };
+  }
+  return payload ?? null;
 }
 
 export async function getTardiness(locationId, weekStart) {

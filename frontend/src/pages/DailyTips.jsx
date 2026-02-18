@@ -139,10 +139,27 @@ export default function DailyTips() {
     );
   }
 
+  const amGross = calculation?.inputs?.amGrossTips ?? (form.amGrossTips !== '' ? parseFloat(form.amGrossTips) : null);
+  const pmGross = calculation?.inputs?.pmGrossTips ?? (form.pmGrossTips !== '' ? parseFloat(form.pmGrossTips) : null);
+  const totalGross = (typeof amGross === 'number' && !Number.isNaN(amGross) ? amGross : 0) + (typeof pmGross === 'number' && !Number.isNaN(pmGross) ? pmGross : 0);
+  const productionDeductionDollars =
+    calculation?.inputs != null
+      ? (Number(calculation.inputs.productionDeductionAM) || 0) + (Number(calculation.inputs.productionDeductionPM) || 0)
+      : totalGross > 0
+        ? Math.round(totalGross * 0.04 * 100) / 100
+        : null;
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Daily Tips</h1>
-      <p className="text-slate-600 dark:text-slate-400">{location?.name} — Enter gross tips per shift (AM 06:00–15:00, PM 15:00–23:00). 4% is deducted for production pool.</p>
+      <p className="text-slate-600 dark:text-slate-400">
+        {location?.name} — Enter gross tips per shift (AM 06:00–15:00, PM 15:00–23:00).{' '}
+        4% is deducted for production pool
+        {productionDeductionDollars != null && (
+          <strong className="text-slate-800 dark:text-slate-200"> (${productionDeductionDollars.toFixed(2)} today)</strong>
+        )}
+        . Save tips, then <strong>Load calculation</strong> — clock data is fetched from Connecteam for this date (no need to open Time Entries).
+      </p>
 
       {/* Tip input — single row */}
       <div className="flex flex-wrap items-end gap-4 rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/30">
@@ -220,7 +237,9 @@ export default function DailyTips() {
       {calculationError && (
         <div className="rounded-lg border border-amber-200 bg-amber-50/50 px-4 py-3 dark:border-amber-800 dark:bg-amber-900/20">
           <p className="text-amber-700 dark:text-amber-400">{calculationError}</p>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Enter AM and PM gross tips above and click Save to calculate allocations.</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Enter AM and PM gross tips, click Save, then Load calculation. Clock data is loaded from Connecteam for this date; if Connecteam is unavailable, previously synced time entries are used when available.
+          </p>
         </div>
       )}
 
@@ -229,6 +248,7 @@ export default function DailyTips() {
 
           <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-3 dark:border-slate-700">
             <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
+              <span>4% production pool: <strong className="text-slate-800 dark:text-slate-200">${productionDeductionDollars?.toFixed(2) ?? '0.00'}</strong></span>
               <span>AM distributable: ${calculation.inputs?.distributableAM?.toFixed(2)}</span>
               <span>PM distributable: ${calculation.inputs?.distributablePM?.toFixed(2)}</span>
               <span>AM tip rate: ${calculation.totals?.amTipRate?.toFixed(2)}/hr</span>

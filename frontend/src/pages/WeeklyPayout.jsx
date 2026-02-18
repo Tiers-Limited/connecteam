@@ -6,30 +6,11 @@ import {
   getManualDeductions,
   upsertManualDeduction,
 } from '../services/weeklyPayoutService';
-import { getWeekStart, toDateString, formatWeekRange } from '../utils/dateUtils';
+import { getWeekStart, toDateString, formatWeekRange, getWeekDateColumns } from '../utils/dateUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
 const PAGE_SIZES = [10, 25, 50, 100];
-const STORAGE_KEY = 'weeklyPayout_data';
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-function loadPersistedData() {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-function savePersistedData(data) {
-  try {
-    if (data) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    else sessionStorage.removeItem(STORAGE_KEY);
-  } catch (_) {}
-}
 
 function formatMoney(n) {
   return '$' + (Number(n) ?? 0).toFixed(2);
@@ -40,7 +21,7 @@ export default function WeeklyPayout() {
   const [weekStart, setWeekStart] = useState(() =>
     toDateString(getWeekStart(new Date()))
   );
-  const [data, setData] = useState(loadPersistedData);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [manualEdits, setManualEdits] = useState({});
   const [saving, setSaving] = useState(false);
@@ -56,19 +37,42 @@ export default function WeeklyPayout() {
       return;
     }
     setLoading(true);
+    console.log('[WeeklyPayout] Load payout request:', { locationId: selectedLocationId, weekStart, refresh });
     getWeeklyPayout(selectedLocationId, weekStart, refresh)
       .then((res) => {
-        setData(res);
+        const payload = res && typeof res === 'object' ? res : null;
+        const count = Array.isArray(payload?.payouts) ? payload.payouts.length : 0;
+        const emptyReason = payload?.emptyReason;
+        console.log('[WeeklyPayout] Load payout response:', {
+          locationId: selectedLocationId,
+          weekStart,
+          payoutsCount: count,
+          emptyReason: emptyReason ?? '(none)',
+          locationName: payload?.locationName,
+          hasPayload: !!payload,
+          redistributionPool: payload?.redistributionPool,
+          eligibleTotalHours: payload?.eligibleTotalHours,
+        });
+        if (count === 0 && emptyReason === 'no_employees_for_location') {
+          console.log('[WeeklyPayout] No employees for this location. Backend logs (terminal) will show: employees count, tardiness cache bootstrap, time entries fetch.');
+        }
+        setData(payload);
         setPage(1);
-        toast.success(
-          refresh
-            ? `Recalculated and saved payout for ${res?.payouts?.length ?? 0} employees.`
-            : `Loaded payout for ${res?.payouts?.length ?? 0} employees.`
-        );
+        if (count === 0 && emptyReason === 'no_employees_for_location') {
+          toast.success('Loaded. No employees for this location—see message below.');
+        } else {
+          toast.success(
+            refresh
+              ? `Recalculated and saved payout for ${count} employees.`
+              : `Loaded payout for ${count} employees.`
+          );
+        }
       })
-      .catch(() => {
+      .catch((err) => {
         setData(null);
-        toast.error('Failed to load payout');
+        const msg = err.response?.data?.error || err.message || 'Failed to load payout';
+        console.error('[WeeklyPayout] Load payout failed:', { locationId: selectedLocationId, weekStart, error: msg, response: err.response?.data });
+        toast.error(msg);
       })
       .finally(() => setLoading(false));
   }, [selectedLocationId, weekStart]);
@@ -112,10 +116,6 @@ export default function WeeklyPayout() {
   }, [modalEmployee, selectedLocationId, weekStart, editManualAmount, editManualReason, closeModal, loadPayout]);
 
   useEffect(() => {
-    savePersistedData(data);
-  }, [data]);
-
-  useEffect(() => {
     if (!modalEmployee) return;
     const onEscape = (e) => {
       if (e.key === 'Escape') closeModal();
@@ -146,6 +146,7 @@ export default function WeeklyPayout() {
   const location = locations.find((l) => l._id === selectedLocationId);
   const payouts = data?.payouts ?? [];
   const locationName = data?.locationName ?? location?.name ?? '—';
+  const weekDateColumns = getWeekDateColumns(weekStart);
   const totalRows = payouts.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const currentPage = Math.min(Math.max(1, page), totalPages);
@@ -325,13 +326,13 @@ export default function WeeklyPayout() {
                     <th className="whitespace-nowrap pb-3 pr-4 text-left font-semibold text-slate-700 dark:text-slate-300">
                       Location
                     </th>
-                    {DAY_LABELS.map((label) => (
+                    {weekDateColumns.map((col) => (
                       <th
-                        key={label}
+                        key={col.dateKey}
                         className="whitespace-nowrap pb-3 pr-2 text-right font-semibold text-slate-700 dark:text-slate-300"
-                        title={`Tips for ${label}`}
+                        title={`Tips for ${col.label}`}
                       >
-                        {label}
+                        {col.label}
                       </th>
                     ))}
                     <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-700 dark:text-slate-300" title="Σ Daily Tips (Mon–Sun), basis for deductions">
@@ -386,7 +387,7 @@ export default function WeeklyPayout() {
                         {locationName}
                       </td>
                       {(p.dailyTipsByDay || [0, 0, 0, 0, 0, 0, 0]).map((dayTips, idx) => (
-                        <td key={DAY_LABELS[idx]} className="py-3 pr-2 text-right tabular-nums text-slate-700 dark:text-slate-300">
+                        <td key={weekDateColumns[idx]?.dateKey ?? idx} className="py-3 pr-2 text-right tabular-nums text-slate-700 dark:text-slate-300">
                           {formatMoney(dayTips)}
                         </td>
                       ))}
@@ -423,9 +424,20 @@ export default function WeeklyPayout() {
               </table>
             </div>
             {totalRows === 0 && (
-              <p className="py-8 text-center text-slate-500 dark:text-slate-400">
-                No payout data for this week. Enter daily tips (Phase 1) for Mon–Sun, then load again.
-              </p>
+              <div className="py-8 text-center text-slate-600 dark:text-slate-400">
+                {data?.emptyReason === 'no_employees_for_location' ? (
+                  <>
+                    <p className="font-medium text-slate-700 dark:text-slate-300">No employees found for this location.</p>
+                    <p className="mt-2 text-sm">
+                      Load payout uses Daily Tips and Weekly Tardiness from the DB (no Time Entries page needed). First: (1) Weekly Tardiness → select this location and week → Load from Connecteam (creates employees), (2) Daily Tips → enter AM/PM gross tips for each day and Save. Then click Load payout again. Check backend console for debug logs.
+                    </p>
+                  </>
+                ) : (
+                  <p>
+                    No payout data for this week. Enter daily tips (Phase 1) for Mon–Sun, then load again.
+                  </p>
+                )}
+              </div>
             )}
           </Card>
 

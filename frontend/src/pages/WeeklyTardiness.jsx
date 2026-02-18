@@ -18,6 +18,9 @@ function timeToMinutes(str) {
   return (h || 0) * 60 + (Number.isNaN(m) ? 0 : m);
 }
 
+/** getDay(): 0=Sun, 1=Mon, ... 6=Sat → day key for totals */
+const DAY_KEY_BY_JS_DAY = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
 export default function WeeklyTardiness() {
   const { selectedLocationId, setSelectedLocationId, locations } = useApp();
   const [weekStart, setWeekStart] = useState(() =>
@@ -28,14 +31,10 @@ export default function WeeklyTardiness() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
-  /** Load from DB cache when week or location changes (no Connecteam API call). */
+  /** Load from DB cache for current week and selected location so cache matches what we display. */
   const loadFromCache = useCallback(async () => {
     try {
-      const result = await getWeeklyTardiness(
-        weekStart,
-        selectedLocationId || undefined,
-        false
-      );
+      const result = await getWeeklyTardiness(weekStart, selectedLocationId || undefined, false);
       if (result && (result.entries?.length > 0 || (result.weekTotal ?? 0) > 0)) {
         setData(result);
         setPage(1);
@@ -51,28 +50,17 @@ export default function WeeklyTardiness() {
     loadFromCache();
   }, [loadFromCache]);
 
-  /** Fetch from Connecteam API and save to DB, then show data. */
+  /** Fetch from Connecteam and save to DB for current week and selected location so DB matches the page. */
   const loadTardiness = useCallback(async () => {
     setLoading(true);
     setData(null);
     setPage(1);
     try {
-      const result = await getWeeklyTardiness(
-        weekStart,
-        selectedLocationId || undefined,
-        true
-      );
+      const result = await getWeeklyTardiness(weekStart, selectedLocationId || undefined, true);
       setData(result);
-      const seen = new Set();
-      (result?.entries ?? []).forEach((entry) => {
-        const uid = entry.connecteamsUserId ?? entry.employeeName;
-        if (uid && !seen.has(uid)) {
-          seen.add(uid);
-          console.log('User:', { userId: entry.connecteamsUserId, username: entry.employeeName });
-        }
-      });
+      const locLabel = selectedLocationId ? (locations.find((l) => l._id === selectedLocationId)?.name) : 'All locations';
       toast.success(
-        `Loaded ${result?.entries?.length ?? 0} tardiness entries from Connecteam and saved to database.`
+        `Loaded ${result?.entries?.length ?? 0} tardiness entries for ${locLabel} and saved to database.`
       );
     } catch (err) {
       setData(null);
@@ -82,12 +70,15 @@ export default function WeeklyTardiness() {
     } finally {
       setLoading(false);
     }
-  }, [weekStart, selectedLocationId]);
+  }, [weekStart, selectedLocationId, locations]);
 
   const location = locations.find((l) => l._id === selectedLocationId);
-  const entries = data?.entries ?? [];
-  const dailyTotals = data?.dailyTotals ?? {};
-  const weekTotal = data?.weekTotal ?? 0;
+  const allEntries = data?.entries ?? [];
+  // Client-side filter by location when a single location is selected (no API call).
+  const entries =
+    selectedLocationId && location
+      ? allEntries.filter((e) => (e.locationName || '').trim() === (location.name || '').trim())
+      : allEntries;
   const weekDateColumns = data ? getWeekDateColumns(weekStart) : [];
 
   // Pivot: one row per employee, week dates as columns. Use earliest clock-in of the day (first punch)
@@ -96,14 +87,16 @@ export default function WeeklyTardiness() {
   for (const row of entries) {
     const key = row.employeeName;
     if (!employeeMap.has(key)) {
-      employeeMap.set(key, { employeeName: key, locationName: row.locationName, byDate: {} });
+      employeeMap.set(key, { employeeName: key, byDate: {} });
     }
     const rec = employeeMap.get(key);
     const d = row.date;
     const mins = Math.max(0, Number(row.minutesLate) || 0);
     const clockInMins = timeToMinutes(row.clockIn);
+    const locationName = row.locationName || '—';
     if (!rec.byDate[d]) {
       rec.byDate[d] = {
+        locationName,
         minutesLate: mins,
         scheduledTime: row.scheduledTime,
         clockIn: row.clockIn,
@@ -111,6 +104,7 @@ export default function WeeklyTardiness() {
       };
     } else {
       if (clockInMins < rec.byDate[d]._earliestMins) {
+        rec.byDate[d].locationName = locationName;
         rec.byDate[d].scheduledTime = row.scheduledTime;
         rec.byDate[d].clockIn = row.clockIn;
         rec.byDate[d].minutesLate = mins;
@@ -127,6 +121,23 @@ export default function WeeklyTardiness() {
   const employeeRows = Array.from(employeeMap.values()).sort((a, b) =>
     a.employeeName.localeCompare(b.employeeName)
   );
+
+  // When filtering by location, recompute dailyTotals and weekTotal from filtered entries.
+  const dailyTotals = { mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0, sun: 0 };
+  if (selectedLocationId && location) {
+    employeeRows.forEach((rec) => {
+      Object.entries(rec.byDate || {}).forEach(([dateKey, dayRec]) => {
+        const scheduledStr = (dayRec.scheduledTime ?? '').toString().trim();
+        const clockInStr = (dayRec.clockIn ?? '').toString().trim();
+        const mins = (scheduledStr && scheduledStr === clockInStr) ? 0 : Math.max(0, Number(dayRec.minutesLate) || 0);
+        const dayKey = DAY_KEY_BY_JS_DAY[new Date(dateKey + 'T12:00:00').getDay()];
+        if (dayKey) dailyTotals[dayKey] = (dailyTotals[dayKey] || 0) + mins;
+      });
+    });
+  } else {
+    Object.assign(dailyTotals, data?.dailyTotals ?? {});
+  }
+  const weekTotal = Object.values(dailyTotals).reduce((sum, n) => sum + (n || 0), 0);
 
   const totalRows = employeeRows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
@@ -276,9 +287,6 @@ export default function WeeklyTardiness() {
                     <th className="whitespace-nowrap pb-3 pr-4 text-left font-semibold text-slate-700 dark:text-slate-300">
                       Employee
                     </th>
-                    <th className="whitespace-nowrap pb-3 pr-4 text-left font-semibold text-slate-700 dark:text-slate-300">
-                      Location/Job
-                    </th>
                     {weekDateColumns.map((col) => (
                       <th
                         key={col.dateKey}
@@ -308,30 +316,34 @@ export default function WeeklyTardiness() {
                         className="hover:bg-slate-50 dark:hover:bg-slate-800/50"
                       >
                         <td className="py-2.5 pr-4 font-medium">{rec.employeeName}</td>
-                        <td className="py-2.5 pr-4">{rec.locationName}</td>
                         {weekDateColumns.map((col) => {
                           const dayRec = rec.byDate[col.dateKey];
                           const rawMinutes = dayRec?.minutesLate;
-                          // Same time (e.g. 07:00 → 07:00) = 0 min; 06:30 → 06:31 = 1 min. Show "–" when not late.
                           const scheduledStr = (dayRec?.scheduledTime ?? '').toString().trim();
                           const clockInStr = (dayRec?.clockIn ?? '').toString().trim();
                           const minutes = (scheduledStr && scheduledStr === clockInStr) ? 0 : Math.max(0, Number(rawMinutes) || 0);
                           const isLate = minutes > 0;
+                          const dayLocation = dayRec?.locationName ?? '—';
                           return (
                             <td
                               key={col.dateKey}
                               className="py-2.5 px-2 text-right tabular-nums align-top"
                             >
-                              {isLate ? (
-                                <span className="inline-block text-right">
-                                  <span className="block text-slate-600 dark:text-slate-400">
-                                    {dayRec.scheduledTime ?? '–'} → {dayRec.clockIn ?? '–'}
-                                  </span>
-                                  <span className="font-medium">{minutes} min</span>
+                              <span className="inline-block text-right">
+                                <span className="block text-slate-600 dark:text-slate-400 font-medium">
+                                  {dayLocation}
                                 </span>
-                              ) : (
-                                '–'
-                              )}
+                                {isLate ? (
+                                  <>
+                                    <span className="block text-slate-500 dark:text-slate-400 text-xs">
+                                      {dayRec.scheduledTime ?? '–'} → {dayRec.clockIn ?? '–'}
+                                    </span>
+                                    <span className="font-medium">{minutes} min</span>
+                                  </>
+                                ) : (
+                                  <span className="text-slate-400">–</span>
+                                )}
+                              </span>
                             </td>
                           );
                         })}
