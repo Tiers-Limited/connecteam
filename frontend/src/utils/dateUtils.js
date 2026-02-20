@@ -48,6 +48,16 @@ export function getWeekDateColumns(weekStart) {
   return cols;
 }
 
+/** Format a Date as YYYY-MM-DD in local time (so column keys match user-selected calendar dates). */
+export function toLocalDateString(date) {
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 /** Date columns for an arbitrary range: [{ dateKey: 'YYYY-MM-DD', label: '02 Feb' }, ...] */
 export function getDateRangeColumns(startDate, endDate) {
   const start = new Date(startDate + 'T12:00:00');
@@ -58,7 +68,7 @@ export function getDateRangeColumns(startDate, endDate) {
   while (d <= end) {
     const day = String(d.getDate()).padStart(2, '0');
     const mon = d.toLocaleDateString('en-GB', { month: 'short' });
-    cols.push({ dateKey: toDateString(d), label: `${day} ${mon}` });
+    cols.push({ dateKey: toLocalDateString(d), label: `${day} ${mon}` });
     d.setDate(d.getDate() + 1);
   }
   return cols;

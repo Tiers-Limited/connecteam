@@ -2,12 +2,10 @@ import { useState, useCallback, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useApp } from '../context/AppContext';
 import { getWeeklyTardiness } from '../services/weeklyTardinessService';
-import { toDateString, getWeekStart, formatWeekRange, getWeekDateColumns } from '../utils/dateUtils';
+import { toDateString, getWeekStart, getWeekEnd, getDateRangeColumns, formatDate } from '../utils/dateUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const PAGE_SIZES = [10, 25, 50, 100];
 
 /** Parse "HH:mm" to minutes since midnight for comparison (earliest clock-in = first punch of day) */
@@ -18,49 +16,45 @@ function timeToMinutes(str) {
   return (h || 0) * 60 + (Number.isNaN(m) ? 0 : m);
 }
 
-/** getDay(): 0=Sun, 1=Mon, ... 6=Sat → day key for totals */
-const DAY_KEY_BY_JS_DAY = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+function getDefaultDateRange() {
+  const mon = getWeekStart(new Date());
+  const sun = getWeekEnd(mon);
+  return { start: toDateString(mon), end: toDateString(sun) };
+}
 
 export default function WeeklyTardiness() {
   const { selectedLocationId, setSelectedLocationId, locations } = useApp();
-  const [weekStart, setWeekStart] = useState(() =>
-    toDateString(getWeekStart(new Date()))
-  );
+  const defaultRange = getDefaultDateRange();
+  const [startDate, setStartDate] = useState(defaultRange.start);
+  const [endDate, setEndDate] = useState(defaultRange.end);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
-  /** Load from DB cache for current week and selected location so cache matches what we display. */
-  const loadFromCache = useCallback(async () => {
-    try {
-      const result = await getWeeklyTardiness(weekStart, selectedLocationId || undefined, false);
-      if (result && (result.entries?.length > 0 || (result.weekTotal ?? 0) > 0)) {
-        setData(result);
-        setPage(1);
-      } else {
-        setData(null);
-      }
-    } catch {
-      setData(null);
-    }
-  }, [weekStart, selectedLocationId]);
-
-  useEffect(() => {
-    loadFromCache();
-  }, [loadFromCache]);
-
-  /** Fetch from Connecteam and save to DB for current week and selected location so DB matches the page. */
+  /** Load tardiness for the selected date range from Connecteam. */
   const loadTardiness = useCallback(async () => {
+    const start = startDate.trim().slice(0, 10);
+    const end = endDate.trim().slice(0, 10);
+    if (!start || !end || new Date(end + 'T12:00:00') < new Date(start + 'T12:00:00')) {
+      toast.error('Please select a valid date range (From ≤ To).');
+      return;
+    }
     setLoading(true);
     setData(null);
     setPage(1);
     try {
-      const result = await getWeeklyTardiness(weekStart, selectedLocationId || undefined, true);
+      const result = await getWeeklyTardiness(
+        start,
+        selectedLocationId || undefined,
+        false,
+        start,
+        end
+      );
       setData(result);
       const locLabel = selectedLocationId ? (locations.find((l) => l._id === selectedLocationId)?.name) : 'All locations';
       toast.success(
-        `Loaded ${result?.entries?.length ?? 0} tardiness entries for ${locLabel} and saved to database.`
+        `Loaded ${result?.entries?.length ?? 0} tardiness entries for ${locLabel} (${start} – ${end}).`
       );
     } catch (err) {
       setData(null);
@@ -70,7 +64,7 @@ export default function WeeklyTardiness() {
     } finally {
       setLoading(false);
     }
-  }, [weekStart, selectedLocationId, locations]);
+  }, [startDate, endDate, selectedLocationId, locations]);
 
   const location = locations.find((l) => l._id === selectedLocationId);
   const allEntries = data?.entries ?? [];
@@ -79,7 +73,25 @@ export default function WeeklyTardiness() {
     selectedLocationId && location
       ? allEntries.filter((e) => (e.locationName || '').trim() === (location.name || '').trim())
       : allEntries;
-  const weekDateColumns = data ? getWeekDateColumns(weekStart) : [];
+  const rangeStart = data?.dateRange?.startDate ?? startDate;
+  const rangeEnd = data?.dateRange?.endDate ?? endDate;
+  const dateColumns = data && rangeStart && rangeEnd
+    ? getDateRangeColumns(rangeStart, rangeEnd)
+    : [];
+
+  // DEBUG: log API entries and date keys to trace why single-day (e.g. 12 Jan) shows nothing
+  if (data && entries.length > 0) {
+    console.log('[WeeklyTardiness] date range from API/form:', { rangeStart, rangeEnd });
+    console.log('[WeeklyTardiness] column dateKeys:', dateColumns.map((c) => c.dateKey));
+    console.log('[WeeklyTardiness] API entries (date, clockIn, employeeName, minutesLate):', entries.map((e) => ({
+      date: e.date,
+      dateNormalized: (e.date != null ? String(e.date).trim() : '').slice(0, 10),
+      clockIn: e.clockIn,
+      scheduledTime: e.scheduledTime,
+      employeeName: e.employeeName,
+      minutesLate: e.minutesLate,
+    })));
+  }
 
   // Pivot: one row per employee, week dates as columns. Use earliest clock-in of the day (first punch)
   // and that punch's minutes late only. If first punch is before scheduled time → 0 min late.
@@ -90,7 +102,7 @@ export default function WeeklyTardiness() {
       employeeMap.set(key, { employeeName: key, byDate: {} });
     }
     const rec = employeeMap.get(key);
-    const d = row.date;
+    const d = (row.date != null ? String(row.date).trim() : '').slice(0, 10);
     const mins = Math.max(0, Number(row.minutesLate) || 0);
     const clockInMins = timeToMinutes(row.clockIn);
     const locationName = row.locationName || '—';
@@ -122,32 +134,36 @@ export default function WeeklyTardiness() {
     a.employeeName.localeCompare(b.employeeName)
   );
 
-  const workingByEmployee = data?.totalWorkingMinutesByEmployee || {};
-  if (data && employeeRows.length > 0) {
-    console.log('[WeeklyTardiness] DEBUG working hours:', {
-      hasWorkingByEmployee: !!data.totalWorkingMinutesByEmployee,
-      keys: Object.keys(workingByEmployee),
-      firstRowName: employeeRows[0]?.employeeName,
-      lookupFirst: workingByEmployee[employeeRows[0]?.employeeName],
+  // DEBUG: log per-employee byDate keys and clock-in so we can see mismatch with column dateKeys
+  if (data && employeeRows.length > 0 && dateColumns.length > 0) {
+    console.log('[WeeklyTardiness] employee byDate keys vs column dateKeys:');
+    employeeRows.forEach((rec) => {
+      const byDateKeys = Object.keys(rec.byDate || {});
+      const sample = byDateKeys.slice(0, 3).map((k) => ({
+        dateKey: k,
+        clockIn: rec.byDate[k]?.clockIn,
+        minutesLate: rec.byDate[k]?.minutesLate,
+      }));
+      const colKeys = dateColumns.map((c) => c.dateKey);
+      const match = colKeys.every((ck) => byDateKeys.includes(ck));
+      console.log(`  ${rec.employeeName}: byDate keys=[${byDateKeys.join(', ')}], sample=`, sample, 'columnKeysMatch=', match);
     });
   }
 
-  // When filtering by location, recompute dailyTotals and weekTotal from filtered entries.
-  const dailyTotals = { mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0, sun: 0 };
-  if (selectedLocationId && location) {
-    employeeRows.forEach((rec) => {
-      Object.entries(rec.byDate || {}).forEach(([dateKey, dayRec]) => {
-        const scheduledStr = (dayRec.scheduledTime ?? '').toString().trim();
-        const clockInStr = (dayRec.clockIn ?? '').toString().trim();
-        const mins = (scheduledStr && scheduledStr === clockInStr) ? 0 : Math.max(0, Number(dayRec.minutesLate) || 0);
-        const dayKey = DAY_KEY_BY_JS_DAY[new Date(dateKey + 'T12:00:00').getDay()];
-        if (dayKey) dailyTotals[dayKey] = (dailyTotals[dayKey] || 0) + mins;
-      });
+  const workingByEmployee = data?.totalWorkingMinutesByEmployee || {};
+
+  // Totals per date (for selected range) and grand total
+  const totalsByDate = {};
+  dateColumns.forEach((col) => { totalsByDate[col.dateKey] = 0; });
+  employeeRows.forEach((rec) => {
+    Object.entries(rec.byDate || {}).forEach(([dateKey, dayRec]) => {
+      const scheduledStr = (dayRec.scheduledTime ?? '').toString().trim();
+      const clockInStr = (dayRec.clockIn ?? '').toString().trim();
+      const mins = (scheduledStr && scheduledStr === clockInStr) ? 0 : Math.max(0, Number(dayRec.minutesLate) || 0);
+      if (totalsByDate[dateKey] !== undefined) totalsByDate[dateKey] = (totalsByDate[dateKey] || 0) + mins;
     });
-  } else {
-    Object.assign(dailyTotals, data?.dailyTotals ?? {});
-  }
-  const weekTotal = Object.values(dailyTotals).reduce((sum, n) => sum + (n || 0), 0);
+  });
+  const rangeTotal = Object.values(totalsByDate).reduce((sum, n) => sum + (n || 0), 0);
 
   const totalRows = employeeRows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
@@ -181,12 +197,23 @@ export default function WeeklyTardiness() {
           </div>
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-slate-600 dark:text-slate-400">
-              Week (Mon–Sun)
+              From date
             </label>
             <input
               type="date"
-              value={weekStart}
-              onChange={(e) => setWeekStart(e.target.value)}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-slate-600 dark:text-slate-400">
+              To date
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
             />
           </div>
@@ -227,15 +254,14 @@ export default function WeeklyTardiness() {
         {selectedLocationId && location
           ? `${location.name} — `
           : 'All locations — '}
-        {formatWeekRange(weekStart)}. Tardiness = minutes late (clock-in after
-        scheduled start). Data from Connecteam schedulers and time clock.
+        Select <strong>From date</strong> and <strong>To date</strong>, then click <strong>Load from Connecteam</strong>. Tardiness = minutes late (clock-in after scheduled start). Data from Connecteam.
       </p>
 
       {!data && !loading && (
         <Card>
           <p className="py-6 text-center text-slate-500 dark:text-slate-400">
-            Select week (and optionally a location), then click{' '}
-            <strong>Load from Connecteam</strong> to fetch tardiness data.
+            Select date range (From and To) and optionally a location, then click{' '}
+            <strong>Load from Connecteam</strong> to fetch tardiness data for those days.
           </p>
         </Card>
       )}
@@ -297,7 +323,7 @@ export default function WeeklyTardiness() {
                     <th className="whitespace-nowrap pb-3 pr-4 text-left font-semibold text-slate-700 dark:text-slate-300">
                       Employee
                     </th>
-                    {weekDateColumns.map((col) => (
+                    {dateColumns.map((col) => (
                       <th
                         key={col.dateKey}
                         className="whitespace-nowrap pb-3 px-2 text-right font-semibold text-slate-700 dark:text-slate-300"
@@ -306,7 +332,7 @@ export default function WeeklyTardiness() {
                       </th>
                     ))}
                     <th className="whitespace-nowrap pb-3 pl-2 text-right font-semibold text-slate-700 dark:text-slate-300">
-                      Week total
+                      Total
                     </th>
                     <th className="whitespace-nowrap pb-3 pl-2 text-right font-semibold text-slate-700 dark:text-slate-300">
                       Working hours
@@ -315,7 +341,7 @@ export default function WeeklyTardiness() {
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {paginatedRows.map((rec, i) => {
-                    const rowTotal = weekDateColumns.reduce((sum, col) => {
+                    const rowTotal = dateColumns.reduce((sum, col) => {
                       const dayRec = rec.byDate[col.dateKey];
                       const raw = dayRec?.minutesLate ?? 0;
                       const s = (dayRec?.scheduledTime ?? '').toString().trim();
@@ -329,7 +355,7 @@ export default function WeeklyTardiness() {
                         className="hover:bg-slate-50 dark:hover:bg-slate-800/50"
                       >
                         <td className="py-2.5 pr-4 font-medium">{rec.employeeName}</td>
-                        {weekDateColumns.map((col) => {
+                        {dateColumns.map((col) => {
                           const dayRec = rec.byDate[col.dateKey];
                           const rawMinutes = dayRec?.minutesLate;
                           const scheduledStr = (dayRec?.scheduledTime ?? '').toString().trim();
@@ -384,47 +410,49 @@ export default function WeeklyTardiness() {
             </div>
             {employeeRows.length === 0 && (
               <p className="py-8 text-center text-slate-500 dark:text-slate-400">
-                No tardiness in this week for the selected filters.
+                No tardiness in the selected date range for the selected filters.
               </p>
             )}
           </Card>
 
-          <Card title="Weekly total tardiness (Mon–Sun)">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[600px] text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-700">
-                    {DAY_LABELS.map((label) => (
-                      <th
-                        key={label}
-                        className="whitespace-nowrap pb-3 text-right font-semibold text-slate-700 dark:text-slate-300"
-                      >
-                        {label}
+          {dateColumns.length > 0 && (
+            <Card title={`Total tardiness (${formatDate(rangeStart)} – ${formatDate(rangeEnd)})`}>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[400px] text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-700">
+                      {dateColumns.map((col) => (
+                        <th
+                          key={col.dateKey}
+                          className="whitespace-nowrap pb-3 px-2 text-right font-semibold text-slate-700 dark:text-slate-300"
+                        >
+                          {col.label}
+                        </th>
+                      ))}
+                      <th className="whitespace-nowrap pb-3 pl-2 text-right font-semibold text-slate-700 dark:text-slate-300">
+                        Total
                       </th>
-                    ))}
-                    <th className="whitespace-nowrap pb-3 text-right font-semibold text-slate-700 dark:text-slate-300">
-                      Week total
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="divide-x divide-slate-200 dark:divide-slate-700">
-                    {DAY_KEYS.map((key) => (
-                      <td
-                        key={key}
-                        className="py-3 text-right tabular-nums text-slate-800 dark:text-slate-200"
-                      >
-                        {dailyTotals[key] ?? 0} min
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="divide-x divide-slate-200 dark:divide-slate-700">
+                      {dateColumns.map((col) => (
+                        <td
+                          key={col.dateKey}
+                          className="py-3 text-right tabular-nums text-slate-800 dark:text-slate-200"
+                        >
+                          {totalsByDate[col.dateKey] ?? 0} min
+                        </td>
+                      ))}
+                      <td className="py-3 text-right tabular-nums font-semibold text-slate-800 dark:text-slate-200">
+                        {rangeTotal} min
                       </td>
-                    ))}
-                    <td className="py-3 text-right tabular-nums font-semibold text-slate-800 dark:text-slate-200">
-                      {weekTotal} min
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </Card>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
         </>
       )}
     </div>

@@ -10,17 +10,52 @@ const WeeklyTardinessCache = require('../models/WeeklyTardinessCache');
 const { LOCATIONS } = require('../utils/constants');
 
 /**
- * GET /connecteams/weekly-tardiness?weekStart=YYYY-MM-DD&locationId=optional&refresh=optional
- * Returns tardiness detail (employee, location/job, scheduled, clock-in, minutes late) and daily totals Mon–Sun + week total.
- * Loads from DB cache when available; use refresh=true to force fetch from Connecteam API and update cache.
+ * GET /connecteams/weekly-tardiness
+ * Query: weekStart=YYYY-MM-DD (Monday) OR startDate=YYYY-MM-DD&endDate=YYYY-MM-DD, locationId=optional, refresh=optional
+ * Returns tardiness detail (employee, location/job, scheduled, clock-in, minutes late) and daily totals + total.
+ * With weekStart: uses DB cache when available; refresh=true forces fetch. With startDate+endDate: always fetches (no cache).
  */
 async function getWeeklyTardiness(req, res, next) {
   try {
-    const { weekStart, locationId, refresh } = req.query;
+    const { weekStart, startDate, endDate, locationId, refresh } = req.query;
+    const useDateRange =
+      startDate && typeof startDate === 'string' && endDate && typeof endDate === 'string' &&
+      startDate.trim() && endDate.trim();
+
+    let locationKeyFilter = null;
+    if (locationId) {
+      const loc = await locationService.getById(locationId);
+      if (loc?.name) {
+        const found = LOCATIONS.find(
+          (l) => (l.name || '').toLowerCase() === (loc.name || '').toLowerCase()
+        );
+        if (found) locationKeyFilter = found.key;
+      }
+    }
+
+    if (useDateRange) {
+      const start = (startDate || '').trim().slice(0, 10);
+      const end = (endDate || '').trim().slice(0, 10);
+      const startD = new Date(start + 'T12:00:00');
+      const endD = new Date(end + 'T12:00:00');
+      if (isNaN(startD.getTime()) || isNaN(endD.getTime()) || endD < startD) {
+        return res.status(400).json({
+          success: false,
+          error: 'startDate and endDate must be valid YYYY-MM-DD with endDate >= startDate',
+        });
+      }
+      const data = await connecteamsService.getTardinessFromConnecteamsByDateRange(start, end, locationKeyFilter);
+      return res.json({
+        success: true,
+        data: { ...data, dateRange: { startDate: start, endDate: end } },
+        fromCache: false,
+      });
+    }
+
     if (!weekStart || typeof weekStart !== 'string') {
       return res.status(400).json({
         success: false,
-        error: 'weekStart query param is required (YYYY-MM-DD, Monday)',
+        error: 'weekStart (YYYY-MM-DD, Monday) or startDate+endDate query params are required',
       });
     }
     const start = new Date(weekStart + 'T12:00:00');
@@ -44,7 +79,6 @@ async function getWeeklyTardiness(req, res, next) {
       if (cached && cached.payload) {
         const payload = cached.payload;
         if (!payload.totalWorkingMinutesByEmployee) {
-          console.log('[getWeeklyTardiness] DEBUG cache missing totalWorkingMinutesByEmployee');
           payload.totalWorkingMinutesByEmployee = {};
         }
         if (!Array.isArray(payload.employeeTotalWorkingMinutes)) payload.employeeTotalWorkingMinutes = [];
@@ -63,16 +97,6 @@ async function getWeeklyTardiness(req, res, next) {
       });
     }
 
-    let locationKeyFilter = null;
-    if (locationId) {
-      const loc = await locationService.getById(locationId);
-      if (loc?.name) {
-        const found = LOCATIONS.find(
-          (l) => (l.name || '').toLowerCase() === (loc.name || '').toLowerCase()
-        );
-        if (found) locationKeyFilter = found.key;
-      }
-    }
     const data = await connecteamsService.getWeeklyTardinessFromConnecteams(
       weekStartNorm,
       locationKeyFilter

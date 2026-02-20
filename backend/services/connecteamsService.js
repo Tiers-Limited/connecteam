@@ -186,12 +186,14 @@ function dateFromTimestampInTimezone(tsSeconds, timezone) {
 }
 
 /**
- * Get date range as Unix seconds (start of startDate 00:00, end of endDate 23:59) in local interpretation.
+ * Get date range as Unix seconds (start of startDate 00:00 UTC, end of endDate 23:59:59 UTC).
+ * Using UTC so the scheduler API gets a consistent range for the requested calendar day(s)
+ * regardless of server timezone (fixes single-day requests missing schedule → scheduledTime undefined).
  */
 function getDateRangeBoundsUnixSeconds(startStr, endStr) {
-  const startMs = new Date(startStr + 'T00:00:00').getTime();
-  const endMs = new Date(endStr + 'T23:59:59').getTime();
-  if (isNaN(startMs) || isNaN(endMs)) {
+  const start = new Date(startStr + 'T00:00:00Z');
+  const end = new Date(endStr + 'T23:59:59.999Z');
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
     const s = new Date(startStr + 'T12:00:00Z');
     const e = new Date(endStr + 'T12:00:00Z');
     s.setUTCHours(0, 0, 0, 0);
@@ -202,8 +204,8 @@ function getDateRangeBoundsUnixSeconds(startStr, endStr) {
     };
   }
   return {
-    startTime: Math.floor(startMs / 1000),
-    endTime: Math.floor(endMs / 1000),
+    startTime: Math.floor(start.getTime() / 1000),
+    endTime: Math.floor(end.getTime() / 1000),
   };
 }
 
@@ -221,6 +223,7 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
   /** First user flow: log only for the first user that has shifts (for debugging). */
   const firstUserFlow = { userId: null, userName: null, userFromApi: null, timeActivitiesResponse: null, jobIds: null, jobResponses: [] };
   const datesInRange = getDatesInRange(startDate, endDate);
+  console.log('[getTimeEntriesFromConnecteams] request range:', startDate, '–', endDate, '| datesInRange:', datesInRange);
   const dayBounds = getDateRangeBoundsUnixSeconds(startDate, endDate);
 
   // 1. Users
@@ -446,7 +449,11 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
     const tz = (start.timezone || shift.timezone) || DEFAULT_TIMEZONE;
     const shiftDate =
       toDateString(dateFromTimestampInTimezone(Math.floor(clockInTs / 1000), tz)) || startDate;
-    if (!datesInRange.includes(shiftDate)) continue;
+    if (!datesInRange.includes(shiftDate)) {
+      const uName = userInfo ? userInfo.name : ukey;
+      if (entries.length < 5) console.log('[getTimeEntriesFromConnecteams] skip (date not in range):', { shiftDate, clockIn: formatTimeInTimezone(clockInTs, tz), employeeName: uName });
+      continue;
+    }
 
     const jobId = shift.jobId;
     let locationKey = jobId && jobIdToLocationKey[jobId] ? jobIdToLocationKey[jobId] : null;
@@ -463,20 +470,23 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
     const scheduledTimeStr =
       sched && sched.scheduledStartMs != null ? formatTimeInTimezone(sched.scheduledStartMs, tz) : undefined;
 
+    const clockInStr = formatTimeInTimezone(clockInTs, tz);
     entries.push({
       connecteamsUserId: ukey,
       employeeName: userInfo ? userInfo.name : 'User ' + ukey,
       locationKey,
       date: shiftDate,
-      clockIn: formatTimeInTimezone(clockInTs, tz),
+      clockIn: clockInStr,
       clockOut: formatTimeInTimezone(clockOutMsUse, tz),
       scheduledTime: scheduledTimeStr,
       scheduledStartMs: sched && sched.scheduledStartMs != null ? sched.scheduledStartMs : undefined,
       clockInMs: clockInTs,
       clockOutMs: clockOutMsUse,
     });
+    if (entries.length <= 3) console.log('[getTimeEntriesFromConnecteams] entry added:', { date: shiftDate, clockIn: clockInStr, employeeName: userInfo ? userInfo.name : ukey });
   }
 
+  console.log('[getTimeEntriesFromConnecteams] total entries:', entries.length, '| sample dates:', [...new Set(entries.map((e) => e.date))].slice(0, 5));
   return entries;
 }
 
@@ -512,16 +522,24 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
   return promise;
 }
 
+/** Format Date as YYYY-MM-DD in local time (so single-day range matches requested date). */
+function toLocalDateString(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function getDatesInRange(startStr, endStr) {
   const start = new Date(startStr + 'T12:00:00');
   const end = new Date(endStr + 'T12:00:00');
   if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
-    return [toDateString(startStr) || startStr];
+    return [typeof startStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(startStr) ? startStr : (toDateString(startStr) || startStr)];
   }
   const dates = [];
   const d = new Date(start);
   while (d <= end) {
-    dates.push(d.toISOString().slice(0, 10));
+    dates.push(toLocalDateString(d));
     d.setDate(d.getDate() + 1);
   }
   return dates;
@@ -538,16 +556,29 @@ const DAY_KEY_BY_JS_DAY = { 0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5:
  * @param {string|null} locationKeyFilter - optional location key to filter (e.g. 'oranjestad')
  * @returns {Promise<{ entries: Array<{ employeeName, locationName, locationKey, date, scheduledTime, clockIn, minutesLate }>, dailyTotals: Record<string, number>, weekTotal: number }>}
  */
+/**
+ * Get tardiness from Connecteams for an arbitrary date range (inclusive).
+ * Same payload shape as getWeeklyTardinessFromConnecteams.
+ */
+async function getTardinessFromConnecteamsByDateRange(startDate, endDate, locationKeyFilter = null) {
+  const start = (startDate || '').toString().trim().slice(0, 10);
+  const end = (endDate || '').toString().trim().slice(0, 10);
+  if (!start || !end) throw new Error('startDate and endDate are required (YYYY-MM-DD)');
+  const rawEntries = await getTimeEntriesFromConnecteams(start, end);
+  return buildTardinessPayload(rawEntries, locationKeyFilter);
+}
+
 async function getWeeklyTardinessFromConnecteams(weekStart, locationKeyFilter = null) {
   const startDate = toDateString(weekStart) || weekStart;
   const weekStartDate = new Date(startDate + 'T12:00:00');
   const weekEndDate = getWeekEnd(weekStartDate);
   const endDate = toDateString(weekEndDate);
 
-  // Same raw source as Time Entries page
   const rawEntries = await getTimeEntriesFromConnecteams(startDate, endDate);
+  return buildTardinessPayload(rawEntries, locationKeyFilter);
+}
 
-  // Same location filter as getConnecteamTimeEntries (case-insensitive)
+function buildTardinessPayload(rawEntries, locationKeyFilter) {
   let filtered = rawEntries;
   if (locationKeyFilter != null && String(locationKeyFilter).trim() !== '') {
     const locLower = String(locationKeyFilter).toLowerCase().trim();
@@ -718,6 +749,7 @@ module.exports = {
   connecteamsFetch,
   getTimeEntriesFromConnecteams,
   getWeeklyTardinessFromConnecteams,
+  getTardinessFromConnecteamsByDateRange,
   getActiveUsersCount,
   LOCATIONS: LOCATIONS,
 };
