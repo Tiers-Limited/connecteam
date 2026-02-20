@@ -15,7 +15,9 @@ router.post(
 
 router.get(
   '/weekly-tardiness',
-  query('weekStart').notEmpty().withMessage('weekStart required (YYYY-MM-DD, Monday)'),
+  query('weekStart').optional(),
+  query('startDate').optional(),
+  query('endDate').optional(),
   validate,
   connecteamsController.getWeeklyTardiness
 );
