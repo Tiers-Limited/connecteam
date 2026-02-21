@@ -28,22 +28,22 @@ export function formatDate(date) {
 }
 
 export function formatWeekRange(weekStart) {
-  const start = new Date(weekStart);
+  const start = new Date(weekStart + 'T12:00:00');
   const end = new Date(start);
   end.setDate(end.getDate() + 6);
   return `${formatDate(start)} – ${formatDate(end)}`;
 }
 
-/** Week day labels for table columns: [{ dateKey: 'YYYY-MM-DD', label: '02 Feb' }, ...] (Mon–Sun) */
+/** Week day labels for table columns: [{ dateKey: 'YYYY-MM-DD', label: '02 Feb' }, ...] (Mon–Sun). Uses local calendar day so America/Aruba and other TZ see correct columns. */
 export function getWeekDateColumns(weekStart) {
-  const start = new Date(weekStart);
+  const start = new Date(weekStart + 'T12:00:00');
   const cols = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     const day = String(d.getDate()).padStart(2, '0');
     const mon = d.toLocaleDateString('en-GB', { month: 'short' });
-    cols.push({ dateKey: toDateString(d), label: `${day} ${mon}` });
+    cols.push({ dateKey: toLocalDateString(d), label: `${day} ${mon}` });
   }
   return cols;
 }

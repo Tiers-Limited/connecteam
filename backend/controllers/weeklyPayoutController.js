@@ -24,12 +24,26 @@ async function getPayout(req, res, next) {
         weekStart: weekStartStr,
       }).lean();
       if (cached && cached.payload) {
+        console.log('[weeklyPayoutController.getPayout] Tip/payout data from DB (cache):', {
+          locationId,
+          weekStartStr,
+          payoutsCount: cached.payload?.payouts?.length ?? 0,
+          fromCache: true,
+        });
         return res.json({ success: true, data: cached.payload, fromCache: true });
       }
     }
 
     const options = useDateRange ? { startDate, endDate } : {};
     const result = await tipsCalculationService.getWeeklyPayout(locationId, weekStart, options);
+    console.log('[weeklyPayoutController.getPayout] Tip/payout data from DB (computed):', {
+      locationId,
+      weekStartStr,
+      useDateRange,
+      dateRange: useDateRange ? { startDate, endDate } : null,
+      payoutsCount: result?.payouts?.length ?? 0,
+      fromCache: false,
+    });
     if (!useDateRange) {
       await WeeklyPayoutCache.findOneAndUpdate(
         { locationId, weekStart: weekStartStr },

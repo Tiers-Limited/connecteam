@@ -7,7 +7,7 @@ import {
   upsertProductionManualDeduction,
   updateProductionStaff,
 } from '../services/productionService';
-import { getWeekStart, getWeekEnd, toDateString, formatWeekRange, getWeekDateColumns, getDateRangeColumns } from '../utils/dateUtils';
+import { getWeekStart, getWeekEnd, toLocalDateString, formatWeekRange, getWeekDateColumns, getDateRangeColumns } from '../utils/dateUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
@@ -18,7 +18,7 @@ function formatMoney(n) {
 function getDefaultDateRange() {
   const mon = getWeekStart(new Date());
   const sun = getWeekEnd(mon);
-  return { start: toDateString(mon), end: toDateString(sun) };
+  return { start: toLocalDateString(mon), end: toLocalDateString(sun) };
 }
 
 export default function ProductionPool() {
@@ -194,7 +194,7 @@ export default function ProductionPool() {
         <>
           <Card className="border-l-4 border-l-amber-500 bg-slate-50 dark:bg-slate-800/50">
             <p className="font-medium text-slate-800 dark:text-slate-100">
-              {data?.dateRange ? `${data.dateRange.startDate} – ${data.dateRange.endDate}` : formatWeekRange(startDate)} — Production (all locations)
+              {startDate.trim().slice(0, 10)} – {endDate.trim().slice(0, 10)} — Production (all locations)
             </p>
             <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-400">
               {locationWisePool.length > 0 && (

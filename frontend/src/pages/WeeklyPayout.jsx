@@ -6,7 +6,7 @@ import {
   getManualDeductions,
   upsertManualDeduction,
 } from '../services/weeklyPayoutService';
-import { getWeekStart, getWeekEnd, toDateString, formatWeekRange, getWeekDateColumns, getDateRangeColumns } from '../utils/dateUtils';
+import { getWeekStart, getWeekEnd, toLocalDateString, formatWeekRange, getWeekDateColumns, getDateRangeColumns } from '../utils/dateUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
@@ -19,7 +19,7 @@ function formatMoney(n) {
 function getDefaultDateRange() {
   const mon = getWeekStart(new Date());
   const sun = getWeekEnd(mon);
-  return { start: toDateString(mon), end: toDateString(sun) };
+  return { start: toLocalDateString(mon), end: toLocalDateString(sun) };
 }
 
 export default function WeeklyPayout() {
@@ -54,6 +54,14 @@ export default function WeeklyPayout() {
         const payload = res && typeof res === 'object' ? res : null;
         const count = Array.isArray(payload?.payouts) ? payload.payouts.length : 0;
         const emptyReason = payload?.emptyReason;
+        console.log('[WeeklyPayout] Tip/payout data from API:', {
+          locationId: selectedLocationId,
+          dateRange: { start, end },
+          refresh,
+          payoutsCount: count,
+          emptyReason: emptyReason ?? null,
+          payload: payload ?? null,
+        });
         setData(payload);
         setPage(1);
         if (count === 0 && emptyReason === 'no_employees_for_location') {
@@ -145,6 +153,10 @@ export default function WeeklyPayout() {
   const location = locations.find((l) => l._id === selectedLocationId);
   const payouts = data?.payouts ?? [];
   const locationName = data?.locationName ?? location?.name ?? '—';
+  // Display header uses current form selection so From/To changes update the shown range
+  const displayRangeStart = startDate.trim().slice(0, 10);
+  const displayRangeEnd = endDate.trim().slice(0, 10);
+  // Table columns use loaded data range when available so columns match API response
   const rangeStart = data?.dateRange?.startDate ?? startDate;
   const rangeEnd = data?.dateRange?.endDate ?? endDate;
   const weekDateColumns = data?.dateRange
@@ -252,7 +264,7 @@ export default function WeeklyPayout() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="font-medium text-slate-800 dark:text-slate-100">
-              {locationName} — {data?.dateRange ? `${rangeStart} – ${rangeEnd}` : formatWeekRange(startDate)}
+              {locationName} — {displayRangeStart} – {displayRangeEnd}
             </p>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
               Select <strong>From date</strong> and <strong>To date</strong>, then click <strong>Load payout</strong>. Tardiness and working hours are pulled from ConnectTeam for the selected range. Weekly Gross Tips = Σ Daily Tips in range. Tardiness: 0–5 min → 0%; &gt;5–10 min → 15%; &gt;10 min → 20%. Redistribution by <strong>total working hours</strong> from ConnectTeam.

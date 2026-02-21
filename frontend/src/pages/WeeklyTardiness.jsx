@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useApp } from '../context/AppContext';
 import { getWeeklyTardiness } from '../services/weeklyTardinessService';
-import { toDateString, getWeekStart, getWeekEnd, getDateRangeColumns, formatDate } from '../utils/dateUtils';
+import { toLocalDateString, getWeekStart, getWeekEnd, getDateRangeColumns, formatDate } from '../utils/dateUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
@@ -19,7 +19,7 @@ function timeToMinutes(str) {
 function getDefaultDateRange() {
   const mon = getWeekStart(new Date());
   const sun = getWeekEnd(mon);
-  return { start: toDateString(mon), end: toDateString(sun) };
+  return { start: toLocalDateString(mon), end: toLocalDateString(sun) };
 }
 
 export default function WeeklyTardiness() {
