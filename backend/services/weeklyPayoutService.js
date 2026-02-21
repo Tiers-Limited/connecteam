@@ -12,16 +12,32 @@ function toWeekStartUTC(weekStart) {
   return new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
 }
 
+/** Normalize week/range end to UTC end-of-day so range is explicit in DB. */
+function toWeekEndUTC(weekEndStr) {
+  if (!weekEndStr || typeof weekEndStr !== 'string') return null;
+  const str = weekEndStr.trim().slice(0, 10);
+  const [y, m, d] = str.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999));
+}
+
+/** Parse date string to UTC midnight Date for dailyBreakdown.date */
+function toDateUTC(dateStr) {
+  const str = (dateStr || '').toString().trim().slice(0, 10);
+  const [y, m, d] = str.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+}
+
 /**
  * Persist weekly tardiness and working hours from Connecteam payload into WeeklyTardiness collection.
- * Tardiness: groups by (employee, location), first punch per day, sums minutes late.
- * Working hours: from payload.employeeTotalWorkingMinutes (first clock-in / last clock-out per day, sum over week).
- * @param {{ entries: Array<...>, employeeTotalWorkingMinutes?: Array<{ connecteamsUserId, employeeName, locationKey, totalWorkingMinutes }> }} payload
- * @param {string} weekStartStr - YYYY-MM-DD (Monday)
+ * When weekEndStr is provided (date range), stores weekEnd and dailyBreakdown so you can see e.g. 478 min on 12 Jan, 488 on 13 Jan.
+ * @param {{ entries: Array<...>, employeeTotalWorkingMinutes?: Array<...>, dailyWorkingMinutes?: Array<{ connecteamsUserId, locationKey, date, workingMinutes }> }} payload
+ * @param {string} weekStartStr - YYYY-MM-DD (range start or Monday)
+ * @param {string} [weekEndStr] - YYYY-MM-DD range end (inclusive). When set, record is for [weekStart, weekEnd] with dailyBreakdown.
  */
-async function persistTardinessFromPayload(payload, weekStartStr) {
+async function persistTardinessFromPayload(payload, weekStartStr, weekEndStr = null) {
   if (!payload) return;
   const ws = toWeekStartUTC(weekStartStr);
+  const we = weekEndStr ? toWeekEndUTC(weekEndStr) : null;
   const locationIdByKey = {};
   for (const { key, name } of LOCATIONS) {
     const loc = await locationService.getByName(name);
@@ -34,6 +50,7 @@ async function persistTardinessFromPayload(payload, weekStartStr) {
   };
 
   const totalByEmployeeLocation = new Map();
+  const tardinessByEmpLocDate = new Map();
   if (Array.isArray(payload.entries) && payload.entries.length > 0) {
     const firstPunchByKey = new Map();
     for (const e of payload.entries) {
@@ -50,11 +67,12 @@ async function persistTardinessFromPayload(payload, weekStartStr) {
         firstPunchByKey.set(key, { clockInMins, minutesLate, connecteamsUserId: e.connecteamsUserId, employeeName: e.employeeName, locationKey: locKey });
       }
     }
-    for (const [, v] of firstPunchByKey) {
-      const key = `${v.connecteamsUserId || v.employeeName}|${v.locationKey}`;
-      const existing = totalByEmployeeLocation.get(key);
+    for (const [fullKey, v] of firstPunchByKey) {
+      const empLocKey = `${v.connecteamsUserId || v.employeeName}|${v.locationKey}`;
+      tardinessByEmpLocDate.set(fullKey, v.minutesLate);
+      const existing = totalByEmployeeLocation.get(empLocKey);
       if (!existing) {
-        totalByEmployeeLocation.set(key, { totalMinutes: v.minutesLate, employeeName: v.employeeName || '' });
+        totalByEmployeeLocation.set(empLocKey, { totalMinutes: v.minutesLate, employeeName: v.employeeName || '' });
       } else {
         existing.totalMinutes += v.minutesLate;
       }
@@ -72,6 +90,8 @@ async function persistTardinessFromPayload(payload, weekStartStr) {
     }
   }
 
+  const dailyWorkingMinutesList = Array.isArray(payload.dailyWorkingMinutes) ? payload.dailyWorkingMinutes : [];
+
   const allEmpLocKeys = new Set([...totalByEmployeeLocation.keys(), ...workingMinutesByEmpLoc.keys()]);
   for (const empLocKey of allEmpLocKeys) {
     const lastPipe = empLocKey.lastIndexOf('|');
@@ -83,6 +103,35 @@ async function persistTardinessFromPayload(payload, weekStartStr) {
 
     const { totalMinutes = 0, employeeName: empName = '' } = totalByEmployeeLocation.get(empLocKey) || {};
     const totalWorkingMinutes = workingMinutesByEmpLoc.get(empLocKey) || workingMinutesByEmpLoc.get(`${empIdOrName}|${locKey}`) || 0;
+
+    const dailyBreakdown = [];
+    const datesSeen = new Set();
+    for (const [key, tardinessMins] of tardinessByEmpLocDate) {
+      if (!key.startsWith(empIdOrName + '|') || !key.includes('|' + locKey + '|')) continue;
+      const dateStr = key.split('|')[2];
+      if (dateStr) datesSeen.add(dateStr);
+    }
+    for (const row of dailyWorkingMinutesList) {
+      const e = String(row.connecteamsUserId || '').trim();
+      const l = (row.locationKey || '').toString().toLowerCase().trim();
+      if (e === empIdOrName && l === locKey && row.date) datesSeen.add((row.date || '').toString().slice(0, 10));
+    }
+    const sortedDates = Array.from(datesSeen).sort();
+    for (const dateStr of sortedDates) {
+      const key = `${empIdOrName}|${locKey}|${dateStr}`;
+      const tardinessMinutes = tardinessByEmpLocDate.get(key) ?? 0;
+      const workingRow = dailyWorkingMinutesList.find(
+        (r) => String(r.connecteamsUserId || '').trim() === empIdOrName &&
+          (r.locationKey || '').toLowerCase().trim() === locKey &&
+          (r.date || '').toString().slice(0, 10) === dateStr
+      );
+      const workingMinutes = workingRow ? (Number(workingRow.workingMinutes) || 0) : 0;
+      dailyBreakdown.push({
+        date: toDateUTC(dateStr),
+        workingMinutes,
+        tardinessMinutes,
+      });
+    }
 
     let employee = await Employee.findOne({
       connecteamsUserId: String(empIdOrName),
@@ -108,11 +157,16 @@ async function persistTardinessFromPayload(payload, weekStartStr) {
     }
     if (!employee) continue;
 
-    await WeeklyTardiness.findOneAndUpdate(
-      { employeeId: employee._id, locationId, weekStart: ws },
-      { $set: { totalTardinessMinutes: totalMinutes, totalWorkingMinutes } },
-      { upsert: true, new: true }
-    );
+    const filter = { employeeId: employee._id, locationId, weekStart: ws, weekEnd: we == null ? null : we };
+    const update = {
+      $set: {
+        totalTardinessMinutes: totalMinutes,
+        totalWorkingMinutes,
+        weekEnd: we,
+        dailyBreakdown,
+      },
+    };
+    await WeeklyTardiness.findOneAndUpdate(filter, update, { upsert: true, new: true });
   }
 }
 

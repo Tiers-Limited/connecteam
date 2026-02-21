@@ -7,7 +7,7 @@ import {
   upsertProductionManualDeduction,
   updateProductionStaff,
 } from '../services/productionService';
-import { getWeekStart, toDateString, formatWeekRange, getWeekDateColumns } from '../utils/dateUtils';
+import { getWeekStart, getWeekEnd, toDateString, formatWeekRange, getWeekDateColumns, getDateRangeColumns } from '../utils/dateUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
@@ -15,10 +15,16 @@ function formatMoney(n) {
   return '$' + (Number(n) ?? 0).toFixed(2);
 }
 
+function getDefaultDateRange() {
+  const mon = getWeekStart(new Date());
+  const sun = getWeekEnd(mon);
+  return { start: toDateString(mon), end: toDateString(sun) };
+}
+
 export default function ProductionPool() {
-  const [weekStart, setWeekStart] = useState(() =>
-    toDateString(getWeekStart(new Date()))
-  );
+  const defaultRange = getDefaultDateRange();
+  const [startDate, setStartDate] = useState(defaultRange.start);
+  const [endDate, setEndDate] = useState(defaultRange.end);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [modalRow, setModalRow] = useState(null);
@@ -31,10 +37,16 @@ export default function ProductionPool() {
   const [locationWisePool, setLocationWisePool] = useState([]);
 
   const loadPayout = useCallback(() => {
+    const start = startDate.trim().slice(0, 10);
+    const end = endDate.trim().slice(0, 10);
+    if (!start || !end || new Date(end + 'T12:00:00') < new Date(start + 'T12:00:00')) {
+      toast.error('Please select a valid date range (From ≤ To).');
+      return;
+    }
     setLoading(true);
     Promise.all([
-      getWeeklyProductionPayout(weekStart),
-      getLocationWiseProductionPool(weekStart),
+      getWeeklyProductionPayout(start, start, end),
+      getLocationWiseProductionPool(start, start, end),
     ])
       .then(([res, locationList]) => {
         setData(res);
@@ -47,7 +59,7 @@ export default function ProductionPool() {
         toast.error('Failed to load production payout');
       })
       .finally(() => setLoading(false));
-  }, [weekStart]);
+  }, [startDate, endDate]);
 
   const getStaffId = (p) => (p?.productionStaffId?._id ?? p?.productionStaffId);
 
@@ -87,7 +99,7 @@ export default function ProductionPool() {
       });
       await upsertProductionManualDeduction({
         productionStaffId: staffId,
-        weekStart,
+        weekStart: startDate.trim().slice(0, 10),
         amount: amt,
         reason: amt > 0 ? reason : '',
       });
@@ -103,7 +115,7 @@ export default function ProductionPool() {
     } finally {
       setSaving(false);
     }
-  }, [modalRow, weekStart, editAllocationPercent, editSubjectToTardiness, editManualAmount, editManualReason, closeModal, loadPayout]);
+  }, [modalRow, startDate, editAllocationPercent, editSubjectToTardiness, editManualAmount, editManualReason, closeModal, loadPayout]);
 
   useEffect(() => {
     if (!data?.payouts?.length) return;
@@ -113,7 +125,7 @@ export default function ProductionPool() {
       if (id) m[id] = { amount: String(p.manualDeduction ?? 0), reason: '' };
     });
     setManualEdits(m);
-    getProductionManualDeductions(weekStart)
+    getProductionManualDeductions(startDate.trim().slice(0, 10))
       .then((list) => {
         const next = { ...m };
         list.forEach((r) => {
@@ -123,7 +135,7 @@ export default function ProductionPool() {
         setManualEdits(next);
       })
       .catch(() => {});
-  }, [weekStart, data?.payouts]);
+  }, [startDate, data?.payouts]);
 
   useEffect(() => {
     if (!modalRow) return;
@@ -146,18 +158,29 @@ export default function ProductionPool() {
             Production Pool
           </h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Weekly production staff payout. 4% of gross tips (all locations) forms the daily pool; allocation % is fixed per staff. Tardiness from Weekly Tardiness (all locations).
+            Select <strong>From date</strong> and <strong>To date</strong>, then click <strong>Load payout</strong>. Tardiness is pulled from ConnectTeam for the selected range (all locations). 4% of gross tips forms the daily pool.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-slate-600 dark:text-slate-400">
-              Week (Mon–Sun)
+              From date
             </label>
             <input
               type="date"
-              value={weekStart}
-              onChange={(e) => setWeekStart(e.target.value)}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-slate-600 dark:text-slate-400">
+              To date
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
             />
           </div>
@@ -171,7 +194,7 @@ export default function ProductionPool() {
         <>
           <Card className="border-l-4 border-l-amber-500 bg-slate-50 dark:bg-slate-800/50">
             <p className="font-medium text-slate-800 dark:text-slate-100">
-              {formatWeekRange(weekStart)} — Production (all locations)
+              {data?.dateRange ? `${data.dateRange.startDate} – ${data.dateRange.endDate}` : formatWeekRange(startDate)} — Production (all locations)
             </p>
             <div className="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-400">
               {locationWisePool.length > 0 && (
@@ -258,14 +281,14 @@ export default function ProductionPool() {
 
           <Card title="Location-wise tip pool">
             <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
-              4% of gross tips (AM + PM) per location for this week. Combined across locations = total production pool.
+              4% of gross tips (AM + PM) per location for the selected date range. Combined across locations = total production pool.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[600px] text-sm">
                 <thead>
                   <tr className="border-b-2 border-slate-200 dark:border-slate-700">
                     <th className="whitespace-nowrap pb-3 pr-4 text-left font-semibold text-slate-700 dark:text-slate-300">Location</th>
-                    {getWeekDateColumns(weekStart).map((col) => (
+                    {(data?.dateRange ? getDateRangeColumns(data.dateRange.startDate, data.dateRange.endDate) : getWeekDateColumns(startDate)).map((col) => (
                       <th key={col.dateKey} className="whitespace-nowrap pb-3 pr-3 text-right font-semibold text-slate-700 dark:text-slate-300">
                         {col.label}
                       </th>
@@ -274,7 +297,7 @@ export default function ProductionPool() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                  {locationWisePool.map((row) => (
+                    {locationWisePool.map((row) => (
                     <tr key={row.locationId} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                       <td className="py-3 pr-4 font-medium text-slate-800 dark:text-slate-100">{row.locationName}</td>
                       {(row.dailyByDay || []).map((val, i) => (
@@ -290,7 +313,7 @@ export default function ProductionPool() {
                   {locationWisePool.length > 0 && (
                     <tr className="border-t-2 border-slate-300 bg-slate-100 font-semibold dark:border-slate-600 dark:bg-slate-800/70">
                       <td className="py-3 pr-4 text-slate-800 dark:text-slate-100">Total</td>
-                      {getWeekDateColumns(weekStart).map((_, i) => (
+                      {(data?.dateRange ? getDateRangeColumns(data.dateRange.startDate, data.dateRange.endDate) : getWeekDateColumns(startDate)).map((_, i) => (
                         <td key={i} className="py-3 pr-3 text-right tabular-nums text-slate-800 dark:text-slate-100">
                           {formatMoney(locationWisePool.reduce((s, row) => s + (Number((row.dailyByDay || [])[i]) || 0), 0))}
                         </td>
@@ -315,7 +338,7 @@ export default function ProductionPool() {
       {!data && !loading && (
         <Card>
           <p className="py-8 text-center text-slate-500 dark:text-slate-400">
-            Select week and click <strong>Load payout</strong> to load production payout. Ensure daily tips are entered for all locations (4% forms the pool).
+            Select date range (From and To) and click <strong>Load payout</strong> to load production payout from ConnectTeam for that range. Ensure daily tips are entered for all locations (4% forms the pool).
           </p>
         </Card>
       )}

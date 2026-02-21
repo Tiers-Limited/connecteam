@@ -12,9 +12,13 @@ async function getPayout(req, res, next) {
   try {
     const { locationId, weekStart } = req.params;
     const refresh = req.query.refresh === 'true' || req.query.refresh === '1';
-    const weekStartStr = weekStartToYYYYMMDD(weekStart);
+    const startDate = (req.query.startDate || '').toString().trim().slice(0, 10);
+    const endDate = (req.query.endDate || '').toString().trim().slice(0, 10);
+    const useDateRange = startDate && endDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate) && /^\d{4}-\d{2}-\d{2}$/.test(endDate) &&
+      new Date(endDate + 'T12:00:00') >= new Date(startDate + 'T12:00:00');
+    const weekStartStr = useDateRange ? startDate : weekStartToYYYYMMDD(weekStart);
 
-    if (!refresh) {
+    if (!refresh && !useDateRange) {
       const cached = await WeeklyPayoutCache.findOne({
         locationId,
         weekStart: weekStartStr,
@@ -24,12 +28,15 @@ async function getPayout(req, res, next) {
       }
     }
 
-    const result = await tipsCalculationService.getWeeklyPayout(locationId, weekStart);
-    await WeeklyPayoutCache.findOneAndUpdate(
-      { locationId, weekStart: weekStartStr },
-      { $set: { payload: result } },
-      { upsert: true, new: true }
-    );
+    const options = useDateRange ? { startDate, endDate } : {};
+    const result = await tipsCalculationService.getWeeklyPayout(locationId, weekStart, options);
+    if (!useDateRange) {
+      await WeeklyPayoutCache.findOneAndUpdate(
+        { locationId, weekStart: weekStartStr },
+        { $set: { payload: result } },
+        { upsert: true, new: true }
+      );
+    }
     res.json({ success: true, data: result, fromCache: false });
   } catch (err) {
     next(err);

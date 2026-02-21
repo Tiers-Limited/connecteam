@@ -6,7 +6,7 @@ import {
   getManualDeductions,
   upsertManualDeduction,
 } from '../services/weeklyPayoutService';
-import { getWeekStart, toDateString, formatWeekRange, getWeekDateColumns } from '../utils/dateUtils';
+import { getWeekStart, getWeekEnd, toDateString, formatWeekRange, getWeekDateColumns, getDateRangeColumns } from '../utils/dateUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
@@ -16,11 +16,17 @@ function formatMoney(n) {
   return '$' + (Number(n) ?? 0).toFixed(2);
 }
 
+function getDefaultDateRange() {
+  const mon = getWeekStart(new Date());
+  const sun = getWeekEnd(mon);
+  return { start: toDateString(mon), end: toDateString(sun) };
+}
+
 export default function WeeklyPayout() {
   const { selectedLocationId, setSelectedLocationId, locations } = useApp();
-  const [weekStart, setWeekStart] = useState(() =>
-    toDateString(getWeekStart(new Date()))
-  );
+  const defaultRange = getDefaultDateRange();
+  const [startDate, setStartDate] = useState(defaultRange.start);
+  const [endDate, setEndDate] = useState(defaultRange.end);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [manualEdits, setManualEdits] = useState({});
@@ -36,26 +42,18 @@ export default function WeeklyPayout() {
       toast.error('Select a location first');
       return;
     }
+    const start = startDate.trim().slice(0, 10);
+    const end = endDate.trim().slice(0, 10);
+    if (!start || !end || new Date(end + 'T12:00:00') < new Date(start + 'T12:00:00')) {
+      toast.error('Please select a valid date range (From ≤ To).');
+      return;
+    }
     setLoading(true);
-    console.log('[WeeklyPayout] Load payout request:', { locationId: selectedLocationId, weekStart, refresh });
-    getWeeklyPayout(selectedLocationId, weekStart, refresh)
+    getWeeklyPayout(selectedLocationId, start, refresh, start, end)
       .then((res) => {
         const payload = res && typeof res === 'object' ? res : null;
         const count = Array.isArray(payload?.payouts) ? payload.payouts.length : 0;
         const emptyReason = payload?.emptyReason;
-        console.log('[WeeklyPayout] Load payout response:', {
-          locationId: selectedLocationId,
-          weekStart,
-          payoutsCount: count,
-          emptyReason: emptyReason ?? '(none)',
-          locationName: payload?.locationName,
-          hasPayload: !!payload,
-          redistributionPool: payload?.redistributionPool,
-          eligibleTotalHours: payload?.eligibleTotalHours,
-        });
-        if (count === 0 && emptyReason === 'no_employees_for_location') {
-          console.log('[WeeklyPayout] No employees for this location. Backend logs (terminal) will show: employees count, tardiness cache bootstrap, time entries fetch.');
-        }
         setData(payload);
         setPage(1);
         if (count === 0 && emptyReason === 'no_employees_for_location') {
@@ -75,7 +73,7 @@ export default function WeeklyPayout() {
         toast.error(msg);
       })
       .finally(() => setLoading(false));
-  }, [selectedLocationId, weekStart]);
+  }, [selectedLocationId, startDate, endDate]);
 
   const openDeductionModal = useCallback((p) => {
     setModalEmployee(p);
@@ -100,7 +98,7 @@ export default function WeeklyPayout() {
       await upsertManualDeduction({
         employeeId: modalEmployee.employeeId,
         locationId: selectedLocationId,
-        weekStart,
+        weekStart: startDate.trim().slice(0, 10),
         amount: amt,
         reason: amt > 0 ? reason : '',
       });
@@ -113,7 +111,7 @@ export default function WeeklyPayout() {
     } finally {
       setSaving(false);
     }
-  }, [modalEmployee, selectedLocationId, weekStart, editManualAmount, editManualReason, closeModal, loadPayout]);
+  }, [modalEmployee, selectedLocationId, startDate, editManualAmount, editManualReason, closeModal, loadPayout]);
 
   useEffect(() => {
     if (!modalEmployee) return;
@@ -131,7 +129,8 @@ export default function WeeklyPayout() {
       m[p.employeeId] = { amount: String(p.manualDeduction ?? 0), reason: '' };
     });
     setManualEdits(m);
-    getManualDeductions(selectedLocationId, weekStart)
+    const weekKey = (data?.dateRange?.startDate || startDate).trim().slice(0, 10);
+    getManualDeductions(selectedLocationId, weekKey)
       .then((list) => {
         const next = { ...m };
         list.forEach((r) => {
@@ -141,12 +140,16 @@ export default function WeeklyPayout() {
         setManualEdits(next);
       })
       .catch(() => {});
-  }, [selectedLocationId, weekStart, data?.payouts]);
+  }, [selectedLocationId, startDate, data?.payouts, data?.dateRange]);
 
   const location = locations.find((l) => l._id === selectedLocationId);
   const payouts = data?.payouts ?? [];
   const locationName = data?.locationName ?? location?.name ?? '—';
-  const weekDateColumns = getWeekDateColumns(weekStart);
+  const rangeStart = data?.dateRange?.startDate ?? startDate;
+  const rangeEnd = data?.dateRange?.endDate ?? endDate;
+  const weekDateColumns = data?.dateRange
+    ? getDateRangeColumns(rangeStart, rangeEnd)
+    : getWeekDateColumns(startDate);
   const totalRows = payouts.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const currentPage = Math.min(Math.max(1, page), totalPages);
@@ -205,12 +208,23 @@ export default function WeeklyPayout() {
           </div>
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-slate-600 dark:text-slate-400">
-              Week (Mon–Sun)
+              From date
             </label>
             <input
               type="date"
-              value={weekStart}
-              onChange={(e) => setWeekStart(e.target.value)}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-slate-600 dark:text-slate-400">
+              To date
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
             />
           </div>
@@ -238,10 +252,10 @@ export default function WeeklyPayout() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="font-medium text-slate-800 dark:text-slate-100">
-              {locationName} — {formatWeekRange(weekStart)}
+              {locationName} — {data?.dateRange ? `${rangeStart} – ${rangeEnd}` : formatWeekRange(startDate)}
             </p>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-              Weekly Gross Tips = Σ Daily Tips (Mon–Sun). Tardiness: 0–5 min → 0%; &gt;5–10 min → 15%; &gt;10 min → 20%. One tier per week. Tardiness deductions are redistributed to eligible staff (≤5 min tardiness, total working hours &gt; 0) by <strong>total working hours</strong> from Weekly Tardiness. Final Weekly Tips Payable = Net + Redistribution.
+              Select <strong>From date</strong> and <strong>To date</strong>, then click <strong>Load payout</strong>. Tardiness and working hours are pulled from ConnectTeam for the selected range. Weekly Gross Tips = Σ Daily Tips in range. Tardiness: 0–5 min → 0%; &gt;5–10 min → 15%; &gt;10 min → 20%. Redistribution by <strong>total working hours</strong> from ConnectTeam.
             </p>
           </div>
         </div>
@@ -250,7 +264,7 @@ export default function WeeklyPayout() {
       {!data && !loading && (
         <Card>
           <p className="py-8 text-center text-slate-500 dark:text-slate-400">
-            Select location and week, then click <strong>Load payout</strong> to fetch data. Ensure daily tips are entered for the week (Phase 1).
+            Select location and date range (From and To), then click <strong>Load payout</strong> to fetch data from ConnectTeam for that range. Ensure daily tips are entered for the days in range (Phase 1).
           </p>
         </Card>
       )}
@@ -389,9 +403,9 @@ export default function WeeklyPayout() {
                       <td className="py-3 pr-4 text-slate-600 dark:text-slate-400">
                         {locationName}
                       </td>
-                      {(p.dailyTipsByDay || [0, 0, 0, 0, 0, 0, 0]).map((dayTips, idx) => (
-                        <td key={weekDateColumns[idx]?.dateKey ?? idx} className="py-3 pr-2 text-right tabular-nums text-slate-700 dark:text-slate-300">
-                          {formatMoney(dayTips)}
+                      {weekDateColumns.map((col, idx) => (
+                        <td key={col.dateKey} className="py-3 pr-2 text-right tabular-nums text-slate-700 dark:text-slate-300">
+                          {formatMoney((p.dailyTipsByDay || [])[idx] ?? 0)}
                         </td>
                       ))}
                       <td className="py-3 pr-4 text-right tabular-nums font-medium text-slate-800 dark:text-slate-200" title="Sum of Mon–Sun">

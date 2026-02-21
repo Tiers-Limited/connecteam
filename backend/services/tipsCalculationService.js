@@ -12,7 +12,7 @@ const ProductionStaff = require('../models/ProductionStaff');
 const connecteamsService = require('./connecteamsService');
 const employeeService = require('./employeeService');
 const { PRODUCTION_DEDUCTION_PERCENT, SHIFT_BOUNDARIES, TARDINESS_TIERS, ROUND_DECIMALS, LOCATIONS } = require('../utils/constants');
-const { getWeekStart, getWeekEnd, timeToMinutes, toDateString, isDateInWeek } = require('../utils/dateUtils');
+const { getWeekStart, getWeekEnd, timeToMinutes, toDateString, isDateInWeek, getDatesInRange } = require('../utils/dateUtils');
 
 /**
  * Split worked time into AM (06:00-15:00) and PM (15:00-23:00) hours.
@@ -384,88 +384,192 @@ async function getEmployeeDailyTipsForDate(employeeId, locationId, date) {
 }
 
 /**
- * Phase 2: Get weekly payout for a location and week (Monday–Sunday)
- * Uses calendar dates (YYYY-MM-DD) and UTC so the week is consistent regardless of server TZ.
+ * Phase 2: Get weekly payout for a location and week (Monday–Sunday) or date range.
+ * options: { startDate, endDate } — when both set, fetches tardiness from ConnectTeam for that range and uses range for days.
  */
-async function getWeeklyPayout(locationId, weekStartDate) {
-  const inputStr = typeof weekStartDate === 'string' ? weekStartDate.slice(0, 10) : toDateString(weekStartDate);
-  // Normalize to Monday (UTC) so week is always Mon–Sun. Fixes tip for Sunday showing under Monday.
-  const d = new Date(inputStr + 'T12:00:00.000Z');
-  const utcDay = d.getUTCDay();
-  const daysToMonday = utcDay === 0 ? 6 : utcDay - 1;
-  d.setUTCDate(d.getUTCDate() - daysToMonday);
-  const weekStartStr = d.toISOString().slice(0, 10);
-  const [y, mo, day] = weekStartStr.split('-').map(Number);
-  const weekStart = new Date(Date.UTC(y, mo - 1, day, 0, 0, 0, 0));
+async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
+  const useDateRange =
+    options.startDate && typeof options.startDate === 'string' && options.endDate && typeof options.endDate === 'string' &&
+    options.startDate.trim() && options.endDate.trim();
+
+  let weekStartStr;
+  let dateStrs;
+  let weekStart;
+  let weekEndDate;
+  let y; let mo; let day;
+
+  if (useDateRange) {
+    const startDate = options.startDate.trim().slice(0, 10);
+    const endDate = options.endDate.trim().slice(0, 10);
+    dateStrs = getDatesInRange(startDate, endDate);
+    weekStartStr = startDate;
+    const [sy, smo, sday] = startDate.split('-').map(Number);
+    const [ey, emo, eday] = endDate.split('-').map(Number);
+    weekStart = new Date(Date.UTC(sy, smo - 1, sday, 0, 0, 0, 0));
+    weekEndDate = new Date(Date.UTC(ey, emo - 1, eday, 23, 59, 59, 999));
+    y = sy; mo = smo; day = sday;
+  } else {
+    const inputStr = typeof weekStartDate === 'string' ? weekStartDate.slice(0, 10) : toDateString(weekStartDate);
+    const d = new Date(inputStr + 'T12:00:00.000Z');
+    const utcDay = d.getUTCDay();
+    const daysToMonday = utcDay === 0 ? 6 : utcDay - 1;
+    d.setUTCDate(d.getUTCDate() - daysToMonday);
+    weekStartStr = d.toISOString().slice(0, 10);
+    [y, mo, day] = weekStartStr.split('-').map(Number);
+    weekStart = new Date(Date.UTC(y, mo - 1, day, 0, 0, 0, 0));
+    weekEndDate = new Date(Date.UTC(y, mo - 1, day + 6, 23, 59, 59, 999));
+    dateStrs = [];
+    for (let i = 0; i < 7; i++) {
+      const dt = new Date(Date.UTC(y, mo - 1, day + i, 0, 0, 0, 0));
+      dateStrs.push(dt.toISOString().slice(0, 10));
+    }
+  }
 
   const locationIdObj =
     typeof locationId === 'string' && mongoose.Types.ObjectId.isValid(locationId)
       ? new mongoose.Types.ObjectId(locationId)
       : locationId;
 
-  let employees = await Employee.find({ locationId: locationIdObj, isActive: true });
+  const locationDoc = await Location.findById(locationIdObj).select('name').lean();
+  const locationKey = locationDoc?.name
+    ? (LOCATIONS.find((l) => (l.name || '').toLowerCase() === (locationDoc.name || '').toLowerCase())?.key)
+    : null;
+
   const productionNames = await getProductionStaffNames();
-  employees = employees.filter((emp) => !productionNames.has((emp.name || '').toString().trim()));
 
-  if (employees.length === 0) {
-    const locationDoc = await Location.findById(locationIdObj).select('name').lean();
-    const locationName = locationDoc?.name || '(unknown)';
-    const locationKey = locationDoc?.name
-      ? (LOCATIONS.find((l) => (l.name || '').toLowerCase() === (locationDoc.name || '').toLowerCase())?.key)
-      : null;
-    console.log('[getWeeklyPayout] No employees yet. Trying bootstrap.', { locationId: String(locationIdObj), locationName, locationKey: locationKey ?? '(no match in LOCATIONS)' });
-    let cached = await WeeklyTardinessCache.findOne({ weekStart: weekStartStr, locationId: locationIdObj }).lean();
-    if (!cached?.payload?.entries?.length) {
-      cached = await WeeklyTardinessCache.findOne({ weekStart: weekStartStr, locationId: null }).lean();
-    }
-    const cacheEntriesCount = cached?.payload?.entries?.length ?? 0;
-    console.log('[getWeeklyPayout] Tardiness cache for week:', { weekStart: weekStartStr, cacheFound: !!cached, cacheEntriesCount, cacheLocationId: cached?.locationId ?? 'null' });
-    if (cacheEntriesCount > 0 && locationKey) {
-      const seen = new Set();
-      let created = 0;
-      for (const e of cached.payload.entries) {
-        const locKey = (e.locationKey || '').toString().toLowerCase().trim();
-        if (locKey !== locationKey) continue;
-        const uid = String(e.connecteamsUserId || e.employeeName || '').trim();
-        if (!uid || seen.has(uid)) continue;
-        seen.add(uid);
-        try {
-          await employeeService.findOrCreateByConnecteams(uid, locationIdObj, e.employeeName || uid);
-          created++;
-        } catch (err) {
-          console.warn('[getWeeklyPayout] Bootstrap employee:', uid, err.message);
-        }
-      }
-      console.log('[getWeeklyPayout] Bootstrap: entries for this locationKey:', seen.size, 'created/updated:', created);
-      employees = await Employee.find({ locationId: locationIdObj, isActive: true });
-      employees = employees.filter((emp) => !productionNames.has((emp.name || '').toString().trim()));
-      console.log('[getWeeklyPayout] Bootstrapped employees from tardiness cache:', { locationId: String(locationIdObj), weekStart: weekStartStr, count: employees.length });
-    } else {
-      if (!locationKey) console.log('[getWeeklyPayout] Bootstrap skipped: location name not in LOCATIONS. Check backend utils/constants.js LOCATIONS vs your location name.');
-      if (cacheEntriesCount === 0) console.log('[getWeeklyPayout] Bootstrap skipped: no tardiness cache for this week. Load Weekly Tardiness → Load from Connecteam for this week first.');
-    }
-  }
+  // When using a date range, match records stored with that range (weekStart + weekEnd). Legacy week-only records have weekEnd null.
+  const weekEndForQuery = useDateRange ? weekEndDate : null;
+  const tardinessQuery = { locationId: locationIdObj, weekStart, weekEnd: weekEndForQuery };
 
-  console.log('[getWeeklyPayout] Data from DB:', {
-    locationId: String(locationIdObj),
-    weekStart: weekStartStr,
-    employeesCount: employees.length,
-  });
+  const tardinessRecords = await WeeklyTardiness.find(tardinessQuery)
+    .populate('employeeId')
+    .lean();
 
   const tardinessMap = new Map();
   const workingMinutesMap = new Map();
-  const tardinessRecords = await WeeklyTardiness.find({
-    locationId: locationIdObj,
-    weekStart,
-  }).lean();
-  tardinessRecords.forEach((t) => {
-    const eid = t.employeeId?.toString?.() ?? t.employeeId;
-    if (eid) {
-      tardinessMap.set(eid, t.totalTardinessMinutes);
+  const dailyBreakdownByEmployeeId = new Map();
+  let employees = [];
+
+  if (tardinessRecords.length > 0) {
+    for (const t of tardinessRecords) {
+      const eid = t.employeeId?._id?.toString?.() ?? t.employeeId?.toString?.() ?? t.employeeId;
+      if (!eid) continue;
+      const emp = t.employeeId;
+      if (!emp || (emp && !emp.name)) continue;
+      tardinessMap.set(eid, t.totalTardinessMinutes ?? 0);
       workingMinutesMap.set(eid, Number(t.totalWorkingMinutes) || 0);
+      if (Array.isArray(t.dailyBreakdown) && t.dailyBreakdown.length > 0) {
+        dailyBreakdownByEmployeeId.set(eid, t.dailyBreakdown);
+      }
+      employees.push(emp && emp._id ? { _id: emp._id, name: emp.name, connecteamsUserId: emp.connecteamsUserId } : null);
     }
-  });
-  console.log('[getWeeklyPayout] Tardiness from DB:', { count: tardinessRecords.length, weekStart: weekStartStr });
+    employees = employees.filter(Boolean);
+    employees = employees.filter((emp) => !productionNames.has((emp.name || '').toString().trim()));
+  }
+
+  if (employees.length === 0) {
+    employees = await Employee.find({ locationId: locationIdObj, isActive: true });
+    employees = employees.filter((emp) => !productionNames.has((emp.name || '').toString().trim()));
+
+    if (employees.length === 0 && locationKey) {
+      if (useDateRange) {
+        const connecteamPayload = await connecteamsService.getTardinessFromConnecteamsByDateRange(
+          options.startDate.trim().slice(0, 10),
+          options.endDate.trim().slice(0, 10),
+          locationKey
+        );
+        const entries = connecteamPayload?.entries || [];
+        const seen = new Set();
+        for (const e of entries) {
+          const uid = String(e.connecteamsUserId || e.employeeName || '').trim();
+          if (!uid || seen.has(uid)) continue;
+          seen.add(uid);
+          try {
+            await employeeService.findOrCreateByConnecteams(uid, locationIdObj, e.employeeName || uid);
+          } catch (err) {
+            console.warn('[getWeeklyPayout] Bootstrap employee:', uid, err.message);
+          }
+        }
+        employees = await Employee.find({ locationId: locationIdObj, isActive: true });
+        employees = employees.filter((emp) => !productionNames.has((emp.name || '').toString().trim()));
+      } else {
+        let cached = await WeeklyTardinessCache.findOne({ weekStart: weekStartStr, locationId: locationIdObj }).lean();
+        if (!cached?.payload?.entries?.length) {
+          cached = await WeeklyTardinessCache.findOne({ weekStart: weekStartStr, locationId: null }).lean();
+        }
+        const cacheEntriesCount = cached?.payload?.entries?.length ?? 0;
+        if (cacheEntriesCount > 0) {
+          const seen = new Set();
+          for (const e of cached.payload.entries) {
+            const locKey = (e.locationKey || '').toString().toLowerCase().trim();
+            if (locKey !== locationKey) continue;
+            const uid = String(e.connecteamsUserId || e.employeeName || '').trim();
+            if (!uid || seen.has(uid)) continue;
+            seen.add(uid);
+            try {
+              await employeeService.findOrCreateByConnecteams(uid, locationIdObj, e.employeeName || uid);
+            } catch (err) {
+              console.warn('[getWeeklyPayout] Bootstrap employee:', uid, err.message);
+            }
+          }
+          employees = await Employee.find({ locationId: locationIdObj, isActive: true });
+          employees = employees.filter((emp) => !productionNames.has((emp.name || '').toString().trim()));
+        }
+      }
+    }
+
+    if (useDateRange && locationKey && employees.length > 0) {
+      const connecteamPayload = await connecteamsService.getTardinessFromConnecteamsByDateRange(
+        options.startDate.trim().slice(0, 10),
+        options.endDate.trim().slice(0, 10),
+        locationKey
+      );
+      const entries = connecteamPayload?.entries || [];
+      const firstPunchByKey = new Map();
+      for (const e of entries) {
+        const key = `${String(e.connecteamsUserId || '').trim()}|${(e.date || '').slice(0, 10)}`;
+        const clockInMins = e.clockIn ? timeToMinutes(e.clockIn) : Infinity;
+        const existing = firstPunchByKey.get(key);
+        if (!existing || clockInMins < (existing._clockInMins ?? Infinity)) {
+          firstPunchByKey.set(key, { ...e, _clockInMins: clockInMins });
+        }
+      }
+      const tardinessByConnecteamsId = new Map();
+      for (const v of firstPunchByKey.values()) {
+        const uid = String(v.connecteamsUserId || '').trim();
+        const mins = Math.max(0, Number(v.minutesLate) || 0);
+        tardinessByConnecteamsId.set(uid, (tardinessByConnecteamsId.get(uid) || 0) + mins);
+      }
+      const workingByConnecteamsId = new Map();
+      for (const item of connecteamPayload?.employeeTotalWorkingMinutes || []) {
+        const uid = String(item.connecteamsUserId || '').trim();
+        if (uid && (item.locationKey || '').toLowerCase().trim() === locationKey.toLowerCase()) {
+          workingByConnecteamsId.set(uid, (workingByConnecteamsId.get(uid) || 0) + (Number(item.totalWorkingMinutes) || 0));
+        }
+      }
+      for (const emp of employees) {
+        const uid = String(emp.connecteamsUserId || '').trim();
+        if (uid) {
+          tardinessMap.set(emp._id.toString(), tardinessByConnecteamsId.get(uid) ?? 0);
+          workingMinutesMap.set(emp._id.toString(), workingByConnecteamsId.get(uid) ?? 0);
+        }
+      }
+      const connecteamsIdsInPayload = new Set(
+        entries.map((e) => String(e.connecteamsUserId || '').trim()).filter(Boolean)
+      );
+      employees = employees.filter((emp) =>
+        connecteamsIdsInPayload.has(String(emp.connecteamsUserId || '').trim())
+      );
+    } else if (!useDateRange && tardinessMap.size === 0) {
+      for (const t of await WeeklyTardiness.find({ locationId: locationIdObj, weekStart }).lean()) {
+        const eid = t.employeeId?.toString?.() ?? t.employeeId;
+        if (eid) {
+          tardinessMap.set(eid, t.totalTardinessMinutes);
+          workingMinutesMap.set(eid, Number(t.totalWorkingMinutes) || 0);
+        }
+      }
+    }
+  }
 
   const manualDeductionsList = await ManualDeduction.find({ locationId: locationIdObj, weekStart });
   const manualMap = new Map();
@@ -473,13 +577,7 @@ async function getWeeklyPayout(locationId, weekStartDate) {
 
   const dailyTipsByEmployee = new Map();
   const employeeWeeklyHours = new Map();
-
-  const weekEndDate = new Date(Date.UTC(y, mo - 1, day + 6, 23, 59, 59, 999));
-  const dateStrs = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(Date.UTC(y, mo - 1, day + i, 0, 0, 0, 0));
-    dateStrs.push(d.toISOString().slice(0, 10));
-  }
+  const numDays = dateStrs.length;
 
   // Load DailyTipAudit for each day (tips and hours from audit – no TimeEntry or getDailyTipCalculation)
   const auditByDate = new Map();
@@ -495,14 +593,13 @@ async function getWeeklyPayout(locationId, weekStartDate) {
       daysWithTipInput.push(dateStr);
     }
   }
-  console.log('[getWeeklyPayout] Days with DailyTipAudit (from DB):', daysWithTipInput.length, 'of 7', daysWithTipInput.length ? daysWithTipInput.join(', ') : '(none – save tips in Daily Tips and run Load calculation for each day)');
 
   for (const emp of employees) {
     let weeklyGrossTips = 0;
     let weeklyWorkedHours = 0;
-    const dailyTipsByDay = [0, 0, 0, 0, 0, 0, 0];
+    const dailyTipsByDay = Array(numDays).fill(0);
 
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < numDays; i++) {
       const dateStr = dateStrs[i];
       const dateStart = new Date(dateStr + 'T00:00:00.000Z');
       const dateEnd = new Date(dateStr + 'T23:59:59.999Z');
@@ -553,7 +650,7 @@ async function getWeeklyPayout(locationId, weekStartDate) {
     const { weeklyGrossTips, weeklyWorkedHours, dailyTipsByDay } = dailyTipsByEmployee.get(id) || {
       weeklyGrossTips: 0,
       weeklyWorkedHours: 0,
-      dailyTipsByDay: [0, 0, 0, 0, 0, 0, 0],
+      dailyTipsByDay: Array(numDays).fill(0),
     };
     const tardinessMinutes = tardinessMap.get(id) ?? 0;
     const totalWorkingMinutes = workingMinutesMap.get(id) ?? 0;
@@ -567,11 +664,12 @@ async function getWeeklyPayout(locationId, weekStartDate) {
     const weeklyAfterManual = Math.max(0, weeklyAfterTardiness - manual.amount);
     const netWeeklyTips = roundMoney(weeklyAfterManual);
 
+    const dailyBreakdown = dailyBreakdownByEmployeeId.get(id) || [];
     rows.push({
       employeeId: emp._id,
       employeeName: emp.name,
       dailyTips: weeklyGrossTips,
-      dailyTipsByDay: dailyTipsByDay || [0, 0, 0, 0, 0, 0, 0],
+      dailyTipsByDay: dailyTipsByDay || Array(numDays).fill(0),
       weeklyTardinessMinutes: tardinessMinutes,
       tardinessPercent: deductionPercent * 100,
       tardinessDeduction: tardinessDeductionAmount,
@@ -583,6 +681,7 @@ async function getWeeklyPayout(locationId, weekStartDate) {
       totalWorkingMinutes,
       workingHoursForRedistribution,
       eligibleForRedistribution: tardinessMinutes <= 5 && workingHoursForRedistribution > 0,
+      dailyBreakdown,
     });
   }
 
@@ -595,12 +694,7 @@ async function getWeeklyPayout(locationId, weekStartDate) {
   if (eligibleTotalHours === 0 && totalRedistributionPool > 0) {
     equalShareEligible = rows.filter((r) => (r.weeklyTardinessMinutes ?? 0) <= 5);
   }
-  console.log('[getWeeklyPayout] Redistribution:', {
-    totalRedistributionPool: roundMoney(totalRedistributionPool),
-    eligibleCount: eligibleEmployees.length,
-    eligibleTotalHours: roundMoney(eligibleTotalHours),
-    equalShareEligibleCount: equalShareEligible.length,
-  });
+
 
   for (const row of rows) {
     let redistributed = 0;
@@ -628,7 +722,7 @@ async function getWeeklyPayout(locationId, weekStartDate) {
     }
   }
 
-  const weekEnd = new Date(Date.UTC(y, mo - 1, day + 6, 23, 59, 59, 999));
+  const weekEndStr = weekEndDate ? weekEndDate.toISOString().slice(0, 10) : new Date(Date.UTC(y, mo - 1, day + 6, 23, 59, 59, 999)).toISOString().slice(0, 10);
   const location = await Location.findById(locationIdObj).select('name');
   const emptyReason =
     rows.length === 0 && employees.length === 0
@@ -641,10 +735,11 @@ async function getWeeklyPayout(locationId, weekStartDate) {
     locationId: locationIdObj.toString ? locationIdObj.toString() : String(locationId),
     locationName: location?.name || '',
     weekStart: weekStartStr,
-    weekEnd: weekEnd.toISOString().slice(0, 10),
+    weekEnd: weekEndStr,
     redistributionPool: totalRedistributionPool,
     eligibleTotalHours,
     daysWithTipInput,
+    ...(useDateRange && { dateRange: { startDate: options.startDate.trim().slice(0, 10), endDate: options.endDate.trim().slice(0, 10) } }),
     ...(emptyReason && { emptyReason }),
     payouts: rows.map((r) => ({
       employeeId: r.employeeId,
@@ -662,6 +757,7 @@ async function getWeeklyPayout(locationId, weekStartDate) {
       tardinessRedistribution: r.tardinessRedistribution,
       finalWeeklyTipsPayable: r.finalWeeklyTipsPayable,
       totalWorkingMinutes: r.totalWorkingMinutes,
+      dailyBreakdown: r.dailyBreakdown || [],
     })),
   };
 }
