@@ -33,6 +33,7 @@ async function getWeeklyPayout(req, res, next) {
   try {
     const { weekStart } = req.params;
     const weekStartStr = typeof weekStart === 'string' ? weekStart.slice(0, 10) : String(weekStart).slice(0, 10);
+    // startDate/endDate = calendar days in app timezone (e.g. America/Aruba), same as Weekly Payout / Time Entries
     const startDate = (req.query.startDate || '').toString().trim().slice(0, 10);
     const endDate = (req.query.endDate || '').toString().trim().slice(0, 10);
     const useDateRange = startDate && endDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate) && /^\d{4}-\d{2}-\d{2}$/.test(endDate) &&
@@ -60,6 +61,7 @@ async function getLocationWisePool(req, res, next) {
   try {
     const { weekStart } = req.params;
     const weekStartStr = typeof weekStart === 'string' ? weekStart.slice(0, 10) : String(weekStart).slice(0, 10);
+    // startDate/endDate = calendar days in app timezone (e.g. America/Aruba)
     const startDate = (req.query.startDate || '').toString().trim().slice(0, 10);
     const endDate = (req.query.endDate || '').toString().trim().slice(0, 10);
     const useDateRange = startDate && endDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate) && /^\d{4}-\d{2}-\d{2}$/.test(endDate) &&

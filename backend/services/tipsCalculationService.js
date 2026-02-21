@@ -203,7 +203,10 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   const employeeHours = new Map();
   for (const [connecteamsUserId, row] of employeeFirstLast) {
     const { amHours, pmHours } = splitWorkedHours(row.firstIn, row.lastOut);
-    const employee = await Employee.findOne({ connecteamsUserId, locationId }).lean();
+    let employee = await Employee.findOne({ connecteamsUserId, locationId }).lean();
+    if (!employee && row.employeeName && String(row.employeeName).trim()) {
+      employee = await Employee.findOne({ locationId, name: String(row.employeeName).trim() }).lean();
+    }
     const employeeId = employee?._id || null;
     const employeeName = employee?.name || row.employeeName;
     const mapKey = employeeId ? employeeId.toString() : `connecteam_${connecteamsUserId}`;
@@ -605,6 +608,17 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
       daysWithTipInput.push(dateStr);
     }
   }
+  console.log('[getWeeklyPayout] Tip data from DB (DailyTipAudit):', {
+    locationId: locationIdObj?.toString(),
+    dateStrs,
+    daysWithTipInput,
+    auditDates: Array.from(auditByDate.keys()),
+    auditSummary: Array.from(auditByDate.entries()).map(([d, a]) => ({
+      date: d,
+      employeePayoutsCount: a?.financial?.employeePayouts?.length ?? 0,
+      employeeHoursCount: a?.derived?.employeeHours?.length ?? 0,
+    })),
+  });
 
   for (const emp of employees) {
     let weeklyGrossTips = 0;
@@ -621,12 +635,20 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
       const audit = auditByDate.get(dateStr);
       const payouts = audit?.financial?.employeePayouts;
       if (Array.isArray(payouts)) {
-        const payout = payouts.find((p) => p.employeeId && String(p.employeeId) === String(emp._id));
+        let payout = payouts.find((p) => p.employeeId && String(p.employeeId) === String(emp._id));
+        if (!payout && emp.name) {
+          const empNameNorm = String(emp.name).trim().toLowerCase();
+          payout = payouts.find((p) => !p.employeeId && String(p.employeeName || '').trim().toLowerCase() === empNameNorm);
+        }
         if (payout) tips = Number(payout.totalTips) || 0;
       }
       const hoursList = audit?.derived?.employeeHours;
       if (Array.isArray(hoursList)) {
-        const hoursRow = hoursList.find((h) => h.employeeId && String(h.employeeId) === String(emp._id));
+        let hoursRow = hoursList.find((h) => h.employeeId && String(h.employeeId) === String(emp._id));
+        if (!hoursRow && emp.name) {
+          const empNameNorm = String(emp.name).trim().toLowerCase();
+          hoursRow = hoursList.find((h) => !h.employeeId && String(h.employeeName || '').trim().toLowerCase() === empNameNorm);
+        }
         if (hoursRow) dayHours = (Number(hoursRow.amHours) || 0) + (Number(hoursRow.pmHours) || 0);
       }
 
