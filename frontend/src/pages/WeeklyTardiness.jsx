@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { useApp } from '../context/AppContext';
 import { getWeeklyTardiness } from '../services/weeklyTardinessService';
 import { toLocalDateString, getWeekStart, getWeekEnd, getDateRangeColumns, formatDate } from '../utils/dateUtils';
+import { exportTableToCSV, exportTableToPDF } from '../utils/reportUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
@@ -20,6 +21,16 @@ function getDefaultDateRange() {
   const mon = getWeekStart(new Date());
   const sun = getWeekEnd(mon);
   return { start: toLocalDateString(mon), end: toLocalDateString(sun) };
+}
+
+/** Remove — and – from export so CSV/Excel don't show garbage; replace → with -> */
+function sanitizeForExport(s) {
+  if (s == null || s === '') return '';
+  return String(s)
+    .replace(/\u2014/g, '')
+    .replace(/\u2013/g, '')
+    .replace(/\u2192/g, '->')
+    .trim();
 }
 
 export default function WeeklyTardiness() {
@@ -252,7 +263,7 @@ export default function WeeklyTardiness() {
           <Card title="Tardiness by employee (minutes late per day)">
             {totalRows > 0 && (
               <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-3 dark:border-slate-700">
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <span className="text-sm text-slate-600 dark:text-slate-400">
                     {totalRows} employee{totalRows !== 1 ? 's' : ''}
                   </span>
@@ -273,6 +284,101 @@ export default function WeeklyTardiness() {
                       ))}
                     </select>
                   </label>
+                  <div className="flex items-center gap-2 border-l border-slate-200 pl-3 dark:border-slate-600">
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Report:</span>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        const formatDayCell = (dayRec) => {
+                          const loc = dayRec?.locationName ?? '—';
+                          const s = (dayRec?.scheduledTime ?? '').toString().trim();
+                          const c = (dayRec?.clockIn ?? '').toString().trim();
+                          const minutes = (s && s === c) ? 0 : Math.max(0, Number(dayRec?.minutesLate) || 0);
+                          if (minutes > 0) return `${loc} ${dayRec?.scheduledTime ?? '–'} → ${dayRec?.clockIn ?? '–'} ${minutes} min`;
+                          return `${loc} –`;
+                        };
+                        const headers = ['Employee', ...dateColumns.map((c) => c.label), 'Total (min)', 'Working hours'];
+                        const dataRows = employeeRows.map((rec) => {
+                          const rowTotal = dateColumns.reduce((sum, col) => {
+                            const dayRec = rec.byDate[col.dateKey];
+                            const s = (dayRec?.scheduledTime ?? '').toString().trim();
+                            const c = (dayRec?.clockIn ?? '').toString().trim();
+                            const mins = (s && s === c) ? 0 : Math.max(0, Number(dayRec?.minutesLate) || 0);
+                            return sum + mins;
+                          }, 0);
+                          const mins = workingByEmployee[rec.employeeName] ?? Object.entries(workingByEmployee).find(([k]) => (k || '').trim() === (rec.employeeName || '').trim())?.[1] ?? 0;
+                          const hoursStr = mins > 0 ? `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''}` : '';
+                          return [
+                            sanitizeForExport(rec.employeeName),
+                            ...dateColumns.map((col) => sanitizeForExport(formatDayCell(rec.byDate[col.dateKey]))),
+                            String(rowTotal),
+                            sanitizeForExport(hoursStr),
+                          ];
+                        });
+                        const totalTardinessLabel = sanitizeForExport(`Total tardiness (${formatDate(rangeStart)} – ${formatDate(rangeEnd)})`);
+                        const summaryHeaderRow = ['', ...dateColumns.map((c) => sanitizeForExport(c.label)), 'Total', ''];
+                        const summaryDataRow = ['', ...dateColumns.map((col) => `${totalsByDate[col.dateKey] ?? 0} min`), `${rangeTotal} min`, ''];
+                        const emptyRow = headers.map(() => '');
+                        const rows = [
+                          ...dataRows,
+                          emptyRow,
+                          [totalTardinessLabel, ...emptyRow.slice(1)],
+                          summaryHeaderRow,
+                          summaryDataRow,
+                        ];
+                        exportTableToCSV(headers.map(sanitizeForExport), rows, `weekly-tardiness-${rangeStart}-${rangeEnd}.csv`);
+                      }}
+                    >
+                      Export CSV
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        const formatDayCell = (dayRec) => {
+                          const loc = dayRec?.locationName ?? '—';
+                          const s = (dayRec?.scheduledTime ?? '').toString().trim();
+                          const c = (dayRec?.clockIn ?? '').toString().trim();
+                          const minutes = (s && s === c) ? 0 : Math.max(0, Number(dayRec?.minutesLate) || 0);
+                          if (minutes > 0) return `${loc} ${dayRec?.scheduledTime ?? '–'} → ${dayRec?.clockIn ?? '–'} ${minutes} min`;
+                          return `${loc} –`;
+                        };
+                        const headers = ['Employee', ...dateColumns.map((c) => c.label), 'Total (min)', 'Working hours'];
+                        const dataRows = employeeRows.map((rec) => {
+                          const rowTotal = dateColumns.reduce((sum, col) => {
+                            const dayRec = rec.byDate[col.dateKey];
+                            const s = (dayRec?.scheduledTime ?? '').toString().trim();
+                            const c = (dayRec?.clockIn ?? '').toString().trim();
+                            const mins = (s && s === c) ? 0 : Math.max(0, Number(dayRec?.minutesLate) || 0);
+                            return sum + mins;
+                          }, 0);
+                          const mins = workingByEmployee[rec.employeeName] ?? Object.entries(workingByEmployee).find(([k]) => (k || '').trim() === (rec.employeeName || '').trim())?.[1] ?? 0;
+                          const hoursStr = mins > 0 ? `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''}` : '';
+                          return [
+                            sanitizeForExport(rec.employeeName),
+                            ...dateColumns.map((col) => sanitizeForExport(formatDayCell(rec.byDate[col.dateKey]))),
+                            String(rowTotal),
+                            sanitizeForExport(hoursStr),
+                          ];
+                        });
+                        const totalTardinessLabel = sanitizeForExport(`Total tardiness (${formatDate(rangeStart)} – ${formatDate(rangeEnd)})`);
+                        const summaryHeaderRow = ['', ...dateColumns.map((c) => sanitizeForExport(c.label)), 'Total', ''];
+                        const summaryDataRow = ['', ...dateColumns.map((col) => `${totalsByDate[col.dateKey] ?? 0} min`), `${rangeTotal} min`, ''];
+                        const emptyRow = headers.map(() => '');
+                        const rows = [
+                          ...dataRows,
+                          emptyRow,
+                          [totalTardinessLabel, ...emptyRow.slice(1)],
+                          summaryHeaderRow,
+                          summaryDataRow,
+                        ];
+                        exportTableToPDF(sanitizeForExport(`Weekly Tardiness ${formatDate(rangeStart)} ${formatDate(rangeEnd)}`), headers.map(sanitizeForExport), rows, `weekly-tardiness-${rangeStart}-${rangeEnd}.pdf`);
+                      }}
+                    >
+                      Export PDF
+                    </Button>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <button

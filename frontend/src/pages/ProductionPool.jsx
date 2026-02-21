@@ -8,6 +8,7 @@ import {
   updateProductionStaff,
 } from '../services/productionService';
 import { getWeekStart, getWeekEnd, toLocalDateString, formatWeekRange, getWeekDateColumns, getDateRangeColumns } from '../utils/dateUtils';
+import { exportMultiTableToCSV, exportMultiTableToPDF } from '../utils/reportUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
@@ -216,6 +217,94 @@ export default function ProductionPool() {
           </Card>
 
           <Card title="Weekly Production Payout Table">
+            {payouts.length > 0 && (
+              <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3 dark:border-slate-700">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Report:</span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    const payoutHeaders = ['Employee', 'Allocation %', 'Gross Production Tips', 'Weekly Tardiness (min)', 'Tardiness %', 'Tardiness Deduction', 'Manual Deduction', 'Redistribution Received', 'Final Weekly Production Payout'];
+                    const payoutRows = payouts.map((p) => [
+                      p.name + (p.subjectToTardiness === false ? ' (exempt)' : ''),
+                      `${p.allocationPercent ?? 0}%`,
+                      formatMoney(p.weeklyGrossProductionTips),
+                      String(p.weeklyTardinessMinutes ?? 0),
+                      `${p.tardinessPercent ?? 0}%`,
+                      formatMoney(p.tardinessDeduction),
+                      formatMoney(p.manualDeduction),
+                      formatMoney(p.tardinessRedistribution ?? 0),
+                      formatMoney(p.finalWeeklyProductionPayout ?? 0),
+                    ]);
+                    const dateCols = data?.dateRange ? getDateRangeColumns(data.dateRange.startDate, data.dateRange.endDate) : getWeekDateColumns(startDate);
+                    const locationHeaders = ['Location', ...dateCols.map((c) => c.label), 'Weekly total'];
+                    const locationRows = locationWisePool.map((row) => [
+                      row.locationName ?? '',
+                      ...dateCols.map((_, i) => formatMoney((row.dailyByDay || [])[i] ?? 0)),
+                      formatMoney(row.weeklyPool ?? 0),
+                    ]);
+                    if (locationWisePool.length > 0) {
+                      locationRows.push([
+                        'Total',
+                        ...dateCols.map((_, i) => formatMoney(locationWisePool.reduce((s, row) => s + (Number((row.dailyByDay || [])[i]) || 0), 0))),
+                        formatMoney(totalPoolFromLocations),
+                      ]);
+                    }
+                    exportMultiTableToCSV(
+                      [
+                        { headers: payoutHeaders, rows: payoutRows },
+                        { headers: locationHeaders, rows: locationRows },
+                      ],
+                      `production-pool-${startDate}-${endDate}.csv`
+                    );
+                  }}
+                >
+                  Export CSV
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    const payoutHeaders = ['Employee', 'Allocation %', 'Gross Production Tips', 'Weekly Tardiness (min)', 'Tardiness %', 'Tardiness Deduction', 'Manual Deduction', 'Redistribution Received', 'Final Weekly Production Payout'];
+                    const payoutRows = payouts.map((p) => [
+                      p.name + (p.subjectToTardiness === false ? ' (exempt)' : ''),
+                      `${p.allocationPercent ?? 0}%`,
+                      formatMoney(p.weeklyGrossProductionTips),
+                      String(p.weeklyTardinessMinutes ?? 0),
+                      `${p.tardinessPercent ?? 0}%`,
+                      formatMoney(p.tardinessDeduction),
+                      formatMoney(p.manualDeduction),
+                      formatMoney(p.tardinessRedistribution ?? 0),
+                      formatMoney(p.finalWeeklyProductionPayout ?? 0),
+                    ]);
+                    const dateCols = data?.dateRange ? getDateRangeColumns(data.dateRange.startDate, data.dateRange.endDate) : getWeekDateColumns(startDate);
+                    const locationHeaders = ['Location', ...dateCols.map((c) => c.label), 'Weekly total'];
+                    const locationRows = locationWisePool.map((row) => [
+                      row.locationName ?? '',
+                      ...dateCols.map((_, i) => formatMoney((row.dailyByDay || [])[i] ?? 0)),
+                      formatMoney(row.weeklyPool ?? 0),
+                    ]);
+                    if (locationWisePool.length > 0) {
+                      locationRows.push([
+                        'Total',
+                        ...dateCols.map((_, i) => formatMoney(locationWisePool.reduce((s, row) => s + (Number((row.dailyByDay || [])[i]) || 0), 0))),
+                        formatMoney(totalPoolFromLocations),
+                      ]);
+                    }
+                    exportMultiTableToPDF(
+                      `Production Pool ${startDate} ${endDate}`,
+                      [
+                        { headers: payoutHeaders, rows: payoutRows },
+                        { headers: locationHeaders, rows: locationRows },
+                      ],
+                      `production-pool-${startDate}-${endDate}.pdf`
+                    );
+                  }}
+                >
+                  Export PDF
+                </Button>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-sm">
                 <thead>

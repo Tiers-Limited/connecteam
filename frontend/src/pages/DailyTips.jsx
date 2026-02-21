@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { useApp } from '../context/AppContext';
 import { getDailyTipInput, getDailyTipCalculation, upsertDailyTipInput } from '../services/dailyTipService';
 import { toDateString } from '../utils/dateUtils';
+import { exportTableToCSV, exportTableToPDF } from '../utils/reportUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
@@ -255,7 +256,7 @@ export default function DailyTips() {
               <span>PM tip rate: ${calculation.totals?.pmTipRate?.toFixed(2)}/hr</span>
             </div>
             {totalRows > 0 && (
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <span className="text-sm text-slate-500 dark:text-slate-400">{totalRows} employee{totalRows !== 1 ? 's' : ''}</span>
                 <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
                   Rows per page
@@ -269,6 +270,55 @@ export default function DailyTips() {
                     ))}
                   </select>
                 </label>
+                <div className="flex items-center gap-2 border-l border-slate-200 pl-3 dark:border-slate-600">
+                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Report:</span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      const headers = ['Employee', 'Clock In', 'Clock Out', 'AM hrs', 'PM hrs', 'AM tips', 'PM tips', 'Total'];
+                      const rows = allocations.map((a) => [
+                        a.employeeName ?? '',
+                        a.clockIn ?? '–',
+                        a.clockOut ?? '–',
+                        a.amWorkedHours?.toFixed(2) ?? '',
+                        a.pmWorkedHours?.toFixed(2) ?? '',
+                        a.amTips != null ? `$${Number(a.amTips).toFixed(2)}` : '',
+                        a.pmTips != null ? `$${Number(a.pmTips).toFixed(2)}` : '',
+                        a.totalTips != null ? `$${Number(a.totalTips).toFixed(2)}` : '',
+                      ]);
+                      if (totals) {
+                        rows.push(['Total', '', '', totals.amWorkedHours.toFixed(2), totals.pmWorkedHours.toFixed(2), `$${totals.amTips.toFixed(2)}`, `$${totals.pmTips.toFixed(2)}`, `$${totals.totalTips.toFixed(2)}`]);
+                      }
+                      exportTableToCSV(headers, rows, `daily-tips-${date}.csv`);
+                    }}
+                  >
+                    Export CSV
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      const headers = ['Employee', 'Clock In', 'Clock Out', 'AM hrs', 'PM hrs', 'AM tips', 'PM tips', 'Total'];
+                      const rows = allocations.map((a) => [
+                        a.employeeName ?? '',
+                        a.clockIn ?? '–',
+                        a.clockOut ?? '–',
+                        a.amWorkedHours?.toFixed(2) ?? '',
+                        a.pmWorkedHours?.toFixed(2) ?? '',
+                        a.amTips != null ? `$${Number(a.amTips).toFixed(2)}` : '',
+                        a.pmTips != null ? `$${Number(a.pmTips).toFixed(2)}` : '',
+                        a.totalTips != null ? `$${Number(a.totalTips).toFixed(2)}` : '',
+                      ]);
+                      if (totals) {
+                        rows.push(['Total', '', '', totals.amWorkedHours.toFixed(2), totals.pmWorkedHours.toFixed(2), `$${totals.amTips.toFixed(2)}`, `$${totals.pmTips.toFixed(2)}`, `$${totals.totalTips.toFixed(2)}`]);
+                      }
+                      exportTableToPDF(`Daily Tips — ${location?.name ?? ''} — ${date}`, headers, rows, `daily-tips-${date}.pdf`);
+                    }}
+                  >
+                    Export PDF
+                  </Button>
+                </div>
               </div>
             )}
           </div>

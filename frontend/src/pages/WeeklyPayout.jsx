@@ -7,6 +7,7 @@ import {
   upsertManualDeduction,
 } from '../services/weeklyPayoutService';
 import { getWeekStart, getWeekEnd, toLocalDateString, formatWeekRange, getWeekDateColumns, getDateRangeColumns } from '../utils/dateUtils';
+import { exportTableToCSV, exportTableToPDF } from '../utils/reportUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
@@ -294,7 +295,7 @@ export default function WeeklyPayout() {
             )}
             {totalRows > 0 && (
               <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-3 dark:border-slate-700">
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <span className="text-sm text-slate-600 dark:text-slate-400">
                     {totalRows} employee{totalRows !== 1 ? 's' : ''}
                   </span>
@@ -315,6 +316,79 @@ export default function WeeklyPayout() {
                       ))}
                     </select>
                   </label>
+                  <div className="flex items-center gap-2 border-l border-slate-200 pl-3 dark:border-slate-600">
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Report:</span>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        const headers = [
+                          'Employee', 'Location',
+                          ...weekDateColumns.map((c) => c.label),
+                          'Weekly Gross Tips', 'Working hours', 'Weekly Tardiness (min)', 'Tardiness %',
+                          'Tardiness Deduction', 'Weekly After Tardiness', 'Manual Deduction', 'Net Weekly Tips',
+                          'Tardiness Redistribution', 'Final Weekly Tips Payable',
+                        ];
+                        const rows = payouts.map((p) => {
+                          const wh = p.totalWorkingMinutes ?? 0;
+                          const whStr = wh <= 0 ? '–' : `${Math.floor(wh / 60)}h${wh % 60 ? ` ${wh % 60}m` : ''}`;
+                          return [
+                            p.employeeName ?? '',
+                            locationName,
+                            ...(weekDateColumns.map((col, idx) => formatMoney((p.dailyTipsByDay || [])[idx] ?? 0))),
+                            formatMoney(p.weeklyGrossTips ?? p.dailyTipsMonToSun),
+                            whStr,
+                            String(p.weeklyTardinessMinutes ?? 0),
+                            `${p.tardinessPercent ?? 0}%`,
+                            formatMoney(p.tardinessDeduction),
+                            formatMoney(p.weeklyAfterTardiness),
+                            formatMoney(p.manualDeduction),
+                            formatMoney(p.netWeeklyTips),
+                            formatMoney(p.tardinessRedistribution ?? 0),
+                            formatMoney(p.finalWeeklyTipsPayable ?? 0),
+                          ];
+                        });
+                        exportTableToCSV(headers, rows, `weekly-payout-${displayRangeStart}-${displayRangeEnd}.csv`);
+                      }}
+                    >
+                      Export CSV
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        const headers = [
+                          'Employee', 'Location',
+                          ...weekDateColumns.map((c) => c.label),
+                          'Weekly Gross Tips', 'Working hours', 'Weekly Tardiness (min)', 'Tardiness %',
+                          'Tardiness Deduction', 'Weekly After Tardiness', 'Manual Deduction', 'Net Weekly Tips',
+                          'Tardiness Redistribution', 'Final Weekly Tips Payable',
+                        ];
+                        const rows = payouts.map((p) => {
+                          const wh = p.totalWorkingMinutes ?? 0;
+                          const whStr = wh <= 0 ? '–' : `${Math.floor(wh / 60)}h${wh % 60 ? ` ${wh % 60}m` : ''}`;
+                          return [
+                            p.employeeName ?? '',
+                            locationName,
+                            ...(weekDateColumns.map((col, idx) => formatMoney((p.dailyTipsByDay || [])[idx] ?? 0))),
+                            formatMoney(p.weeklyGrossTips ?? p.dailyTipsMonToSun),
+                            whStr,
+                            String(p.weeklyTardinessMinutes ?? 0),
+                            `${p.tardinessPercent ?? 0}%`,
+                            formatMoney(p.tardinessDeduction),
+                            formatMoney(p.weeklyAfterTardiness),
+                            formatMoney(p.manualDeduction),
+                            formatMoney(p.netWeeklyTips),
+                            formatMoney(p.tardinessRedistribution ?? 0),
+                            formatMoney(p.finalWeeklyTipsPayable ?? 0),
+                          ];
+                        });
+                        exportTableToPDF(`Weekly Payout — ${locationName} — ${displayRangeStart} – ${displayRangeEnd}`, headers, rows, `weekly-payout-${displayRangeStart}-${displayRangeEnd}.pdf`);
+                      }}
+                    >
+                      Export PDF
+                    </Button>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <button
