@@ -12,7 +12,17 @@ const ProductionStaff = require('../models/ProductionStaff');
 const connecteamsService = require('./connecteamsService');
 const employeeService = require('./employeeService');
 const { PRODUCTION_DEDUCTION_PERCENT, SHIFT_BOUNDARIES, TARDINESS_TIERS, ROUND_DECIMALS, LOCATIONS } = require('../utils/constants');
-const { getWeekStart, getWeekEnd, timeToMinutes, toDateString, isDateInWeek, getDatesInRange } = require('../utils/dateUtils');
+const {
+  getWeekStart,
+  getWeekEnd,
+  timeToMinutes,
+  toDateString,
+  isDateInWeek,
+  getDatesInRange,
+  getAppTimezone,
+  getStartOfDayUtcMs,
+  dateStringToUtcRange,
+} = require('../utils/dateUtils');
 
 /**
  * Split worked time into AM (06:00-15:00) and PM (15:00-23:00) hours.
@@ -105,6 +115,8 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   const dateStr = typeof date === 'string' ? date.slice(0, 10) : toDateString(date);
   const dateStart = new Date(dateStr + 'T00:00:00.000Z');
   const dateEnd = new Date(dateStr + 'T23:59:59.999Z');
+  const { startMs: timeEntryStartMs, endMs: timeEntryEndMs } = dateStringToUtcRange(dateStr, getAppTimezone());
+  const timeEntryDayStart = new Date(getStartOfDayUtcMs(dateStr, getAppTimezone()));
 
   const tipInput = await DailyTipInput.findOne({
     locationId,
@@ -133,7 +145,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     } catch (err) {
       const timeEntriesFromDb = await TimeEntry.find({
         locationId,
-        date: { $gte: dateStart, $lte: dateEnd },
+        date: { $gte: new Date(timeEntryStartMs), $lte: new Date(timeEntryEndMs) },
       })
         .populate('employeeId', 'name connecteamsUserId')
         .lean();
@@ -209,7 +221,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     for (const row of employeeHours.values()) {
       if (row.employeeId && row.clockIn && row.clockOut) {
         await TimeEntry.findOneAndUpdate(
-          { employeeId: row.employeeId, locationId, date: dateStart },
+          { employeeId: row.employeeId, locationId, date: timeEntryDayStart },
           { $set: { clockIn: row.clockIn, clockOut: row.clockOut } },
           { upsert: true }
         );
