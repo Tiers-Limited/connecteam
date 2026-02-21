@@ -78,23 +78,6 @@ export default function WeeklyTardiness() {
   const dateColumns = data && rangeStart && rangeEnd
     ? getDateRangeColumns(rangeStart, rangeEnd)
     : [];
-
-  // DEBUG: log API entries and date keys to trace why single-day (e.g. 12 Jan) shows nothing
-  if (data && entries.length > 0) {
-    console.log('[WeeklyTardiness] date range from API/form:', { rangeStart, rangeEnd });
-    console.log('[WeeklyTardiness] column dateKeys:', dateColumns.map((c) => c.dateKey));
-    console.log('[WeeklyTardiness] API entries (date, clockIn, employeeName, minutesLate):', entries.map((e) => ({
-      date: e.date,
-      dateNormalized: (e.date != null ? String(e.date).trim() : '').slice(0, 10),
-      clockIn: e.clockIn,
-      scheduledTime: e.scheduledTime,
-      employeeName: e.employeeName,
-      minutesLate: e.minutesLate,
-    })));
-  }
-
-  // Pivot: one row per employee, week dates as columns. Use earliest clock-in of the day (first punch)
-  // and that punch's minutes late only. If first punch is before scheduled time → 0 min late.
   const employeeMap = new Map();
   for (const row of entries) {
     const key = row.employeeName;
@@ -136,7 +119,6 @@ export default function WeeklyTardiness() {
 
   // DEBUG: log per-employee byDate keys and clock-in so we can see mismatch with column dateKeys
   if (data && employeeRows.length > 0 && dateColumns.length > 0) {
-    console.log('[WeeklyTardiness] employee byDate keys vs column dateKeys:');
     employeeRows.forEach((rec) => {
       const byDateKeys = Object.keys(rec.byDate || {});
       const sample = byDateKeys.slice(0, 3).map((k) => ({
@@ -146,7 +128,6 @@ export default function WeeklyTardiness() {
       }));
       const colKeys = dateColumns.map((c) => c.dateKey);
       const match = colKeys.every((ck) => byDateKeys.includes(ck));
-      console.log(`  ${rec.employeeName}: byDate keys=[${byDateKeys.join(', ')}], sample=`, sample, 'columnKeysMatch=', match);
     });
   }
 

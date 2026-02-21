@@ -33,7 +33,12 @@ async function getWeeklyPayout(req, res, next) {
   try {
     const { weekStart } = req.params;
     const weekStartStr = typeof weekStart === 'string' ? weekStart.slice(0, 10) : String(weekStart).slice(0, 10);
-    const result = await productionService.getWeeklyProductionPayout(weekStartStr);
+    const startDate = (req.query.startDate || '').toString().trim().slice(0, 10);
+    const endDate = (req.query.endDate || '').toString().trim().slice(0, 10);
+    const useDateRange = startDate && endDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate) && /^\d{4}-\d{2}-\d{2}$/.test(endDate) &&
+      new Date(endDate + 'T12:00:00') >= new Date(startDate + 'T12:00:00');
+    const options = useDateRange ? { startDate, endDate } : {};
+    const result = await productionService.getWeeklyProductionPayout(weekStartStr, options);
     res.json({ success: true, data: result });
   } catch (err) {
     next(err);
@@ -55,7 +60,12 @@ async function getLocationWisePool(req, res, next) {
   try {
     const { weekStart } = req.params;
     const weekStartStr = typeof weekStart === 'string' ? weekStart.slice(0, 10) : String(weekStart).slice(0, 10);
-    const list = await productionService.getLocationWiseProductionPool(weekStartStr);
+    const startDate = (req.query.startDate || '').toString().trim().slice(0, 10);
+    const endDate = (req.query.endDate || '').toString().trim().slice(0, 10);
+    const useDateRange = startDate && endDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate) && /^\d{4}-\d{2}-\d{2}$/.test(endDate) &&
+      new Date(endDate + 'T12:00:00') >= new Date(startDate + 'T12:00:00');
+    const options = useDateRange ? { startDate, endDate } : {};
+    const list = await productionService.getLocationWiseProductionPool(weekStartStr, options);
     res.json({ success: true, data: list });
   } catch (err) {
     next(err);

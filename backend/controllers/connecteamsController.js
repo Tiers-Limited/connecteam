@@ -45,6 +45,8 @@ async function getWeeklyTardiness(req, res, next) {
         });
       }
       const data = await connecteamsService.getTardinessFromConnecteamsByDateRange(start, end, locationKeyFilter);
+      // Persist to WeeklyTardiness with weekStart, weekEnd and dailyBreakdown (per-day working/tardiness minutes)
+      await weeklyPayoutService.persistTardinessFromPayload(data, start, end);
       return res.json({
         success: true,
         data: { ...data, dateRange: { startDate: start, endDate: end } },

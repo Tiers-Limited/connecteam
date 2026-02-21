@@ -10,8 +10,18 @@ export async function updateProductionStaff(id, body) {
   return data.data;
 }
 
-export async function getWeeklyProductionPayout(weekStart) {
-  const { data } = await api.get(`/production/weekly-payout/${weekStart}`);
+/**
+ * @param {string} weekStart - YYYY-MM-DD (Monday or range start)
+ * @param {string} [startDate] - with endDate = fetch tardiness from ConnectTeam for this range
+ * @param {string} [endDate]
+ */
+export async function getWeeklyProductionPayout(weekStart, startDate = null, endDate = null) {
+  const params = {};
+  if (startDate && endDate) {
+    params.startDate = startDate.trim().slice(0, 10);
+    params.endDate = endDate.trim().slice(0, 10);
+  }
+  const { data } = await api.get(`/production/weekly-payout/${weekStart}`, { params });
   return data.data;
 }
 
@@ -20,8 +30,18 @@ export async function getDailyProductionPool(date) {
   return data.data;
 }
 
-export async function getLocationWiseProductionPool(weekStart) {
-  const { data } = await api.get(`/production/location-wise-pool/${weekStart}`);
+/**
+ * @param {string} weekStart - YYYY-MM-DD
+ * @param {string} [startDate] - with endDate = use this date range for pool days
+ * @param {string} [endDate]
+ */
+export async function getLocationWiseProductionPool(weekStart, startDate = null, endDate = null) {
+  const params = {};
+  if (startDate && endDate) {
+    params.startDate = startDate.trim().slice(0, 10);
+    params.endDate = endDate.trim().slice(0, 10);
+  }
+  const { data } = await api.get(`/production/location-wise-pool/${weekStart}`, { params });
   return data.data;
 }
 

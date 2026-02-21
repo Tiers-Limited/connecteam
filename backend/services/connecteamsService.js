@@ -223,7 +223,6 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
   /** First user flow: log only for the first user that has shifts (for debugging). */
   const firstUserFlow = { userId: null, userName: null, userFromApi: null, timeActivitiesResponse: null, jobIds: null, jobResponses: [] };
   const datesInRange = getDatesInRange(startDate, endDate);
-  console.log('[getTimeEntriesFromConnecteams] request range:', startDate, '–', endDate, '| datesInRange:', datesInRange);
   const dayBounds = getDateRangeBoundsUnixSeconds(startDate, endDate);
 
   // 1. Users
@@ -451,7 +450,6 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
       toDateString(dateFromTimestampInTimezone(Math.floor(clockInTs / 1000), tz)) || startDate;
     if (!datesInRange.includes(shiftDate)) {
       const uName = userInfo ? userInfo.name : ukey;
-      if (entries.length < 5) console.log('[getTimeEntriesFromConnecteams] skip (date not in range):', { shiftDate, clockIn: formatTimeInTimezone(clockInTs, tz), employeeName: uName });
       continue;
     }
 
@@ -483,10 +481,8 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
       clockInMs: clockInTs,
       clockOutMs: clockOutMsUse,
     });
-    if (entries.length <= 3) console.log('[getTimeEntriesFromConnecteams] entry added:', { date: shiftDate, clockIn: clockInStr, employeeName: userInfo ? userInfo.name : ukey });
   }
 
-  console.log('[getTimeEntriesFromConnecteams] total entries:', entries.length, '| sample dates:', [...new Set(entries.map((e) => e.date))].slice(0, 5));
   return entries;
 }
 
@@ -632,6 +628,8 @@ function buildTardinessPayload(rawEntries, locationKeyFilter) {
   }
   const workingMinutesByEmpLoc = new Map();
   const workingMinutesByEmployee = new Map();
+  /** Per-day working minutes: { connecteamsUserId, locationKey, date (YYYY-MM-DD), workingMinutes } for persistence. */
+  const dailyWorkingMinutes = [];
   for (const [key, row] of dayPunchesByKey) {
     let durationMins = 0;
     if (row.clockInMs != null && row.clockOutMs != null && row.clockOutMs > row.clockInMs) {
@@ -642,10 +640,12 @@ function buildTardinessPayload(rawEntries, locationKeyFilter) {
     const parts = key.split('|');
     const connecteamsUserId = parts[0] || '';
     const locationKey = parts[1] || '';
+    const dateStr = parts[2] || '';
     const empName = row.employeeName || connecteamsUserId;
     if (connecteamsUserId && locationKey) {
       const empLocKey = `${connecteamsUserId}|${locationKey}`;
       workingMinutesByEmpLoc.set(empLocKey, (workingMinutesByEmpLoc.get(empLocKey) || 0) + durationMins);
+      if (dateStr) dailyWorkingMinutes.push({ connecteamsUserId, locationKey, date: dateStr, workingMinutes: durationMins });
     }
     if (empName) {
       workingMinutesByEmployee.set(empName, (workingMinutesByEmployee.get(empName) || 0) + durationMins);
@@ -669,14 +669,7 @@ function buildTardinessPayload(rawEntries, locationKeyFilter) {
   }
   const totalWorkingMinutesByEmployee = Object.fromEntries(workingMinutesByEmployee);
 
-  const sampleNames = [...firstPunchByKey.values()].slice(0, 2).map((e) => e.employeeName);
-  console.log('[getWeeklyTardinessFromConnecteams] DEBUG working hours:', {
-    filteredCount: filtered.length,
-    dayPunchesCount: dayPunchesByKey.size,
-    workingMinutesByEmployeeKeys: [...workingMinutesByEmployee.keys()],
-    totalWorkingMinutesByEmployee,
-    sampleEntryNames: sampleNames,
-  });
+
 
   const locationNameByKey = Object.fromEntries(LOCATIONS.map((l) => [l.key, l.name]));
   const entries = [];
@@ -720,6 +713,7 @@ function buildTardinessPayload(rawEntries, locationKeyFilter) {
     weekTotal,
     employeeTotalWorkingMinutes,
     totalWorkingMinutesByEmployee,
+    dailyWorkingMinutes,
   };
 }
 

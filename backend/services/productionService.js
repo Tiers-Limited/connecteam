@@ -5,7 +5,8 @@ const ProductionManualDeduction = require('../models/ProductionManualDeduction')
 /** DB collection where Weekly Tardiness page saves data (weekStart + locationId → payload.entries) */
 const WeeklyTardinessCache = require('../models/WeeklyTardinessCache');
 const { PRODUCTION_DEDUCTION_PERCENT } = require('../utils/constants');
-const { timeToMinutes, toDateString } = require('../utils/dateUtils');
+const connecteamsService = require('./connecteamsService');
+const { timeToMinutes, toDateString, getDatesInRange } = require('../utils/dateUtils');
 
 function roundMoney(value) {
   return Math.round(value * 100) / 100;
@@ -37,24 +38,36 @@ async function getDailyProductionPool(dateStr) {
 }
 
 /**
- * Location-wise tip pool for a week: 4% of (AM + PM gross tips) per location, per day and weekly total.
- * @param {string} weekStartStr - YYYY-MM-DD (Monday)
+ * Location-wise tip pool for a week or date range: 4% of (AM + PM gross tips) per location, per day and weekly total.
+ * @param {string} weekStartStr - YYYY-MM-DD (Monday or range start)
+ * @param {{ startDate?: string, endDate?: string }} [options] - when both set, use this range instead of fixed 7 days
  * @returns {Promise<Array<{ locationId, locationName, weeklyPool, dailyByDay }>>}
  */
-async function getLocationWiseProductionPool(weekStartStr) {
-  const d = typeof weekStartStr === 'string' ? weekStartStr.slice(0, 10) : toDateString(weekStartStr);
-  const [y, mo, day] = d.split('-').map(Number);
-  const dateStarts = [];
-  for (let i = 0; i < 7; i++) {
-    const date = new Date(Date.UTC(y, mo - 1, day + i, 0, 0, 0, 0));
-    dateStarts.push(date.toISOString().slice(0, 10));
+async function getLocationWiseProductionPool(weekStartStr, options = {}) {
+  const useDateRange = options.startDate && options.endDate && typeof options.startDate === 'string' && typeof options.endDate === 'string';
+  let dateStarts;
+  let weekStartDate;
+  let weekEndDate;
+  if (useDateRange) {
+    dateStarts = getDatesInRange(options.startDate.trim().slice(0, 10), options.endDate.trim().slice(0, 10));
+    weekStartDate = new Date(dateStarts[0] + 'T00:00:00.000Z');
+    weekEndDate = new Date(dateStarts[dateStarts.length - 1] + 'T23:59:59.999Z');
+  } else {
+    const d = typeof weekStartStr === 'string' ? weekStartStr.slice(0, 10) : toDateString(weekStartStr);
+    const [y, mo, day] = d.split('-').map(Number);
+    dateStarts = [];
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(Date.UTC(y, mo - 1, day + i, 0, 0, 0, 0));
+      dateStarts.push(date.toISOString().slice(0, 10));
+    }
+    weekStartDate = new Date(Date.UTC(y, mo - 1, day, 0, 0, 0, 0));
+    weekEndDate = new Date(Date.UTC(y, mo - 1, day + 6, 23, 59, 59, 999));
   }
-  const weekStartDate = new Date(Date.UTC(y, mo - 1, day, 0, 0, 0, 0));
-  const weekEndDate = new Date(Date.UTC(y, mo - 1, day + 6, 23, 59, 59, 999));
   const inputs = await DailyTipInput.find({
     date: { $gte: weekStartDate, $lte: weekEndDate },
   }).lean();
   const byLocation = new Map();
+  const emptyDaily = Array(dateStarts.length).fill(0);
   for (const row of inputs) {
     const locId = (row.locationId && row.locationId._id ? row.locationId._id : row.locationId)?.toString();
     if (!locId) continue;
@@ -63,7 +76,7 @@ async function getLocationWiseProductionPool(weekStartStr) {
       ((Number(row.amGrossTips) || 0) + (Number(row.pmGrossTips) || 0)) * PRODUCTION_DEDUCTION_PERCENT
     );
     if (!byLocation.has(locId)) {
-      byLocation.set(locId, { dailyByDay: [0, 0, 0, 0, 0, 0, 0] });
+      byLocation.set(locId, { dailyByDay: [...emptyDaily] });
     }
     const rec = byLocation.get(locId);
     const dayIndex = dateStarts.indexOf(dateStr);
@@ -94,18 +107,21 @@ async function getProductionStaff() {
 }
 
 /**
- * Build tardiness map (staff name -> weekly minutes) from DB.
- * Reads from WeeklyTardinessCache collection (where Weekly Tardiness page persists data).
- * Loads all documents for this week (every location + "all locations") so production
- * gets correct totals whether user loaded by location or all. First punch per (name, date).
+ * Build tardiness map (staff name -> weekly minutes).
+ * When options.connecteamPayload is provided, uses that (from ConnectTeam API for date range); otherwise reads from WeeklyTardinessCache.
+ * First punch per (name, date).
  */
-async function getProductionTardinessMap(weekStartStr, staffNames) {
-  const tardinessDocs = await WeeklyTardinessCache.find({ weekStart: weekStartStr }).lean();
+async function getProductionTardinessMap(weekStartStr, staffNames, options = {}) {
   const map = new Map(staffNames.map((n) => [n, 0]));
-  const entries = [];
-  for (const doc of tardinessDocs) {
-    if (doc.payload?.entries && Array.isArray(doc.payload.entries)) {
-      entries.push(...doc.payload.entries);
+  let entries = [];
+  if (options.connecteamPayload && Array.isArray(options.connecteamPayload.entries)) {
+    entries = options.connecteamPayload.entries;
+  } else {
+    const tardinessDocs = await WeeklyTardinessCache.find({ weekStart: weekStartStr }).lean();
+    for (const doc of tardinessDocs) {
+      if (doc.payload?.entries && Array.isArray(doc.payload.entries)) {
+        entries.push(...doc.payload.entries);
+      }
     }
   }
   if (entries.length === 0) return map;
@@ -131,8 +147,9 @@ async function getProductionTardinessMap(weekStartStr, staffNames) {
 
 /**
  * Weekly production payout: daily pool × allocation → weekly gross → tardiness → manual → redistribution (by %) → final.
+ * options: { startDate, endDate } — when both set, fetches tardiness from ConnectTeam for that range and uses range for days.
  */
-async function getWeeklyProductionPayout(weekStartStr) {
+async function getWeeklyProductionPayout(weekStartStr, options = {}) {
   const staff = await ProductionStaff.find({ isActive: true }).sort({ name: 1 });
   if (staff.length === 0) {
     return {
@@ -140,22 +157,48 @@ async function getWeeklyProductionPayout(weekStartStr) {
       weekEnd: '',
       redistributionPool: 0,
       payouts: [],
+      ...(options.startDate && options.endDate && { dateRange: { startDate: options.startDate.trim().slice(0, 10), endDate: options.endDate.trim().slice(0, 10) } }),
     };
   }
-  const [y, mo, day] = weekStartStr.split('-').map(Number);
-  const weekEnd = new Date(Date.UTC(y, mo - 1, day + 6, 23, 59, 59, 999));
-  const weekEndStr = weekEnd.toISOString().slice(0, 10);
+  const useDateRange = options.startDate && options.endDate && typeof options.startDate === 'string' && typeof options.endDate === 'string';
+  let dateStrs;
+  let weekEndStr;
+  let weekStartForManual = weekStartStr;
+  if (useDateRange) {
+    const start = options.startDate.trim().slice(0, 10);
+    const end = options.endDate.trim().slice(0, 10);
+    dateStrs = getDatesInRange(start, end);
+    weekEndStr = end;
+    weekStartForManual = start;
+  } else {
+    const [y, mo, day] = weekStartStr.split('-').map(Number);
+    const weekEnd = new Date(Date.UTC(y, mo - 1, day + 6, 23, 59, 59, 999));
+    weekEndStr = weekEnd.toISOString().slice(0, 10);
+    dateStrs = [];
+    for (let i = 0; i < 7; i++) {
+      dateStrs.push(new Date(Date.UTC(y, mo - 1, day + i, 0, 0, 0, 0)).toISOString().slice(0, 10));
+    }
+  }
+  const numDays = dateStrs.length;
 
   const dailyPoolByDate = new Map();
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(Date.UTC(y, mo - 1, day + i, 0, 0, 0, 0));
-    const dateStr = d.toISOString().slice(0, 10);
+  for (const dateStr of dateStrs) {
     dailyPoolByDate.set(dateStr, await getDailyProductionPool(dateStr));
   }
 
   const staffNames = staff.map((s) => s.name.trim());
-  const tardinessMap = await getProductionTardinessMap(weekStartStr, staffNames);
-  const manualDeductions = await ProductionManualDeduction.find({ weekStart: weekStartStr })
+  let tardinessMap;
+  if (useDateRange) {
+    const connecteamPayload = await connecteamsService.getTardinessFromConnecteamsByDateRange(
+      options.startDate.trim().slice(0, 10),
+      options.endDate.trim().slice(0, 10),
+      null
+    );
+    tardinessMap = await getProductionTardinessMap(weekStartStr, staffNames, { connecteamPayload });
+  } else {
+    tardinessMap = await getProductionTardinessMap(weekStartStr, staffNames);
+  }
+  const manualDeductions = await ProductionManualDeduction.find({ weekStart: weekStartForManual })
     .populate('productionStaffId')
     .lean();
   const manualMap = new Map();
@@ -168,9 +211,9 @@ async function getWeeklyProductionPayout(weekStartStr) {
   for (const s of staff) {
     const id = s._id.toString();
     let weeklyGross = 0;
-    const dailyByDay = [0, 0, 0, 0, 0, 0, 0];
-    for (let i = 0; i < 7; i++) {
-      const dateStr = new Date(Date.UTC(y, mo - 1, day + i, 0, 0, 0, 0)).toISOString().slice(0, 10);
+    const dailyByDay = Array(numDays).fill(0);
+    for (let i = 0; i < numDays; i++) {
+      const dateStr = dateStrs[i];
       const pool = dailyPoolByDate.get(dateStr) || 0;
       const alloc = (s.allocationPercent || 0) / 100;
       const dayTips = roundMoney(pool * alloc);
@@ -227,8 +270,9 @@ async function getWeeklyProductionPayout(weekStartStr) {
   }
 
   return {
-    weekStart: weekStartStr,
+    weekStart: weekStartForManual,
     weekEnd: weekEndStr,
+    ...(useDateRange && { dateRange: { startDate: options.startDate.trim().slice(0, 10), endDate: options.endDate.trim().slice(0, 10) } }),
     redistributionPool: roundMoney(totalRedistributionPool),
     payouts: rows.map((r) => ({
       productionStaffId: r.productionStaffId,

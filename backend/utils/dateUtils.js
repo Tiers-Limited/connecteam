@@ -77,6 +77,29 @@ function isDateInWeek(date, weekStart, weekEnd) {
   return d >= start && d <= end;
 }
 
+/**
+ * Get array of YYYY-MM-DD dates in range [startStr, endStr] (inclusive).
+ * @param {string} startStr - YYYY-MM-DD
+ * @param {string} endStr - YYYY-MM-DD
+ * @returns {string[]}
+ */
+function getDatesInRange(startStr, endStr) {
+  const start = new Date(startStr + 'T12:00:00');
+  const end = new Date(endStr + 'T12:00:00');
+  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+    return typeof startStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(startStr)
+      ? [startStr]
+      : [toDateString(startStr) || startStr];
+  }
+  const dates = [];
+  const d = new Date(start);
+  while (d <= end) {
+    dates.push(d.toISOString().slice(0, 10));
+    d.setDate(d.getDate() + 1);
+  }
+  return dates;
+}
+
 module.exports = {
   getWeekStart,
   getWeekEnd,
@@ -84,4 +107,5 @@ module.exports = {
   minutesToTime,
   toDateString,
   isDateInWeek,
+  getDatesInRange,
 };
