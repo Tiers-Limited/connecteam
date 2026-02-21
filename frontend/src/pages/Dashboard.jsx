@@ -14,6 +14,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { getDashboardSummary } from '../services/dashboardService';
 import Card from '../components/ui/Card';
+import { SkeletonBox } from '../skeletons';
 import { formatDate } from '../utils/dateUtils';
 
 const CACHE_TTL_MS = 60 * 1000; // 1 minute
@@ -38,6 +39,98 @@ function ChartTooltip({ active, payload, label, formatter, labelFormatter }) {
     <div className={chartTheme.tooltip}>
       {displayLabel && <div className="font-medium text-slate-700 dark:text-slate-200 mb-0.5">{displayLabel}</div>}
       <div className="text-slate-600 dark:text-slate-300">{formatter ? formatter(value) : value}</div>
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-2">
+          <SkeletonBox className="h-8 w-48 rounded-md" />
+          <SkeletonBox className="h-4 w-full max-w-md rounded-md" />
+        </div>
+      </div>
+
+      {/* KPI cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          'from-indigo-500/5 to-indigo-600/5 dark:from-indigo-500/10 dark:to-indigo-600/10',
+          'from-emerald-500/5 to-emerald-600/5 dark:from-emerald-500/10 dark:to-emerald-600/10',
+          'from-amber-500/5 to-amber-600/5 dark:from-amber-500/10 dark:to-amber-600/10',
+          'from-violet-500/5 to-violet-600/5 dark:from-violet-500/10 dark:to-violet-600/10',
+        ].map((gradient, i) => (
+          <Card
+            key={i}
+            className={`overflow-hidden border-0 bg-linear-to-br ${gradient}`}
+          >
+            <div className="flex items-start justify-between">
+              <div className="w-full">
+                <SkeletonBox className="mb-3 h-3 w-20 rounded" />
+                <SkeletonBox className="mb-2 h-8 w-14 rounded-md" />
+                {i === 0 || i === 2 || i === 3 ? (
+                  <SkeletonBox className="mb-2 mt-2 h-3 w-24 rounded" />
+                ) : (
+                  <SkeletonBox className="mb-0 mt-1 h-3 w-28 rounded" />
+                )}
+                {(i === 0 || i === 2 || i === 3) && (
+                  <SkeletonBox className="mt-2 h-3 w-20 rounded" />
+                )}
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      {/* Chart cards row */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="flex flex-col">
+          <SkeletonBox className="mb-1 h-6 w-56 rounded-md" />
+          <SkeletonBox className="mb-4 h-4 w-full max-w-sm rounded" />
+          <div className="min-h-[280px] flex-1">
+            <div className="flex h-[280px] items-end justify-around gap-2 px-2 pb-8 pt-4">
+              {[40, 65, 45, 80, 55, 70].map((h, i) => (
+                <SkeletonBox
+                  key={i}
+                  className="w-full flex-1 rounded-t-md"
+                  style={{ height: `${h}%` }}
+                />
+              ))}
+            </div>
+          </div>
+        </Card>
+        <Card className="flex flex-col">
+          <SkeletonBox className="mb-1 h-6 w-64 rounded-md" />
+          <SkeletonBox className="mb-4 h-4 w-full max-w-sm rounded" />
+          <div className="min-h-[280px] flex-1">
+            <div className="relative h-[280px] overflow-hidden rounded-lg">
+              <div className="absolute inset-0 flex items-end">
+                <div className="flex h-3/4 w-full items-end justify-around gap-1 px-2 pb-8">
+                  {[30, 50, 45, 60, 55, 50, 65].map((h, i) => (
+                    <SkeletonBox
+                      key={i}
+                      className="w-full flex-1 rounded-t"
+                      style={{ height: `${h}%` }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Quick links */}
+      <Card>
+        <SkeletonBox className="mb-4 h-6 w-28 rounded-md" />
+        <div className="flex flex-wrap gap-3">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <SkeletonBox key={i} className="h-10 w-28 rounded-lg" />
+          ))}
+        </div>
+      </Card>
     </div>
   );
 }
@@ -85,19 +178,7 @@ export default function Dashboard() {
   }, [refreshLocations]);
 
   if (loading && !summary) {
-    return (
-      <div className="space-y-8">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Loading…</p>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-28 rounded-xl border border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/30 animate-pulse" />
-          ))}
-        </div>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   const payoutByLocation = summary?.payoutByLocation ?? [];

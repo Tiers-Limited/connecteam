@@ -8,6 +8,7 @@ const TimeEntry = require('../models/TimeEntry');
 const Employee = require('../models/Employee');
 const WeeklyTardinessCache = require('../models/WeeklyTardinessCache');
 const { LOCATIONS } = require('../utils/constants');
+const { dateRangeToUtcBounds } = require('../utils/dateUtils');
 
 /**
  * GET /connecteams/weekly-tardiness
@@ -159,11 +160,10 @@ async function syncFromConnecteams(req, res, next) {
     }
 
     const syncedEmployeeIds = await Employee.distinct('_id', { connecteamsUserId: { $exists: true, $ne: '' } });
-    const dateStart = new Date(startDate + 'T00:00:00.000Z');
-    const dateEnd = new Date(endDate + 'T23:59:59.999Z');
+    const { startMs, endMs } = dateRangeToUtcBounds(startDate, endDate);
     await TimeEntry.deleteMany({
       employeeId: { $in: syncedEmployeeIds },
-      date: { $gte: dateStart, $lte: dateEnd },
+      date: { $gte: new Date(startMs), $lte: new Date(endMs) },
     });
 
     let created = 0;
@@ -175,11 +175,10 @@ async function syncFromConnecteams(req, res, next) {
         locationId,
         e.employeeName
       );
-      const dateObj = new Date(e.date + 'T00:00:00.000Z');
       await timeEntryService.create({
         employeeId: employee._id,
         locationId,
-        date: dateObj,
+        date: e.date,
         clockIn: e.clockIn,
         clockOut: e.clockOut,
         ...(e.scheduledTime && { scheduledTime: e.scheduledTime }),

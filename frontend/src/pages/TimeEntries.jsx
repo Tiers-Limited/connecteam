@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { useApp } from '../context/AppContext';
 import { getTimeEntriesRange } from '../services/timeEntryService';
 import { syncFromConnecteams, getConnecteamTimeEntries } from '../services/connecteamsService';
-import { toDateString, getDateRangeColumns } from '../utils/dateUtils';
+import { toLocalDateString, getDateRangeColumns, getWeekStart, getWeekEnd } from '../utils/dateUtils';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
@@ -60,13 +60,20 @@ function timeToMinutes(str) {
 
 export default function TimeEntries() {
   const { selectedLocationId, setSelectedLocationId, locations, timeEntriesCache, setTimeEntriesCache } = useApp();
+  const getDefaultDateRange = () => {
+    const mon = getWeekStart(new Date());
+    const sun = getWeekEnd(mon);
+    return { start: toLocalDateString(mon), end: toLocalDateString(sun) };
+  };
   const [viewStartDate, setViewStartDate] = useState(() => {
     const p = loadPersistedView();
-    return p?.viewStartDate ?? toDateString(new Date());
+    if (p?.viewStartDate && p?.viewEndDate) return p.viewStartDate;
+    return getDefaultDateRange().start;
   });
   const [viewEndDate, setViewEndDate] = useState(() => {
     const p = loadPersistedView();
-    return p?.viewEndDate ?? toDateString(new Date());
+    if (p?.viewStartDate && p?.viewEndDate) return p.viewEndDate;
+    return getDefaultDateRange().end;
   });
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -172,10 +179,15 @@ export default function TimeEntries() {
     load();
   };
 
-  const formatEntryDate = (d) => {
+  /** Prefer backend dateStr (calendar day in app timezone); accept YYYY-MM-DD string from Connecteam API; else format date in local time. */
+  const formatEntryDate = (entry) => {
+    if (!entry) return '—';
+    if (entry.dateStr && typeof entry.dateStr === 'string') return entry.dateStr;
+    const d = entry?.date;
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     if (!d) return '—';
     const date = new Date(d);
-    return isNaN(date.getTime()) ? '—' : date.toISOString().slice(0, 10);
+    return isNaN(date.getTime()) ? '—' : toLocalDateString(date);
   };
 
   // Group by employee+date: first clock-in and last clock-out per day. Must be before any early return (Rules of Hooks).
@@ -183,7 +195,7 @@ export default function TimeEntries() {
     const map = new Map();
     for (const e of entries) {
       const empId = e.employeeId?._id ?? e.employeeId;
-      const dateStr = formatEntryDate(e.date);
+      const dateStr = formatEntryDate(e);
       const key = `${empId}|${dateStr}`;
       const clockInMins = timeToMinutes(e.clockIn);
       const clockOutMins = timeToMinutes(e.clockOut);
@@ -191,6 +203,7 @@ export default function TimeEntries() {
         map.set(key, {
           _id: e._id,
           date: e.date,
+          dateStr: dateStr,
           employeeId: e.employeeId,
           clockIn: e.clockIn,
           clockOut: e.clockOut,
@@ -211,7 +224,9 @@ export default function TimeEntries() {
     }
     const rows = Array.from(map.values()).map(({ _clockInMins, _clockOutMins, ...r }) => r);
     rows.sort((a, b) => {
-      const d = new Date(a.date).getTime() - new Date(b.date).getTime();
+      const dateA = a.dateStr || (a.date ? toLocalDateString(new Date(a.date)) : '');
+      const dateB = b.dateStr || (b.date ? toLocalDateString(new Date(b.date)) : '');
+      const d = dateA.localeCompare(dateB);
       if (d !== 0) return d;
       return (a.employeeId?.name ?? '').localeCompare(b.employeeId?.name ?? '');
     });
@@ -232,7 +247,7 @@ export default function TimeEntries() {
         byEmployee.set(empKey, { employeeName: name, byDate: {} });
       }
       const rec = byEmployee.get(empKey);
-      const dateStr = formatEntryDate(row.date);
+      const dateStr = formatEntryDate(row);
       rec.byDate[dateStr] = { clockIn: row.clockIn, clockOut: row.clockOut };
     }
     return Array.from(byEmployee.values()).sort((a, b) =>
@@ -285,13 +300,13 @@ export default function TimeEntries() {
             </select>
           </div>
           <Input
-            label="Start date"
+            label="From date"
             type="date"
             value={viewStartDate}
             onChange={(e) => setViewStartDate(e.target.value)}
           />
           <Input
-            label="End date"
+            label="To date"
             type="date"
             value={viewEndDate}
             onChange={(e) => setViewEndDate(e.target.value)}
