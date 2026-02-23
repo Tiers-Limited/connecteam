@@ -21,6 +21,10 @@ const dailyTipInputSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, default: null },
+    createdByEmail: { type: String, default: '' },
+    createdByUsername: { type: String, default: '' },
+    createdByRole: { type: String, enum: ['admin', 'supervisor'], default: '' },
   },
   { timestamps: true }
 );

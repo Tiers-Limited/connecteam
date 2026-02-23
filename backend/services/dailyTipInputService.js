@@ -24,15 +24,39 @@ async function getByLocationDateRange(locationId, startDate, endDate) {
 
 async function upsert(locationId, date, data) {
   const d = toUTCMidnight(date);
+  const set = {
+    amGrossTips: data.amGrossTips,
+    pmGrossTips: data.pmGrossTips,
+  };
+  if (data.createdBy != null) set.createdBy = data.createdBy;
+  if (data.createdByEmail != null) set.createdByEmail = data.createdByEmail;
+  if (data.createdByUsername != null) set.createdByUsername = data.createdByUsername;
+  if (data.createdByRole != null) set.createdByRole = data.createdByRole;
   return DailyTipInput.findOneAndUpdate(
     { locationId, date: d },
-    { $set: { amGrossTips: data.amGrossTips, pmGrossTips: data.pmGrossTips } },
+    { $set: set },
     { new: true, upsert: true }
   );
+}
+
+async function getHistoryPaginated(page = 1, limit = 25) {
+  const skip = Math.max(0, (Number(page) - 1) * Math.max(1, Math.min(100, Number(limit))));
+  const limitNum = Math.max(1, Math.min(100, Number(limit)));
+  const [items, total] = await Promise.all([
+    DailyTipInput.find({})
+      .sort({ date: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .populate('locationId', 'name')
+      .lean(),
+    DailyTipInput.countDocuments(),
+  ]);
+  return { items, total, page: Number(page), limit: limitNum };
 }
 
 module.exports = {
   getByLocationAndDate,
   getByLocationDateRange,
   upsert,
+  getHistoryPaginated,
 };

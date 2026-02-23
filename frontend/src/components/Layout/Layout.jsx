@@ -9,6 +9,7 @@ const adminNavItems = [
   { to: '/production-pool', label: 'Production Pool' },
   { to: '/weekly-payout', label: 'Weekly Payout' },
   { to: '/weekly-tardiness', label: 'Weekly Tardiness' },
+  { to: '/daily-tips-history', label: 'Tip History' },
 ];
 
 const supervisorNavItems = [

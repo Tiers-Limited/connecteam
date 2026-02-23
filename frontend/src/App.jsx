@@ -7,6 +7,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import DailyTips from './pages/DailyTips';
+import DailyTipsHistory from './pages/DailyTipsHistory';
 import TimeEntries from './pages/TimeEntries';
 import WeeklyPayout from './pages/WeeklyPayout';
 import WeeklyTardiness from './pages/WeeklyTardiness';
@@ -39,6 +40,7 @@ export default function App() {
               <Route index element={<Dashboard />} />
               <Route path="time-entries" element={<TimeEntries />} />
               <Route path="daily-tips" element={<DailyTips />} />
+              <Route path="daily-tips-history" element={<DailyTipsHistory />} />
               <Route path="weekly-payout" element={<WeeklyPayout />} />
               <Route path="weekly-tardiness" element={<WeeklyTardiness />} />
               <Route path="production-pool" element={<ProductionPool />} />

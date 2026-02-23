@@ -2,8 +2,11 @@ const express = require('express');
 const { body, param } = require('express-validator');
 const dailyTipController = require('../controllers/dailyTipController');
 const validate = require('../middlewares/validate');
+const { requireAdmin } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
+
+router.get('/history', requireAdmin, dailyTipController.getHistory);
 
 router.get(
   '/:locationId/:date',
