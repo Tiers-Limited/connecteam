@@ -25,11 +25,30 @@ async function upsert(req, res, next) {
   try {
     const { locationId, date } = req.params;
     const { amGrossTips, pmGrossTips } = req.body;
-    const tipInput = await dailyTipInputService.upsert(locationId, date, { amGrossTips, pmGrossTips });
+    const user = req.user || {};
+    const tipInput = await dailyTipInputService.upsert(locationId, date, {
+      amGrossTips,
+      pmGrossTips,
+      createdBy: user._id,
+      createdByEmail: user.email || '',
+      createdByUsername: user.username || '',
+      createdByRole: user.role || '',
+    });
     res.json({ success: true, data: tipInput });
   } catch (err) {
     next(err);
   }
 }
 
-module.exports = { getByLocationAndDate, getCalculation, upsert };
+async function getHistory(req, res, next) {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 25));
+    const result = await dailyTipInputService.getHistoryPaginated(page, limit);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getByLocationAndDate, getCalculation, upsert, getHistory };
