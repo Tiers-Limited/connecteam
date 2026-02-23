@@ -48,11 +48,11 @@ export default function Layout() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-800/95">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
-          <h1 className="text-xl font-semibold tracking-tight text-indigo-600 dark:text-indigo-400">
-            ConnectTeam
+          <h1 className="text-xl font-semibold tracking-tight text-indigo-600">
+            Corvia Tips Dashboard
           </h1>
           <nav className="flex flex-wrap items-center gap-1">
             {navItems.map(({ to, label }) => (
@@ -62,8 +62,8 @@ export default function Layout() {
                 className={({ isActive }) =>
                   `rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                     isActive
-                      ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200'
+                      ? 'bg-indigo-100 text-indigo-700'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }`
                 }
               >
@@ -75,7 +75,7 @@ export default function Layout() {
               <button
                 type="button"
                 onClick={() => setDropdownOpen((o) => !o)}
-                className="flex items-center justify-center rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                className="flex items-center justify-center rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
                 aria-expanded={dropdownOpen}
                 aria-haspopup="true"
                 aria-label="User menu"
@@ -84,13 +84,13 @@ export default function Layout() {
               </button>
 
               {dropdownOpen && (
-                <div className="absolute right-0 top-full z-20 mt-1 w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                  <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-                    <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
+                <div className="absolute right-0 top-full z-20 mt-1 w-56 rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                  <div className="border-b border-slate-200 px-4 py-3">
+                    <p className="truncate text-sm font-medium text-slate-800">
                       {user?.email}
                     </p>
                     {user?.username && (
-                      <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                      <p className="truncate text-xs text-slate-500">
                         {user.username}
                       </p>
                     )}
@@ -99,7 +99,7 @@ export default function Layout() {
                     <Link
                       to="/supervisors"
                       onClick={() => setDropdownOpen(false)}
-                      className="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700/50"
+                      className="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                     >
                       <FiUsers className="h-4 w-4" />
                       Supervisors
@@ -108,7 +108,7 @@ export default function Layout() {
                   <Link
                     to="/settings"
                     onClick={() => setDropdownOpen(false)}
-                    className="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700/50"
+                    className="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                   >
                     <FiSettings className="h-4 w-4" />
                     Settings
@@ -116,7 +116,7 @@ export default function Layout() {
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700/50"
+                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
                   >
                     <FiLogOut className="h-4 w-4" />
                     Logout

@@ -13,11 +13,10 @@ import {
 } from 'recharts';
 import { useApp } from '../context/AppContext';
 import { getDashboardSummary } from '../services/dashboardService';
-import Card from '../components/ui/Card';
 import { SkeletonBox } from '../skeletons';
 import { formatDate } from '../utils/dateUtils';
 
-const CACHE_TTL_MS = 60 * 1000; // 1 minute
+const CACHE_TTL_MS = 60 * 1000;
 let cachedSummary = null;
 let cachedAt = 0;
 
@@ -25,20 +24,14 @@ function formatMoney(n) {
   return '$' + (Number(n) ?? 0).toFixed(2);
 }
 
-const chartTheme = {
-  grid: 'stroke-slate-200/60 dark:stroke-slate-600/60',
-  tick: 'text-slate-500 dark:text-slate-400 text-xs',
-  tooltip: 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg px-3 py-2 text-sm',
-};
-
 function ChartTooltip({ active, payload, label, formatter, labelFormatter }) {
   if (!active || !payload?.length) return null;
   const value = payload[0]?.value;
   const displayLabel = labelFormatter ? labelFormatter(label, payload) : label;
   return (
-    <div className={chartTheme.tooltip}>
-      {displayLabel && <div className="font-medium text-slate-700 dark:text-slate-200 mb-0.5">{displayLabel}</div>}
-      <div className="text-slate-600 dark:text-slate-300">{formatter ? formatter(value) : value}</div>
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-lg">
+      {displayLabel && <div className="mb-0.5 font-medium text-slate-700">{displayLabel}</div>}
+      <div className="text-slate-600">{formatter ? formatter(value) : value}</div>
     </div>
   );
 }
@@ -46,7 +39,6 @@ function ChartTooltip({ active, payload, label, formatter, labelFormatter }) {
 function DashboardSkeleton() {
   return (
     <div className="space-y-8">
-      {/* Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-2">
           <SkeletonBox className="h-8 w-48 rounded-md" />
@@ -54,83 +46,42 @@ function DashboardSkeleton() {
         </div>
       </div>
 
-      {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          'from-indigo-500/5 to-indigo-600/5 dark:from-indigo-500/10 dark:to-indigo-600/10',
-          'from-emerald-500/5 to-emerald-600/5 dark:from-emerald-500/10 dark:to-emerald-600/10',
-          'from-amber-500/5 to-amber-600/5 dark:from-amber-500/10 dark:to-amber-600/10',
-          'from-violet-500/5 to-violet-600/5 dark:from-violet-500/10 dark:to-violet-600/10',
-        ].map((gradient, i) => (
-          <Card
-            key={i}
-            className={`overflow-hidden border-0 bg-linear-to-br ${gradient}`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="w-full">
-                <SkeletonBox className="mb-3 h-3 w-20 rounded" />
-                <SkeletonBox className="mb-2 h-8 w-14 rounded-md" />
-                {i === 0 || i === 2 || i === 3 ? (
-                  <SkeletonBox className="mb-2 mt-2 h-3 w-24 rounded" />
-                ) : (
-                  <SkeletonBox className="mb-0 mt-1 h-3 w-28 rounded" />
-                )}
-                {(i === 0 || i === 2 || i === 3) && (
-                  <SkeletonBox className="mt-2 h-3 w-20 rounded" />
-                )}
-              </div>
-            </div>
-          </Card>
+          'border-indigo-100 from-indigo-500/10 to-indigo-600/5',
+          'border-emerald-100 from-emerald-500/10 to-emerald-600/5',
+          'border-amber-100 from-amber-500/10 to-amber-600/5',
+          'border-violet-100 from-violet-500/10 to-violet-600/5',
+        ].map((cls, i) => (
+          <div key={i} className={`rounded-xl border bg-gradient-to-br p-5 shadow-sm ${cls}`}>
+            <SkeletonBox className="mb-3 h-3 w-20 rounded" />
+            <SkeletonBox className="mb-2 h-8 w-14 rounded-md" />
+            <SkeletonBox className="mt-2 h-3 w-24 rounded" />
+            {(i === 0 || i === 2 || i === 3) && <SkeletonBox className="mt-2 h-3 w-20 rounded" />}
+          </div>
         ))}
       </div>
 
-      {/* Chart cards row */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="flex flex-col">
-          <SkeletonBox className="mb-1 h-6 w-56 rounded-md" />
-          <SkeletonBox className="mb-4 h-4 w-full max-w-sm rounded" />
-          <div className="min-h-[280px] flex-1">
+        {[0, 1].map((i) => (
+          <div key={i} className="rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
+            <SkeletonBox className="mb-1 h-6 w-56 rounded-md" />
+            <SkeletonBox className="mb-4 h-4 w-full max-w-sm rounded" />
             <div className="flex h-[280px] items-end justify-around gap-2 px-2 pb-8 pt-4">
-              {[40, 65, 45, 80, 55, 70].map((h, i) => (
-                <SkeletonBox
-                  key={i}
-                  className="w-full flex-1 rounded-t-md"
-                  style={{ height: `${h}%` }}
-                />
+              {[40, 65, 45, 80, 55, 70].map((h, j) => (
+                <SkeletonBox key={j} className="w-full flex-1 rounded-t-md" style={{ height: `${h}%` }} />
               ))}
             </div>
           </div>
-        </Card>
-        <Card className="flex flex-col">
-          <SkeletonBox className="mb-1 h-6 w-64 rounded-md" />
-          <SkeletonBox className="mb-4 h-4 w-full max-w-sm rounded" />
-          <div className="min-h-[280px] flex-1">
-            <div className="relative h-[280px] overflow-hidden rounded-lg">
-              <div className="absolute inset-0 flex items-end">
-                <div className="flex h-3/4 w-full items-end justify-around gap-1 px-2 pb-8">
-                  {[30, 50, 45, 60, 55, 50, 65].map((h, i) => (
-                    <SkeletonBox
-                      key={i}
-                      className="w-full flex-1 rounded-t"
-                      style={{ height: `${h}%` }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </Card>
+        ))}
       </div>
 
-      {/* Quick links */}
-      <Card>
+      <div className="rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
         <SkeletonBox className="mb-4 h-6 w-28 rounded-md" />
         <div className="flex flex-wrap gap-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <SkeletonBox key={i} className="h-10 w-28 rounded-lg" />
-          ))}
+          {[1, 2, 3, 4, 5].map((i) => <SkeletonBox key={i} className="h-10 w-28 rounded-lg" />)}
         </div>
-      </Card>
+      </div>
     </div>
   );
 }
@@ -177,9 +128,7 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, [refreshLocations]);
 
-  if (loading && !summary) {
-    return <DashboardSkeleton />;
-  }
+  if (loading && !summary) return <DashboardSkeleton />;
 
   const payoutByLocation = summary?.payoutByLocation ?? [];
   const dailyTipsLast7 = summary?.dailyTipsLast7 ?? [];
@@ -202,72 +151,66 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
+      {/* Header */}
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-800 dark:text-slate-100">Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-800">Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-500">
             Previous week analysis: tips, payouts, and production pool. Load data from Weekly Payout and Production Pool for the prior week.
           </p>
         </div>
-        {refreshing && (
-          <span className="text-xs text-slate-500 dark:text-slate-400">Updating…</span>
-        )}
+        {refreshing && <span className="text-xs text-slate-400">Updating…</span>}
       </div>
 
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="overflow-hidden border-0 bg-linear-to-br from-indigo-500/10 to-indigo-600/5 dark:from-indigo-500/15 dark:to-indigo-600/10">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Locations</p>
-              <p className="mt-2 text-2xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
-                {summary?.locationsCount ?? locations.length ?? 0}
-              </p>
-              <Link to="/time-entries" className="mt-2 inline-block text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-                Time Entries →
-              </Link>
-            </div>
-          </div>
-        </Card>
-        <Card className="overflow-hidden border-0 bg-linear-to-br from-emerald-500/10 to-emerald-600/5 dark:from-emerald-500/15 dark:to-emerald-600/10">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Employees</p>
-            <p className="mt-2 text-2xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
-              {summary?.employeesCount ?? 0}
-            </p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Active (all locations)</p>
-          </div>
-        </Card>
-        <Card className="overflow-hidden border-0 bg-linear-to-br from-amber-500/10 to-amber-600/5 dark:from-amber-500/15 dark:to-amber-600/10">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Front staff payout</p>
-            <p className="mt-2 text-2xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
-              {formatMoney(summary?.totalPayoutThisWeek ?? 0)}
-            </p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{weekLabel}</p>
-            <Link to="/weekly-payout" className="mt-2 inline-block text-xs font-medium text-amber-600 hover:underline dark:text-amber-400">
-              Weekly Payout →
-            </Link>
-          </div>
-        </Card>
-        <Card className="overflow-hidden border-0 bg-linear-to-br from-violet-500/10 to-violet-600/5 dark:from-violet-500/15 dark:to-violet-600/10">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Production pool</p>
-            <p className="mt-2 text-2xl font-bold tabular-nums text-slate-800 dark:text-slate-100">
-              {formatMoney(summary?.productionTotal ?? 0)}
-            </p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{weekLabel}</p>
-            <Link to="/production-pool" className="mt-2 inline-block text-xs font-medium text-violet-600 hover:underline dark:text-violet-400">
-              Production Pool →
-            </Link>
-          </div>
-        </Card>
+        <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-500/10 to-indigo-600/5 p-5 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Locations</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-slate-800">
+            {summary?.locationsCount ?? locations.length ?? 0}
+          </p>
+          <Link to="/time-entries" className="mt-2 inline-block text-xs font-medium text-indigo-600 hover:underline">
+            Time Entries →
+          </Link>
+        </div>
+
+        <div className="rounded-xl border border-emerald-100 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 p-5 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Employees</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-slate-800">
+            {summary?.employeesCount ?? 0}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">Active (all locations)</p>
+        </div>
+
+        <div className="rounded-xl border border-amber-100 bg-gradient-to-br from-amber-500/10 to-amber-600/5 p-5 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Front staff payout</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-slate-800">
+            {formatMoney(summary?.totalPayoutThisWeek ?? 0)}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">{weekLabel}</p>
+          <Link to="/weekly-payout" className="mt-2 inline-block text-xs font-medium text-amber-600 hover:underline">
+            Weekly Payout →
+          </Link>
+        </div>
+
+        <div className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-500/10 to-violet-600/5 p-5 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Production pool</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-slate-800">
+            {formatMoney(summary?.productionTotal ?? 0)}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">{weekLabel}</p>
+          <Link to="/production-pool" className="mt-2 inline-block text-xs font-medium text-violet-600 hover:underline">
+            Production Pool →
+          </Link>
+        </div>
       </div>
 
+      {/* Charts */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Weekly Payout by Location */}
-        <Card title="Weekly payout by location" className="flex flex-col">
-          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+        <div className="flex flex-col rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
+          <h2 className="text-base font-semibold text-slate-700">Weekly payout by location</h2>
+          <p className="mb-4 mt-1 text-sm text-slate-500">
             Previous week (Mon–Sun) tips payable per location.
           </p>
           <div className="min-h-[280px] flex-1">
@@ -278,24 +221,22 @@ export default function Dashboard() {
                   margin={{ top: 12, right: 12, left: 0, bottom: 24 }}
                   barCategoryGap="20%"
                 >
-                  <CartesianGrid strokeDasharray="3 3" className={chartTheme.grid} vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.35)" vertical={false} />
                   <XAxis
                     dataKey="name"
-                    tick={{ fontSize: 11, fill: 'currentColor' }}
-                    className={chartTheme.tick}
+                    tick={{ fontSize: 11, fill: '#64748b' }}
                     interval={0}
                     angle={payoutChartData.length > 4 ? -25 : 0}
                     textAnchor={payoutChartData.length > 4 ? 'end' : 'middle'}
                   />
                   <YAxis
-                    tick={{ fontSize: 11, fill: 'currentColor' }}
+                    tick={{ fontSize: 11, fill: '#64748b' }}
                     tickFormatter={(v) => formatMoney(v)}
-                    className={chartTheme.tick}
                     width={52}
                   />
                   <Tooltip
                     content={<ChartTooltip formatter={formatMoney} />}
-                    cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+                    cursor={{ fill: 'rgba(148,163,184,0.08)' }}
                   />
                   <Bar
                     dataKey="payout"
@@ -308,18 +249,20 @@ export default function Dashboard() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/50 dark:border-slate-600 dark:bg-slate-800/30">
-                <p className="text-center text-sm text-slate-500 dark:text-slate-400">
-                  No payout data. Load from <Link to="/weekly-payout" className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">Weekly Payout</Link>.
+              <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/50">
+                <p className="text-center text-sm text-slate-500">
+                  No payout data. Load from{' '}
+                  <Link to="/weekly-payout" className="font-medium text-indigo-600 hover:underline">Weekly Payout</Link>.
                 </p>
               </div>
             )}
           </div>
-        </Card>
+        </div>
 
-        {/* Daily gross tips – last 7 days */}
-        <Card title="Daily gross tips (previous week)" className="flex flex-col">
-          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+        {/* Daily gross tips */}
+        <div className="flex flex-col rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
+          <h2 className="text-base font-semibold text-slate-700">Daily gross tips (previous week)</h2>
+          <p className="mb-4 mt-1 text-sm text-slate-500">
             AM + PM gross tips by day for the previous week (Mon–Sun), all locations.
           </p>
           <div className="min-h-[280px] flex-1">
@@ -335,16 +278,14 @@ export default function Dashboard() {
                       <stop offset="100%" stopColor="rgb(16 185 129)" stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" className={chartTheme.grid} vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.35)" vertical={false} />
                   <XAxis
                     dataKey="label"
-                    tick={{ fontSize: 11, fill: 'currentColor' }}
-                    className={chartTheme.tick}
+                    tick={{ fontSize: 11, fill: '#64748b' }}
                   />
                   <YAxis
-                    tick={{ fontSize: 11, fill: 'currentColor' }}
+                    tick={{ fontSize: 11, fill: '#64748b' }}
                     tickFormatter={(v) => formatMoney(v)}
-                    className={chartTheme.tick}
                     width={52}
                   />
                   <Tooltip
@@ -371,51 +312,53 @@ export default function Dashboard() {
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/50 dark:border-slate-600 dark:bg-slate-800/30">
-                <p className="text-center text-sm text-slate-500 dark:text-slate-400">
-                  No data. Enter in <Link to="/daily-tips" className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">Daily Tips</Link>.
+              <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/50">
+                <p className="text-center text-sm text-slate-500">
+                  No data. Enter in{' '}
+                  <Link to="/daily-tips" className="font-medium text-indigo-600 hover:underline">Daily Tips</Link>.
                 </p>
               </div>
             )}
           </div>
-        </Card>
+        </div>
       </div>
 
       {/* Quick links */}
-      <Card title="Quick links">
+      <div className="rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
+        <h2 className="mb-4 text-base font-semibold text-slate-700">Quick links</h2>
         <div className="flex flex-wrap gap-3">
           <Link
             to="/daily-tips"
-            className="rounded-lg bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50"
+            className="rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
           >
             Daily Tips
           </Link>
           <Link
             to="/weekly-payout"
-            className="rounded-lg bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50"
+            className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100"
           >
             Weekly Payout
           </Link>
           <Link
             to="/weekly-tardiness"
-            className="rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+            className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
           >
             Weekly Tardiness
           </Link>
           <Link
             to="/production-pool"
-            className="rounded-lg bg-violet-50 px-4 py-2.5 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-100 dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
+            className="rounded-lg border border-violet-100 bg-violet-50 px-4 py-2.5 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-100"
           >
             Production Pool
           </Link>
           <Link
             to="/time-entries"
-            className="rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+            className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
           >
             Time Entries
           </Link>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

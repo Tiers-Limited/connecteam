@@ -12,8 +12,8 @@ const mongoose = require('mongoose');
 const Admin = require('../models/Admin');
 const connectDB = require('../config/db');
 
-const ADMIN_EMAIL = 'admin@connectteam.com';
-const ADMIN_PASSWORD = 'admin@123';
+const ADMIN_EMAIL = 'admin@connecteam.com';
+const ADMIN_PASSWORD = 'admin.123';
 
 async function createAdmin() {
   await connectDB();

@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getDailyTipsHistory } from '../services/dailyTipService';
-import Card from '../components/ui/Card';
+import { exportTableToCSV, exportTableToPDF } from '../utils/reportUtils';
+import Button from '../components/ui/Button';
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
@@ -45,10 +46,10 @@ export default function DailyTipsHistory() {
   if (!isAdmin) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Daily Tips History</h1>
-        <Card>
-          <p className="text-slate-600 dark:text-slate-400">Admin access required to view tip history.</p>
-        </Card>
+        <h1 className="text-2xl font-bold text-slate-800">Daily Tips History</h1>
+        <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm p-6 shadow-sm">
+          <p className="text-slate-500">Admin access required to view tip history.</p>
+        </div>
       </div>
     );
   }
@@ -64,55 +65,140 @@ export default function DailyTipsHistory() {
     </svg>
   );
 
+  const exportHeaders = ['User', 'Role', 'AM Tips', 'PM Tips', 'Total', 'Date', 'Location'];
+
+  function buildExportRows(sourceItems) {
+    return sourceItems.map((row) => {
+      const totalTips = (Number(row.amGrossTips) || 0) + (Number(row.pmGrossTips) || 0);
+      const userDisplay = row.createdByUsername
+        ? `${row.createdByUsername} (${row.createdByEmail || ''})`
+        : row.createdByEmail || '';
+      const locationName = row.locationId?.name ?? (row.locationId && typeof row.locationId === 'object' ? '' : row.locationId ?? '');
+      return [
+        userDisplay,
+        row.createdByRole || '',
+        formatMoney(row.amGrossTips),
+        formatMoney(row.pmGrossTips),
+        formatMoney(totalTips),
+        formatDate(row.date),
+        locationName,
+      ];
+    });
+  }
+
+  async function handleExportCSV() {
+    // Export all pages: fetch with large limit
+    try {
+      const all = await getDailyTipsHistory(1, 10000);
+      const rows = buildExportRows(all?.items ?? items);
+      exportTableToCSV(exportHeaders, rows, `daily-tips-history.csv`);
+    } catch {
+      // fallback to current page
+      exportTableToCSV(exportHeaders, buildExportRows(items), `daily-tips-history.csv`);
+    }
+  }
+
+  async function handleExportPDF() {
+    try {
+      const all = await getDailyTipsHistory(1, 10000);
+      const rows = buildExportRows(all?.items ?? items);
+      exportTableToPDF('Daily Tips History', exportHeaders, rows, `daily-tips-history.pdf`);
+    } catch {
+      exportTableToPDF('Daily Tips History', exportHeaders, buildExportRows(items), `daily-tips-history.pdf`);
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Daily Tips History</h1>
-      <p className="text-slate-600 dark:text-slate-400">
-        View who entered each daily tip, the amount, date, and location. Admin only.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Daily Tips History</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            View who entered each daily tip, the amount, date, and location. Admin only.
+          </p>
+        </div>
+      </div>
 
-      <Card title="Tip entries">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-3 dark:border-slate-700">
-          <span className="text-sm text-slate-500 dark:text-slate-400">
-            {total} entr{total === 1 ? 'y' : 'ies'} total
-          </span>
-          <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-            Rows per page
-            <select
-              value={pageSize}
-              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-              className="rounded border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-            >
-              {PAGE_SIZES.map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
-          </label>
+      <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm shadow-sm overflow-hidden">
+        <div className="px-6 pt-5 pb-4 border-b border-slate-100">
+          <h2 className="text-base font-semibold text-slate-700">Tip entries</h2>
         </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-12 text-slate-500 dark:text-slate-400">
-            {spinner}
-            Loading…
+        <div className="px-6 py-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm text-slate-500">
+                {total} entr{total === 1 ? 'y' : 'ies'} total
+              </span>
+              <label className="flex items-center gap-2 text-sm text-slate-500">
+                Rows per page
+                <select
+                  value={pageSize}
+                  onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                  className="rounded border border-slate-200 bg-white/90 px-2 py-1 text-sm text-slate-700"
+                >
+                  {PAGE_SIZES.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </label>
+              {!loading && items.length > 0 && (
+                <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+                  <span className="text-xs font-medium text-slate-400">Report:</span>
+                  <Button type="button" variant="secondary" onClick={handleExportCSV}>
+                    Export CSV
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={handleExportPDF}>
+                    Export PDF
+                  </Button>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage <= 1}
+                className="rounded-lg border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span className="min-w-[100px] text-center text-slate-500">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="rounded-lg border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
           </div>
-        ) : items.length === 0 ? (
-          <p className="py-8 text-center text-slate-500 dark:text-slate-400">No tip entries yet.</p>
-        ) : (
-          <>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-12 text-slate-400">
+              {spinner}
+              Loading…
+            </div>
+          ) : items.length === 0 ? (
+            <p className="py-8 text-center text-slate-400">No tip entries yet.</p>
+          ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] table-auto text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-700">
-                    <th className="min-w-[200px] pb-2 pl-2 pr-4 pt-2 text-left font-medium text-slate-700 dark:text-slate-300">User</th>
-                    <th className="min-w-[90px] pb-2 pl-2 pr-4 pt-2 text-left font-medium text-slate-700 dark:text-slate-300">Role</th>
-                    <th className="min-w-[80px] pb-2 pl-2 pr-4 pt-2 text-right font-medium text-slate-700 dark:text-slate-300">AM tips</th>
-                    <th className="min-w-[80px] pb-2 pl-2 pr-4 pt-2 text-right font-medium text-slate-700 dark:text-slate-300">PM tips</th>
-                    <th className="min-w-[80px] pb-2 pl-2 pr-4 pt-2 text-right font-medium text-slate-700 dark:text-slate-300">Total</th>
-                    <th className="min-w-[100px] pb-2 pl-2 pr-4 pt-2 text-left font-medium text-slate-700 dark:text-slate-300">Date</th>
-                    <th className="min-w-[100px] pb-2 pl-2 pr-4 pt-2 text-left font-medium text-slate-700 dark:text-slate-300">Location</th>
+                  <tr className="border-b border-slate-200">
+                    <th className="min-w-[200px] pb-3 pl-2 pr-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">User</th>
+                    <th className="min-w-[90px] pb-3 pl-2 pr-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Role</th>
+                    <th className="min-w-[80px] pb-3 pl-2 pr-4 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">AM Tips</th>
+                    <th className="min-w-[80px] pb-3 pl-2 pr-4 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">PM Tips</th>
+                    <th className="min-w-[80px] pb-3 pl-2 pr-4 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Total</th>
+                    <th className="min-w-[100px] pb-3 pl-2 pr-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Date</th>
+                    <th className="min-w-[100px] pb-3 pl-2 pr-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Location</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                <tbody className="divide-y divide-slate-100">
                   {items.map((row) => {
                     const totalTips = (Number(row.amGrossTips) || 0) + (Number(row.pmGrossTips) || 0);
                     const userDisplay = row.createdByUsername
@@ -120,45 +206,23 @@ export default function DailyTipsHistory() {
                       : row.createdByEmail || '–';
                     const locationName = row.locationId?.name ?? (row.locationId && typeof row.locationId === 'object' ? '–' : row.locationId ?? '–');
                     return (
-                      <tr key={row._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                        <td className="min-w-[200px] py-2 pl-2 pr-4 font-medium text-slate-800 dark:text-slate-200">{userDisplay}</td>
-                        <td className="min-w-[90px] py-2 pl-2 pr-4 capitalize text-slate-600 dark:text-slate-400 whitespace-nowrap">{row.createdByRole || '–'}</td>
-                        <td className="min-w-[80px] py-2 pl-2 pr-4 text-right tabular-nums whitespace-nowrap">{formatMoney(row.amGrossTips)}</td>
-                        <td className="min-w-[80px] py-2 pl-2 pr-4 text-right tabular-nums whitespace-nowrap">{formatMoney(row.pmGrossTips)}</td>
-                        <td className="min-w-[80px] py-2 pl-2 pr-4 text-right font-medium tabular-nums whitespace-nowrap">{formatMoney(totalTips)}</td>
-                        <td className="min-w-[100px] py-2 pl-2 pr-4 tabular-nums whitespace-nowrap">{formatDate(row.date)}</td>
-                        <td className="min-w-[100px] py-2 pl-2 pr-4 text-slate-600 dark:text-slate-400">{locationName}</td>
+                      <tr key={row._id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="min-w-[200px] py-2.5 pl-2 pr-4 font-medium text-slate-700">{userDisplay}</td>
+                        <td className="min-w-[90px] py-2.5 pl-2 pr-4 capitalize text-slate-500 whitespace-nowrap">{row.createdByRole || '–'}</td>
+                        <td className="min-w-[80px] py-2.5 pl-2 pr-4 text-right tabular-nums whitespace-nowrap text-slate-600">{formatMoney(row.amGrossTips)}</td>
+                        <td className="min-w-[80px] py-2.5 pl-2 pr-4 text-right tabular-nums whitespace-nowrap text-slate-600">{formatMoney(row.pmGrossTips)}</td>
+                        <td className="min-w-[80px] py-2.5 pl-2 pr-4 text-right font-semibold tabular-nums whitespace-nowrap text-slate-700">{formatMoney(totalTips)}</td>
+                        <td className="min-w-[100px] py-2.5 pl-2 pr-4 tabular-nums whitespace-nowrap text-slate-500">{formatDate(row.date)}</td>
+                        <td className="min-w-[100px] py-2.5 pl-2 pr-4 text-slate-500">{locationName}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
-
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage <= 1}
-                className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-              >
-                Previous
-              </button>
-              <span className="text-sm text-slate-500 dark:text-slate-400">
-                Page {currentPage} of {totalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage >= totalPages}
-                className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-              >
-                Next
-              </button>
-            </div>
-          </>
-        )}
-      </Card>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -7,8 +7,8 @@ export default function ProtectedRoute({ children }) {
 
   if (authLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-900">
-        <p className="text-slate-500 dark:text-slate-400">Loading…</p>
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="">Loading…</p>
       </div>
     );
   }
