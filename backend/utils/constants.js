@@ -34,10 +34,23 @@ const TARDINESS_TIERS = [
 
 const ROUND_DECIMALS = 2;
 
+/**
+ * Job title to tip multiplier mapping
+ * Maps job titles to their tip multiplier (0.0 to 1.0)
+ * Default multiplier is 1.0 (100%) - set specific jobs that receive less
+ * Example: Dishwasher gets 0.75 (75% of the calculated tips)
+ */
+const JOB_TIP_MULTIPLIERS = {
+  default: 1.0, // Default multiplier if job not found
+  'Dishwasher': 0.75,
+  // Add more job titles as needed
+};
+
 module.exports = {
   PRODUCTION_DEDUCTION_PERCENT,
   SHIFT_BOUNDARIES,
   TARDINESS_TIERS,
   ROUND_DECIMALS,
   LOCATIONS,
+  JOB_TIP_MULTIPLIERS,
 };

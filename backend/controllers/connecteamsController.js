@@ -182,6 +182,8 @@ async function syncFromConnecteams(req, res, next) {
         clockIn: e.clockIn,
         clockOut: e.clockOut,
         ...(e.scheduledTime && { scheduledTime: e.scheduledTime }),
+        ...(e.jobTitle && { jobTitle: e.jobTitle }),
+        ...(e.subJobId && { subJobId: e.subJobId }),
       });
       created++;
     }
@@ -263,6 +265,8 @@ async function getClockInTimes(req, res, next) {
       ...(e.scheduledTime && { scheduledTime: e.scheduledTime }),
       locationKey: e.locationKey,
       employeeName: e.employeeName,
+      ...(e.jobId && { jobId: e.jobId }),
+      ...(e.subJobId && { subJobId: e.subJobId }),
     }));
 
     res.json({
@@ -348,6 +352,8 @@ async function getConnecteamTimeEntries(req, res, next) {
           date: new Date(e.date + 'T00:00:00.000Z'),
           clockIn: e.clockIn,
           clockOut: e.clockOut,
+          jobId: e.jobId || null,
+          subJobId: e.subJobId || null,
           _clockInMins: Number.isNaN(clockInMins) ? Infinity : clockInMins,
           _clockOutMins: Number.isNaN(clockOutMins) ? -1 : clockOutMins,
         });
@@ -361,6 +367,9 @@ async function getConnecteamTimeEntries(req, res, next) {
           row.clockOut = e.clockOut;
           row._clockOutMins = clockOutMins;
         }
+        // preserve job identifiers if missing
+        if (!row.jobId && e.jobId) row.jobId = e.jobId;
+        if (!row.subJobId && e.subJobId) row.subJobId = e.subJobId;
       }
     }
     const entries = Array.from(map.values()).map(({ _clockInMins, _clockOutMins, ...r }) => r);
