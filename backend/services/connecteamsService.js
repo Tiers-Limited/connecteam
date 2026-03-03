@@ -480,6 +480,9 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
       scheduledStartMs: sched && sched.scheduledStartMs != null ? sched.scheduledStartMs : undefined,
       clockInMs: clockInTs,
       clockOutMs: clockOutMsUse,
+      // propagate job identifiers so callers can resolve titles or apply multipliers
+      jobId: shift.jobId || null,
+      subJobId: shift.subJobId || null,
     });
   }
 
@@ -541,21 +544,9 @@ function getDatesInRange(startStr, endStr) {
   return dates;
 }
 
-/** getDay(): 0=Sun, 1=Mon, ... 6=Sat */
 const DAY_KEY_BY_JS_DAY = { 0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat' };
 
-/**
- * Get weekly tardiness from Connecteams using the same flow and data extraction as Time Entries:
- * same getTimeEntriesFromConnecteams source, same location filter (case-insensitive), and same
- * collapse to first punch (earliest clock-in) per employee per day.
- * @param {string} weekStart - Monday date YYYY-MM-DD
- * @param {string|null} locationKeyFilter - optional location key to filter (e.g. 'oranjestad')
- * @returns {Promise<{ entries: Array<{ employeeName, locationName, locationKey, date, scheduledTime, clockIn, minutesLate }>, dailyTotals: Record<string, number>, weekTotal: number }>}
- */
-/**
- * Get tardiness from Connecteams for an arbitrary date range (inclusive).
- * Same payload shape as getWeeklyTardinessFromConnecteams.
- */
+
 async function getTardinessFromConnecteamsByDateRange(startDate, endDate, locationKeyFilter = null) {
   const start = (startDate || '').toString().trim().slice(0, 10);
   const end = (endDate || '').toString().trim().slice(0, 10);
@@ -739,11 +730,45 @@ async function getActiveUsersCount() {
   return count;
 }
 
+/**
+ * Fetch job information from Connecteam API by jobId or subJobId
+ * @param {string} jobId - The job ID
+ * @returns {Promise<{jobId: string, title: string, code: string, description: string}|null>}
+ */
+// simple in‑memory cache for job titles so repeated lookups (e.g. many
+// employees with the same subJobId) don't hammer the Connecteam API.
+const jobInfoCache = new Map();
+
+async function getJobInfo(jobId) {
+  if (!jobId) return null;
+  if (jobInfoCache.has(jobId)) return jobInfoCache.get(jobId);
+
+  try {
+    const jobRes = await connecteamsFetch(`/jobs/v1/jobs/${encodeURIComponent(jobId)}`);
+    if (jobRes && jobRes.data && jobRes.data.job) {
+      const job = jobRes.data.job;
+      const result = {
+        jobId: job.jobId || jobId,
+        title: job.title || null,
+        code: job.code || null,
+        description: job.description || null,
+      };
+      jobInfoCache.set(jobId, result);
+      return result;
+    }
+    return null;
+  } catch (err) {
+    console.warn(`[getJobInfo] Failed to fetch job ${jobId}:`, err.message);
+    return null;
+  }
+}
+
 module.exports = {
   connecteamsFetch,
   getTimeEntriesFromConnecteams,
   getWeeklyTardinessFromConnecteams,
   getTardinessFromConnecteamsByDateRange,
   getActiveUsersCount,
+  getJobInfo,
   LOCATIONS: LOCATIONS,
 };

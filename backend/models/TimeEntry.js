@@ -30,6 +30,14 @@ const timeEntrySchema = new mongoose.Schema(
       type: String,
       match: /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/,
     },
+    jobTitle: {
+      type: String,
+      default: null,
+    },
+    subJobId: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true }
 );

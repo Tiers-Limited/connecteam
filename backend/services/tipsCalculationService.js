@@ -11,7 +11,7 @@ const DailyTipAudit = require('../models/DailyTipAudit');
 const ProductionStaff = require('../models/ProductionStaff');
 const connecteamsService = require('./connecteamsService');
 const employeeService = require('./employeeService');
-const { PRODUCTION_DEDUCTION_PERCENT, SHIFT_BOUNDARIES, TARDINESS_TIERS, ROUND_DECIMALS, LOCATIONS } = require('../utils/constants');
+const { PRODUCTION_DEDUCTION_PERCENT, SHIFT_BOUNDARIES, TARDINESS_TIERS, ROUND_DECIMALS, LOCATIONS, JOB_TIP_MULTIPLIERS } = require('../utils/constants');
 const {
   getWeekStart,
   getWeekEnd,
@@ -24,13 +24,7 @@ const {
   dateStringToUtcRange,
 } = require('../utils/dateUtils');
 
-/**
- * Split worked time into AM (06:00-15:00) and PM (15:00-23:00) hours.
- * No rounding during calculation; round only at output stage.
- * @param {string} clockIn - "HH:mm"
- * @param {string} clockOut - "HH:mm"
- * @returns {{ amHours: number, pmHours: number }}
- */
+
 function splitWorkedHours(clockIn, clockOut) {
   const AM_START = timeToMinutes(SHIFT_BOUNDARIES.AM_START);
   const AM_END = timeToMinutes(SHIFT_BOUNDARIES.AM_END);
@@ -77,6 +71,30 @@ function getTardinessDeductionPercent(minutes) {
   if (minutes <= 5) return 0;
   if (minutes <= 10) return 0.15;
   return 0.2;
+}
+
+/**
+ * Get job-based tip multiplier for a job title
+ * @param {string} jobTitle - The job title from Connecteam
+ * @returns {number} Multiplier between 0.0 and 1.0
+ */
+function getJobTipMultiplier(jobTitle) {
+  console.log("job title", jobTitle);
+  if (!jobTitle) return JOB_TIP_MULTIPLIERS.default || 1.0;
+  const title = String(jobTitle).trim();
+  // Exact match first
+  if (title in JOB_TIP_MULTIPLIERS) {
+    return JOB_TIP_MULTIPLIERS[title];
+  }
+  // Case-insensitive match
+  const titleLower = title.toLowerCase();
+  for (const [key, multiplier] of Object.entries(JOB_TIP_MULTIPLIERS)) {
+    if (key !== 'default' && key.toLowerCase() === titleLower) {
+      return multiplier;
+    }
+  }
+  // Default multiplier
+  return JOB_TIP_MULTIPLIERS.default || 1.0;
 }
 
 /**
@@ -155,6 +173,8 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         clockOut: e.clockOut,
         connecteamsUserId: (e.employeeId && (e.employeeId.connecteamsUserId != null)) ? String(e.employeeId.connecteamsUserId) : (e.employeeId && e.employeeId._id ? e.employeeId._id.toString() : ''),
         employeeName: (e.employeeId && e.employeeId.name) || '',
+        jobTitle: e.jobTitle || null,
+        subJobId: e.subJobId || null,
       }));
       if (rawConnecteamEntries.length === 0) {
         return { error: 'Failed to load time entries from Connecteam: ' + (err.message || 'Unknown error') + '. Sync time entries for this location/date from Time Entries (Load from Connecteam), then try again.', locationId, date: dateStr };
@@ -183,6 +203,8 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         employeeName: entry.employeeName || 'User ' + uid,
         firstIn: entry.clockIn,
         lastOut: entry.clockOut,
+        jobTitle: entry.jobTitle || null,
+        subJobId: entry.subJobId || null,
         inMin,
         outMin,
       });
@@ -195,6 +217,11 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       if (outMin > row.outMin) {
         row.lastOut = entry.clockOut;
         row.outMin = outMin;
+      }
+      // Use the job title from whichever entry we have it from
+      if (!row.jobTitle && entry.jobTitle) {
+        row.jobTitle = entry.jobTitle;
+        row.subJobId = entry.subJobId || null;
       }
     }
   }
@@ -210,6 +237,27 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     const employeeId = employee?._id || null;
     const employeeName = employee?.name || row.employeeName;
     const mapKey = employeeId ? employeeId.toString() : `connecteam_${connecteamsUserId}`;
+    
+    // If a subJobId exists we always want to resolve the actual job title from
+    // Connecteam.  The raw entry.jobTitle is derived from the parent/jobId
+    // (typically the location) and will not reflect a sub‑job such as
+    // "Dishwasher".  Overwrite whatever was captured earlier.
+    let jobTitle = row.jobTitle;
+    if (row.subJobId) {
+      try {
+        const jobInfo = await connecteamsService.getJobInfo(row.subJobId);
+        if (jobInfo && jobInfo.title) {
+          jobTitle = jobInfo.title;
+        }
+      } catch (err) {
+        console.warn(`[getDailyTipCalculation] Failed to fetch job info for ${row.subJobId}:`, err.message);
+      }
+    }
+    
+    if (jobTitle) {
+      console.log(`[DailyTip] Employee: ${employeeName} | Job: ${jobTitle}`);
+    }
+    
     employeeHours.set(mapKey, {
       employeeId,
       employeeName,
@@ -217,6 +265,8 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       pmHours,
       clockIn: row.firstIn,
       clockOut: row.lastOut,
+      jobTitle,
+      subJobId: row.subJobId,
     });
   }
 
@@ -225,7 +275,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       if (row.employeeId && row.clockIn && row.clockOut) {
         await TimeEntry.findOneAndUpdate(
           { employeeId: row.employeeId, locationId, date: timeEntryDayStart },
-          { $set: { clockIn: row.clockIn, clockOut: row.clockOut } },
+          { $set: { clockIn: row.clockIn, clockOut: row.clockOut, jobTitle: row.jobTitle, subJobId: row.subJobId } },
           { upsert: true }
         );
       }
@@ -294,21 +344,31 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   const pmTipRate = totalPMHours > 0 ? adjustedDistributablePM / totalPMHours : 0;
 
   // Step 9: Employee tip allocation; round only at output (2 decimals)
+  // Apply job-based multiplier to tips
   const employeeAllocations = [];
   for (const row of employeeHours.values()) {
     const amTips = row.amHours * amTipRate;
     const pmTips = row.pmHours * pmTipRate;
     const totalCalculated = amTips + pmTips;
-    const totalTips = totalCalculated + (row.manualAmTips || 0) + (row.manualPmTips || 0);
+    
+    // Apply job-based multiplier
+    const jobMultiplier = getJobTipMultiplier(row.jobTitle);
+    const multipliedAmTips = amTips * jobMultiplier;
+    const multipliedPmTips = pmTips * jobMultiplier;
+    const multipliedTotalCalculated = multipliedAmTips + multipliedPmTips;
+    
+    const totalTips = multipliedTotalCalculated + (row.manualAmTips || 0) + (row.manualPmTips || 0);
     employeeAllocations.push({
       employeeId: row.employeeId,
       employeeName: row.employeeName,
+      jobTitle: row.jobTitle || null,
+      jobTipMultiplier: jobMultiplier,
       clockIn: row.clockIn || null,
       clockOut: row.clockOut || null,
       amWorkedHours: roundMoney(row.amHours),
       pmWorkedHours: roundMoney(row.pmHours),
-      amTips: roundMoney(amTips),
-      pmTips: roundMoney(pmTips),
+      amTips: roundMoney(multipliedAmTips),
+      pmTips: roundMoney(multipliedPmTips),
       manualAmTips: roundMoney(row.manualAmTips || 0),
       manualPmTips: roundMoney(row.manualPmTips || 0),
       totalTips: roundMoney(totalTips),
@@ -326,12 +386,15 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         employeeName: r.employeeName,
         firstClockIn: r.firstIn,
         lastClockOut: r.lastOut,
+        jobTitle: r.jobTitle,
       })),
     },
     derived: {
       employeeHours: Array.from(employeeHours.values()).map((r) => ({
         employeeId: r.employeeId,
         employeeName: r.employeeName,
+        jobTitle: r.jobTitle,
+        jobTipMultiplier: getJobTipMultiplier(r.jobTitle),
         amHours: roundMoney(r.amHours),
         pmHours: roundMoney(r.pmHours),
       })),
