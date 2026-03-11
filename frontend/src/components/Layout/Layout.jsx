@@ -3,17 +3,14 @@ import { Outlet, NavLink, Link, useNavigate, useLocation, Navigate } from 'react
 import { useAuth } from '../../context/AuthContext';
 import { FiUser, FiLogOut, FiUsers, FiSettings } from 'react-icons/fi';
 
-const adminNavItems = [
+// All navigation items
+const navItems = [
   { to: '/', label: 'Dashboard' },
   { to: '/daily-tips', label: 'Daily Tips' },
   { to: '/production-pool', label: 'Production Pool' },
   { to: '/weekly-payout', label: 'Weekly Payout' },
   { to: '/weekly-tardiness', label: 'Weekly Tardiness' },
   { to: '/daily-tips-history', label: 'Tip History' },
-];
-
-const supervisorNavItems = [
-  { to: '/daily-tips', label: 'Daily Tips' },
 ];
 
 export default function Layout() {
@@ -24,10 +21,7 @@ export default function Layout() {
 
   const isAdmin = user?.role === 'admin';
   const isSupervisor = user?.role === 'supervisor';
-  const navItems = isAdmin ? adminNavItems : supervisorNavItems;
   const location = useLocation();
-  const supervisorAllowedPaths = ['/daily-tips', '/settings'];
-  const shouldRedirectSupervisor = isSupervisor && !supervisorAllowedPaths.includes(location.pathname);
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -47,6 +41,17 @@ export default function Layout() {
     navigate('/login');
   }
 
+  // Filter navigation items based on user role
+  const getFilteredNavItems = () => {
+    if (isAdmin) {
+      return navItems; // Admin sees all items
+    }
+    // Supervisor sees all items except 'daily-tips-history'
+    return navItems.filter(item => item.to !== '/daily-tips-history');
+  };
+
+  const filteredNavItems = getFilteredNavItems();
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
@@ -55,7 +60,8 @@ export default function Layout() {
             Corvia Tips Dashboard
           </h1>
           <nav className="flex flex-wrap items-center gap-1">
-            {navItems.map(({ to, label }) => (
+            {/* Render filtered navigation items based on role */}
+            {filteredNavItems.map(({ to, label }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -95,6 +101,7 @@ export default function Layout() {
                       </p>
                     )}
                   </div>
+                  {/* Only admins can see the Supervisors link */}
                   {isAdmin && (
                     <Link
                       to="/supervisors"
@@ -128,11 +135,7 @@ export default function Layout() {
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-        {shouldRedirectSupervisor ? (
-          <Navigate to="/daily-tips" replace />
-        ) : (
-          <Outlet />
-        )}
+        <Outlet />
       </main>
     </div>
   );
