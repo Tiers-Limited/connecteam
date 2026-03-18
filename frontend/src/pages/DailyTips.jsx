@@ -218,9 +218,10 @@ export default function DailyTips() {
           reason: "",
         }),
       ]);
-      toast.success("Adjustments saved");
+      // Keep modal open while recalculation loads so the user sees progress.
+      toast.success("Adjustments saved. Recalculating…");
+      await load(false);
       setAdjustModalOpen(false);
-      await load(true);
     } catch (_e) {
       toast.error("Failed to save adjustments");
     } finally {
@@ -888,7 +889,7 @@ export default function DailyTips() {
                 Cancel
               </Button>
               <Button type="button" onClick={saveAdjustments} disabled={adjustSaving}>
-                {adjustSaving ? <>{spinner}Saving…</> : "Save adjustments"}
+                {adjustSaving ? <>{spinner}Saving &amp; recalculating…</> : "Save adjustments"}
               </Button>
             </div>
           </div>
