@@ -45,6 +45,7 @@ export default function DailyTips() {
   const [pageSize, setPageSize] = useState(25);
 
   const location = locations.find((l) => l._id === selectedLocationId);
+  const isTheCove = (location?.name || '').trim().toLowerCase() === 'the cove';
 
   const load = useCallback(
     async (silent = false) => {
@@ -69,7 +70,7 @@ export default function DailyTips() {
         if (tipInput)
           setForm({
             amGrossTips: String(tipInput.amGrossTips),
-            pmGrossTips: String(tipInput.pmGrossTips),
+            pmGrossTips: isTheCove ? "" : String(tipInput.pmGrossTips),
           });
         else setForm({ amGrossTips: "", pmGrossTips: "" });
         setDailyTipsCache((prev) => ({
@@ -79,7 +80,7 @@ export default function DailyTips() {
           form: tipInput
             ? {
                 amGrossTips: String(tipInput.amGrossTips),
-                pmGrossTips: String(tipInput.pmGrossTips),
+                pmGrossTips: isTheCove ? "" : String(tipInput.pmGrossTips),
               }
             : { amGrossTips: "", pmGrossTips: "" },
           calculation: calc?.error ? null : calc || null,
@@ -91,7 +92,7 @@ export default function DailyTips() {
         if (!silent) setLoading(false);
       }
     },
-    [selectedLocationId, date, setDailyTipsCache],
+    [selectedLocationId, date, setDailyTipsCache, isTheCove],
   );
 
   useEffect(() => {
@@ -107,13 +108,13 @@ export default function DailyTips() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const am = parseFloat(form.amGrossTips);
-    const pm = parseFloat(form.pmGrossTips);
+    const pm = isTheCove ? 0 : parseFloat(form.pmGrossTips);
     if (isNaN(am) || am < 0) {
       setFormErrors({ amGrossTips: "Enter a valid amount ≥ 0" });
       toast.error("AM gross tips must be ≥ 0");
       return;
     }
-    if (isNaN(pm) || pm < 0) {
+    if (!isTheCove && (form.pmGrossTips === "" || isNaN(pm) || pm < 0)) {
       setFormErrors({ pmGrossTips: "Enter a valid amount ≥ 0" });
       toast.error("PM gross tips must be ≥ 0");
       return;
@@ -181,6 +182,8 @@ export default function DailyTips() {
         )
       : null;
 
+  const showShiftSplit = !isTheCove;
+
   const spinner = (
     <svg
       className="mr-2 h-4 w-4 animate-spin"
@@ -220,8 +223,10 @@ export default function DailyTips() {
     calculation?.inputs?.amGrossTips ??
     (form.amGrossTips !== "" ? parseFloat(form.amGrossTips) : null);
   const pmGross =
-    calculation?.inputs?.pmGrossTips ??
-    (form.pmGrossTips !== "" ? parseFloat(form.pmGrossTips) : null);
+    isTheCove
+      ? 0
+      : calculation?.inputs?.pmGrossTips ??
+        (form.pmGrossTips !== "" ? parseFloat(form.pmGrossTips) : null);
   const totalGross =
     (typeof amGross === "number" && !Number.isNaN(amGross) ? amGross : 0) +
     (typeof pmGross === "number" && !Number.isNaN(pmGross) ? pmGross : 0);
@@ -237,8 +242,11 @@ export default function DailyTips() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-slate-800">Daily Tips</h1>
       <p className="text-slate-600">
-        {location?.name} — Enter gross tips per shift (AM 06:00–15:00, PM
-        15:00–23:00). 4% is deducted for production pool
+        {location?.name} —
+        {isTheCove
+          ? ' Enter gross tips for one combined shift (all hours counted, no AM/PM split). '
+          : ' Enter gross tips per shift (AM 06:00–15:00, PM 15:00–23:00). '}
+        4% is deducted for production pool
         {productionDeductionDollars != null && (
           <strong className="text-slate-800">
             {" "}
@@ -284,7 +292,7 @@ export default function DailyTips() {
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">
-              AM Gross Tips ($)
+              {isTheCove ? 'Gross Tips ($)' : 'AM Gross Tips ($)'}
             </label>
             <input
               type="number"
@@ -303,27 +311,29 @@ export default function DailyTips() {
               </p>
             )}
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-500">
-              PM Gross Tips ($)
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={form.pmGrossTips}
-              onChange={(e) =>
-                setForm({ ...form, pmGrossTips: e.target.value })
-              }
-              className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-              placeholder="0"
-            />
-            {formErrors.pmGrossTips && (
-              <p className="mt-0.5 text-xs text-red-600">
-                {formErrors.pmGrossTips}
-              </p>
-            )}
-          </div>
+          {!isTheCove && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">
+                PM Gross Tips ($)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.pmGrossTips}
+                onChange={(e) =>
+                  setForm({ ...form, pmGrossTips: e.target.value })
+                }
+                className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                placeholder="0"
+              />
+              {formErrors.pmGrossTips && (
+                <p className="mt-0.5 text-xs text-red-600">
+                  {formErrors.pmGrossTips}
+                </p>
+              )}
+            </div>
+          )}
           <Button type="submit" disabled={saving}>
             {saving ? <>{spinner}Saving…</> : "Save"}
           </Button>
@@ -363,20 +373,34 @@ export default function DailyTips() {
                   ${productionDeductionDollars?.toFixed(2) ?? "0.00"}
                 </strong>
               </span>
-              <span>
-                AM distributable: $
-                {calculation.inputs?.distributableAM?.toFixed(2)}
-              </span>
-              <span>
-                PM distributable: $
-                {calculation.inputs?.distributablePM?.toFixed(2)}
-              </span>
-              <span>
-                AM tip rate: ${calculation.totals?.amTipRate?.toFixed(2)}/hr
-              </span>
-              <span>
-                PM tip rate: ${calculation.totals?.pmTipRate?.toFixed(2)}/hr
-              </span>
+              {isTheCove ? (
+                <>
+                  <span>
+                    Distributable: $
+                    {calculation.inputs?.distributableAM?.toFixed(2)}
+                  </span>
+                  <span>
+                    Tip rate: ${calculation.totals?.amTipRate?.toFixed(2)}/hr
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>
+                    AM distributable: $
+                    {calculation.inputs?.distributableAM?.toFixed(2)}
+                  </span>
+                  <span>
+                    PM distributable: $
+                    {calculation.inputs?.distributablePM?.toFixed(2)}
+                  </span>
+                  <span>
+                    AM tip rate: ${calculation.totals?.amTipRate?.toFixed(2)}/hr
+                  </span>
+                  <span>
+                    PM tip rate: ${calculation.totals?.pmTipRate?.toFixed(2)}/hr
+                  </span>
+                </>
+              )}
             </div>
             {totalRows > 0 && (
               <div className="flex flex-wrap items-center gap-3">
@@ -521,18 +545,31 @@ export default function DailyTips() {
                   <th className="pb-2 text-left font-medium text-slate-700">
                     Clock Out
                   </th>
-                  <th className="pb-2 text-right font-medium text-slate-700">
-                    AM hrs
-                  </th>
-                  <th className="pb-2 text-right font-medium text-slate-700">
-                    PM hrs
-                  </th>
-                  <th className="pb-2 text-right font-medium text-slate-700">
-                    AM tips
-                  </th>
-                  <th className="pb-2 text-right font-medium text-slate-700">
-                    PM tips
-                  </th>
+                  {showShiftSplit ? (
+                    <>
+                      <th className="pb-2 text-right font-medium text-slate-700">
+                        AM hrs
+                      </th>
+                      <th className="pb-2 text-right font-medium text-slate-700">
+                        PM hrs
+                      </th>
+                      <th className="pb-2 text-right font-medium text-slate-700">
+                        AM tips
+                      </th>
+                      <th className="pb-2 text-right font-medium text-slate-700">
+                        PM tips
+                      </th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="pb-2 text-right font-medium text-slate-700">
+                        Hours
+                      </th>
+                      <th className="pb-2 text-right font-medium text-slate-700">
+                        Tips
+                      </th>
+                    </>
+                  )}
                   <th className="pb-2 text-right font-medium text-slate-700">
                     Total
                   </th>
@@ -553,18 +590,31 @@ export default function DailyTips() {
                     <td className="py-2 tabular-nums text-slate-600">
                       {a.clockOut ?? "–"}
                     </td>
-                    <td className="py-2 text-right tabular-nums text-slate-600">
-                      {a.amWorkedHours?.toFixed(2)}
-                    </td>
-                    <td className="py-2 text-right tabular-nums text-slate-600">
-                      {a.pmWorkedHours?.toFixed(2)}
-                    </td>
-                    <td className="py-2 text-right tabular-nums text-slate-600">
-                      ${a.amTips?.toFixed(2)}
-                    </td>
-                    <td className="py-2 text-right tabular-nums text-slate-600">
-                      ${a.pmTips?.toFixed(2)}
-                    </td>
+                    {showShiftSplit ? (
+                      <>
+                        <td className="py-2 text-right tabular-nums text-slate-600">
+                          {a.amWorkedHours?.toFixed(2)}
+                        </td>
+                        <td className="py-2 text-right tabular-nums text-slate-600">
+                          {a.pmWorkedHours?.toFixed(2)}
+                        </td>
+                        <td className="py-2 text-right tabular-nums text-slate-600">
+                          ${a.amTips?.toFixed(2)}
+                        </td>
+                        <td className="py-2 text-right tabular-nums text-slate-600">
+                          ${a.pmTips?.toFixed(2)}
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="py-2 text-right tabular-nums text-slate-600">
+                          {a.amWorkedHours?.toFixed(2)}
+                        </td>
+                        <td className="py-2 text-right tabular-nums text-slate-600">
+                          ${a.amTips?.toFixed(2)}
+                        </td>
+                      </>
+                    )}
                     <td className="py-2 text-right font-medium tabular-nums text-slate-800">
                       ${a.totalTips?.toFixed(2)}
                     </td>
@@ -576,18 +626,31 @@ export default function DailyTips() {
                   <tr className="bg-slate-100 font-semibold">
                     <td className="py-3 pl-2 text-slate-800">Total</td>
                     <td className="py-3" colSpan={2} />
-                    <td className="py-3 text-right tabular-nums text-slate-800">
-                      {totals.amWorkedHours.toFixed(2)}
-                    </td>
-                    <td className="py-3 text-right tabular-nums text-slate-800">
-                      {totals.pmWorkedHours.toFixed(2)}
-                    </td>
-                    <td className="py-3 text-right tabular-nums text-slate-800">
-                      ${totals.amTips.toFixed(2)}
-                    </td>
-                    <td className="py-3 text-right tabular-nums text-slate-800">
-                      ${totals.pmTips.toFixed(2)}
-                    </td>
+                    {showShiftSplit ? (
+                      <>
+                        <td className="py-3 text-right tabular-nums text-slate-800">
+                          {totals.amWorkedHours.toFixed(2)}
+                        </td>
+                        <td className="py-3 text-right tabular-nums text-slate-800">
+                          {totals.pmWorkedHours.toFixed(2)}
+                        </td>
+                        <td className="py-3 text-right tabular-nums text-slate-800">
+                          ${totals.amTips.toFixed(2)}
+                        </td>
+                        <td className="py-3 text-right tabular-nums text-slate-800">
+                          ${totals.pmTips.toFixed(2)}
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="py-3 text-right tabular-nums text-slate-800">
+                          {totals.amWorkedHours.toFixed(2)}
+                        </td>
+                        <td className="py-3 text-right tabular-nums text-slate-800">
+                          ${totals.amTips.toFixed(2)}
+                        </td>
+                      </>
+                    )}
                     <td className="py-3 text-right tabular-nums text-slate-800">
                       ${totals.totalTips.toFixed(2)}
                     </td>
@@ -603,30 +666,49 @@ export default function DailyTips() {
                 Totals
               </p>
               <div className="flex flex-wrap gap-6 text-sm text-slate-600">
-                <span>
-                  AM hours:{" "}
-                  <strong className="text-slate-800">
-                    {totals.amWorkedHours.toFixed(2)}
-                  </strong>
-                </span>
-                <span>
-                  PM hours:{" "}
-                  <strong className="text-slate-800">
-                    {totals.pmWorkedHours.toFixed(2)}
-                  </strong>
-                </span>
-                <span>
-                  AM tips:{" "}
-                  <strong className="text-slate-800">
-                    ${totals.amTips.toFixed(2)}
-                  </strong>
-                </span>
-                <span>
-                  PM tips:{" "}
-                  <strong className="text-slate-800">
-                    ${totals.pmTips.toFixed(2)}
-                  </strong>
-                </span>
+                {showShiftSplit ? (
+                  <>
+                    <span>
+                      AM hours:{" "}
+                      <strong className="text-slate-800">
+                        {totals.amWorkedHours.toFixed(2)}
+                      </strong>
+                    </span>
+                    <span>
+                      PM hours:{" "}
+                      <strong className="text-slate-800">
+                        {totals.pmWorkedHours.toFixed(2)}
+                      </strong>
+                    </span>
+                    <span>
+                      AM tips:{" "}
+                      <strong className="text-slate-800">
+                        ${totals.amTips.toFixed(2)}
+                      </strong>
+                    </span>
+                    <span>
+                      PM tips:{" "}
+                      <strong className="text-slate-800">
+                        ${totals.pmTips.toFixed(2)}
+                      </strong>
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span>
+                      Hours:{" "}
+                      <strong className="text-slate-800">
+                        {totals.amWorkedHours.toFixed(2)}
+                      </strong>
+                    </span>
+                    <span>
+                      Tips:{" "}
+                      <strong className="text-slate-800">
+                        ${totals.amTips.toFixed(2)}
+                      </strong>
+                    </span>
+                  </>
+                )}
                 <span>
                   Total tips:{" "}
                   <strong className="text-slate-800">

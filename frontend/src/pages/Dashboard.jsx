@@ -169,9 +169,7 @@ export default function Dashboard() {
           <p className="mt-2 text-2xl font-bold tabular-nums text-slate-800">
             {summary?.locationsCount ?? locations.length ?? 0}
           </p>
-          <Link to="/time-entries" className="mt-2 inline-block text-xs font-medium text-indigo-600 hover:underline">
-            Time Entries →
-          </Link>
+         
         </div>
 
         <div className="rounded-xl border border-emerald-100 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 p-5 shadow-sm">

@@ -11,6 +11,13 @@ const SHIFT_BOUNDARIES = {
   PM_END: '23:00',
 };
 
+const LOCATION_SINGLE_SHIFT = {
+  name: 'The Cove',
+  key: 'the cove',
+  shiftStart: '06:00',
+  shiftEnd: '16:00',
+};
+
 /**
  * Fixed locations for Connecteams sync (from demo: Oranjestad, Casa del Mar, The Cove, Drive Thru).
  * Do not add locations manually for staff tips; use these four.
@@ -19,7 +26,7 @@ const LOCATIONS = [
   { key: 'oranjestad', name: 'Oranjestad' },
   { key: 'casa del mar', name: 'Casa del Mar' },
   { key: 'the cove', name: 'The Cove' },
-  { key: 'drive thru', name: 'Drive Thru' },
+  // { key: 'drive thru', name: 'Drive Thru' },
 ];
 
 /**
@@ -49,6 +56,7 @@ const JOB_TIP_MULTIPLIERS = {
 module.exports = {
   PRODUCTION_DEDUCTION_PERCENT,
   SHIFT_BOUNDARIES,
+  LOCATION_SINGLE_SHIFT,
   TARDINESS_TIERS,
   ROUND_DECIMALS,
   LOCATIONS,

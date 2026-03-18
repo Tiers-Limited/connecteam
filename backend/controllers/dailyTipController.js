@@ -24,7 +24,7 @@ async function getCalculation(req, res, next) {
 async function upsert(req, res, next) {
   try {
     const { locationId, date } = req.params;
-    const { amGrossTips, pmGrossTips } = req.body;
+    const { amGrossTips, pmGrossTips = 0 } = req.body;
     const user = req.user || {};
     const tipInput = await dailyTipInputService.upsert(locationId, date, {
       amGrossTips,
