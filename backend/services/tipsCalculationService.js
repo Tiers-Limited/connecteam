@@ -5,6 +5,7 @@ const ManualWorking = require('../models/ManualWorking');
 const WeeklyTardiness = require('../models/WeeklyTardiness');
 const WeeklyTardinessCache = require('../models/WeeklyTardinessCache');
 const ManualDeduction = require('../models/ManualDeduction');
+const DailyTipAdjustment = require('../models/DailyTipAdjustment');
 const Employee = require('../models/Employee');
 const Location = require('../models/Location');
 const DailyTipAudit = require('../models/DailyTipAudit');
@@ -407,6 +408,45 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     });
   }
 
+  // Step 9b: Daily adjustments
+  const adjustments = await DailyTipAdjustment.find({ locationId, date: dateStart }).lean();
+  const cashAdvanceByEmp = new Map();
+  const redistributeByEmp = new Map();
+  for (const a of adjustments) {
+    const empKey = a.employeeId?.toString?.() || String(a.employeeId || '');
+    const amt = Number(a.amount) || 0;
+    if (!empKey || amt <= 0) continue;
+    if (a.type === 'cash_advance') cashAdvanceByEmp.set(empKey, (cashAdvanceByEmp.get(empKey) || 0) + amt);
+    if (a.type === 'redistribute_equal') redistributeByEmp.set(empKey, (redistributeByEmp.get(empKey) || 0) + amt);
+  }
+
+  let redistributionPool = 0;
+  const redistributionExcluded = new Set();
+  for (const [empKey, amt] of redistributeByEmp.entries()) {
+    redistributionPool += amt;
+    redistributionExcluded.add(empKey);
+  }
+
+  const eligibleRecipients = employeeAllocations.filter(
+    (r) => r.employeeId && !redistributionExcluded.has(r.employeeId.toString())
+  );
+  const equalShare = eligibleRecipients.length > 0 ? redistributionPool / eligibleRecipients.length : 0;
+
+  for (const r of employeeAllocations) {
+    const empKey = r.employeeId?.toString?.() || '';
+    const cashAdvance = cashAdvanceByEmp.get(empKey) || 0;
+    const redistributeDeduction = redistributeByEmp.get(empKey) || 0;
+    const redistributionShare = eligibleRecipients.length > 0 && empKey && !redistributionExcluded.has(empKey) ? equalShare : 0;
+
+    const finalTipsRaw = (Number(r.totalTips) || 0) - cashAdvance - redistributeDeduction + redistributionShare;
+    const finalTips = Math.max(0, finalTipsRaw);
+
+    r.cashAdvanceDeduction = roundMoney(cashAdvance);
+    r.redistributeDeduction = roundMoney(redistributeDeduction);
+    r.redistributionShare = roundMoney(redistributionShare);
+    r.finalTips = roundMoney(finalTips);
+  }
+
   // Step 10: Audit snapshot (raw, derived, financial)
   const auditPayload = {
     locationId,
@@ -473,6 +513,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       adjustedDistributablePM: roundMoney(adjustedDistributablePM),
       distributable: isTheCove ? roundMoney(adjustedDistributableAM) : null,
       tipRate: isTheCove ? roundMoney(amTipRate) : null,
+      redistributionPool: roundMoney(redistributionPool),
     },
     totals: {
       totalAMHours: roundMoney(totalAMHours),
@@ -481,6 +522,12 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       pmTipRate: roundMoney(pmTipRate),
     },
     employeeAllocations,
+    adjustments: adjustments.map((a) => ({
+      employeeId: a.employeeId,
+      type: a.type,
+      amount: roundMoney(Number(a.amount) || 0),
+      reason: a.reason || '',
+    })),
     audit: auditPayload,
   };
 }
