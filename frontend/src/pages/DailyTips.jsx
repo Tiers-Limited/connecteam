@@ -5,6 +5,7 @@ import {
   getDailyTipInput,
   getDailyTipCalculation,
   upsertDailyTipInput,
+  upsertDailyTipAdjustment,
 } from "../services/dailyTipService";
 import { toDateString } from "../utils/dateUtils";
 import { exportTableToCSV, exportTableToPDF } from "../utils/reportUtils";
@@ -23,17 +24,12 @@ export default function DailyTips() {
   const [date, setDate] = useState(
     () => dailyTipsCache?.date || toDateString(new Date()),
   );
-  const [input, setInput] = useState(null);
+  const [_input, setInput] = useState(null);
   const [calculation, setCalculation] = useState(
     () => dailyTipsCache?.calculation ?? null,
   );
   const [calculationError, setCalculationError] = useState(
     () => dailyTipsCache?.calculationError ?? null,
-  );
-  const hasCachedResult = !!(
-    dailyTipsCache?.locationId &&
-    dailyTipsCache?.date &&
-    (dailyTipsCache?.calculation || dailyTipsCache?.calculationError)
   );
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState(
@@ -43,6 +39,11 @@ export default function DailyTips() {
   const [saving, setSaving] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [adjustModalOpen, setAdjustModalOpen] = useState(false);
+  const [adjustEmployee, setAdjustEmployee] = useState(null);
+  const [adjustCashAdvance, setAdjustCashAdvance] = useState("");
+  const [adjustRedistribute, setAdjustRedistribute] = useState("");
+  const [adjustSaving, setAdjustSaving] = useState(false);
 
   const location = locations.find((l) => l._id === selectedLocationId);
   const isTheCove = (location?.name || '').trim().toLowerCase() === 'the cove';
@@ -86,7 +87,7 @@ export default function DailyTips() {
           calculation: calc?.error ? null : calc || null,
           calculationError: calc?.error || null,
         }));
-      } catch (e) {
+      } catch (_e) {
         setCalculationError("Failed to load data");
       } finally {
         if (!silent) setLoading(false);
@@ -170,7 +171,8 @@ export default function DailyTips() {
             pmWorkedHours: acc.pmWorkedHours + (Number(a.pmWorkedHours) || 0),
             amTips: acc.amTips + (Number(a.amTips) || 0),
             pmTips: acc.pmTips + (Number(a.pmTips) || 0),
-            totalTips: acc.totalTips + (Number(a.totalTips) || 0),
+            totalTips:
+              acc.totalTips + (Number(a.finalTips ?? a.totalTips) || 0),
           }),
           {
             amWorkedHours: 0,
@@ -181,6 +183,57 @@ export default function DailyTips() {
           },
         )
       : null;
+
+  const openAdjustModal = useCallback(
+    (row) => {
+      setAdjustEmployee(row);
+      setAdjustCashAdvance(
+        String(row.cashAdvanceDeduction ?? 0),
+      );
+      setAdjustRedistribute(
+        String(row.redistributeDeduction ?? 0),
+      );
+      setAdjustModalOpen(true);
+    },
+    [],
+  );
+
+  const saveAdjustments = useCallback(async () => {
+    if (!selectedLocationId || !adjustEmployee?.employeeId) return;
+    const cashAdvance = Math.max(0, parseFloat(adjustCashAdvance || "0") || 0);
+    const redistribute = Math.max(0, parseFloat(adjustRedistribute || "0") || 0);
+    setAdjustSaving(true);
+    try {
+      await Promise.all([
+        upsertDailyTipAdjustment(selectedLocationId, date, {
+          employeeId: adjustEmployee.employeeId,
+          type: "cash_advance",
+          amount: cashAdvance,
+          reason: "",
+        }),
+        upsertDailyTipAdjustment(selectedLocationId, date, {
+          employeeId: adjustEmployee.employeeId,
+          type: "redistribute_equal",
+          amount: redistribute,
+          reason: "",
+        }),
+      ]);
+      toast.success("Adjustments saved");
+      setAdjustModalOpen(false);
+      await load(true);
+    } catch (_e) {
+      toast.error("Failed to save adjustments");
+    } finally {
+      setAdjustSaving(false);
+    }
+  }, [
+    selectedLocationId,
+    date,
+    adjustEmployee,
+    adjustCashAdvance,
+    adjustRedistribute,
+    load,
+  ]);
 
   const showShiftSplit = !isTheCove;
 
@@ -365,6 +418,16 @@ export default function DailyTips() {
             Daily calculation (audit)
           </h2>
 
+          {calculation.inputs?.redistributionPool > 0 && (
+            <div className="mb-3 rounded-lg border border-indigo-200 bg-indigo-50/50 px-4 py-3 text-sm text-indigo-700">
+              Redistribution pool:{" "}
+              <strong className="text-indigo-900">
+                ${Number(calculation.inputs.redistributionPool).toFixed(2)}
+              </strong>{" "}
+              (deducted from selected employee(s) and redistributed equally to others)
+            </div>
+          )}
+
           <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-3">
             <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
               <span>
@@ -454,8 +517,8 @@ export default function DailyTips() {
                         a.pmTips != null
                           ? `$${Number(a.pmTips).toFixed(2)}`
                           : "",
-                        a.totalTips != null
-                          ? `$${Number(a.totalTips).toFixed(2)}`
+                        (a.finalTips ?? a.totalTips) != null
+                          ? `$${Number(a.finalTips ?? a.totalTips).toFixed(2)}`
                           : "",
                       ]);
                       if (totals) {
@@ -501,8 +564,8 @@ export default function DailyTips() {
                         a.pmTips != null
                           ? `$${Number(a.pmTips).toFixed(2)}`
                           : "",
-                        a.totalTips != null
-                          ? `$${Number(a.totalTips).toFixed(2)}`
+                        (a.finalTips ?? a.totalTips) != null
+                          ? `$${Number(a.finalTips ?? a.totalTips).toFixed(2)}`
                           : "",
                       ]);
                       if (totals) {
@@ -573,6 +636,9 @@ export default function DailyTips() {
                   <th className="pb-2 text-right font-medium text-slate-700">
                     Total
                   </th>
+                  <th className="pb-2 text-right font-medium text-slate-700">
+                    Adjust
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -616,7 +682,17 @@ export default function DailyTips() {
                       </>
                     )}
                     <td className="py-2 text-right font-medium tabular-nums text-slate-800">
-                      ${a.totalTips?.toFixed(2)}
+                      ${(a.finalTips ?? a.totalTips)?.toFixed(2)}
+                    </td>
+                    <td className="py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => openAdjustModal(a)}
+                        className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        title="Cash advance & redistribute adjustments"
+                      >
+                        Adjust
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -654,6 +730,7 @@ export default function DailyTips() {
                     <td className="py-3 text-right tabular-nums text-slate-800">
                       ${totals.totalTips.toFixed(2)}
                     </td>
+                    <td className="py-3" />
                   </tr>
                 </tfoot>
               )}
@@ -742,6 +819,79 @@ export default function DailyTips() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {adjustModalOpen && adjustEmployee && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-800">
+                  Adjustments — {adjustEmployee.employeeName}
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Cash Advance is deducted only from this employee. Deduct &amp; Redistribute is deducted
+                  from this employee then split equally across the other employees.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdjustModalOpen(false)}
+                className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Cash Advance deduction ($)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={adjustCashAdvance}
+                  onChange={(e) => setAdjustCashAdvance(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Deduct &amp; Redistribute equally ($)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={adjustRedistribute}
+                  onChange={(e) => setAdjustRedistribute(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setAdjustModalOpen(false)}
+                disabled={adjustSaving}
+              >
+                Cancel
+              </Button>
+              <Button type="button" onClick={saveAdjustments} disabled={adjustSaving}>
+                {adjustSaving ? <>{spinner}Saving…</> : "Save adjustments"}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

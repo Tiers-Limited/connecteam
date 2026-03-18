@@ -1,4 +1,5 @@
 const dailyTipInputService = require('../services/dailyTipInputService');
+const dailyTipAdjustmentService = require('../services/dailyTipAdjustmentService');
 const tipsCalculationService = require('../services/tipsCalculationService');
 
 async function getByLocationAndDate(req, res, next) {
@@ -40,6 +41,41 @@ async function upsert(req, res, next) {
   }
 }
 
+async function getAdjustments(req, res, next) {
+  try {
+    const { locationId, date } = req.params;
+    const list = await dailyTipAdjustmentService.getByLocationAndDate(locationId, date);
+    res.json({ success: true, data: list });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function upsertAdjustment(req, res, next) {
+  try {
+    const { locationId, date } = req.params;
+    const { employeeId, type, amount = 0, reason = '' } = req.body;
+    const user = req.user || {};
+    const record = await dailyTipAdjustmentService.upsert(
+      locationId,
+      date,
+      employeeId,
+      type,
+      amount,
+      reason,
+      {
+        createdBy: user._id,
+        createdByEmail: user.email || '',
+        createdByUsername: user.username || '',
+        createdByRole: user.role || '',
+      }
+    );
+    res.json({ success: true, data: record });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getHistory(req, res, next) {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -51,4 +87,4 @@ async function getHistory(req, res, next) {
   }
 }
 
-module.exports = { getByLocationAndDate, getCalculation, upsert, getHistory };
+module.exports = { getByLocationAndDate, getCalculation, upsert, getAdjustments, upsertAdjustment, getHistory };
