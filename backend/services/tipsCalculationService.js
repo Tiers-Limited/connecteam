@@ -488,6 +488,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         amTips: a.amTips,
         pmTips: a.pmTips,
         totalTips: a.totalTips,
+        finalTips: a.finalTips,
       })),
     },
   };
@@ -764,6 +765,22 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
     })),
   });
 
+  // Cache which days have adjustments (so legacy audits can be recomputed once).
+  const adjustmentsByDateStr = new Set();
+  if (dateStrs.length > 0) {
+    const start = new Date(dateStrs[0] + 'T00:00:00.000Z');
+    const end = new Date(dateStrs[dateStrs.length - 1] + 'T23:59:59.999Z');
+    const adj = await DailyTipAdjustment.find({ locationId: locationIdObj, date: { $gte: start, $lte: end } })
+      .select('date')
+      .lean();
+    for (const a of adj) {
+      if (a?.date) adjustmentsByDateStr.add(new Date(a.date).toISOString().slice(0, 10));
+    }
+  }
+
+  // Cache recalculated daily tip computations by date when legacy audits lack `finalTips`.
+  const calcByDate = new Map(); // dateStr -> calc result
+
   for (const emp of employees) {
     let weeklyGrossTips = 0;
     let weeklyWorkedHours = 0;
@@ -784,7 +801,26 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
           const empNameNorm = String(emp.name).trim().toLowerCase();
           payout = payouts.find((p) => !p.employeeId && String(p.employeeName || '').trim().toLowerCase() === empNameNorm);
         }
-        if (payout) tips = Number(payout.totalTips) || 0;
+        if (payout) {
+          // Prefer finalTips (Daily Tips "Total" column), fallback to totalTips for legacy audits.
+          tips = Number(payout.finalTips ?? payout.totalTips) || 0;
+          // If legacy audit has no finalTips but adjustments might exist, recompute for accuracy.
+          if (payout.finalTips == null && payout.totalTips != null) {
+            if (adjustmentsByDateStr.has(dateStr)) {
+              let calc = calcByDate.get(dateStr);
+              if (!calc) {
+                calc = await getDailyTipCalculation(locationIdObj, dateStr).catch(() => null);
+                if (calc && !calc.error) calcByDate.set(dateStr, calc);
+              }
+              if (calc && !calc.error) {
+                const alloc = (calc.employeeAllocations || []).find(
+                  (a) => a.employeeId && String(a.employeeId) === String(emp._id)
+                );
+                if (alloc) tips = Number(alloc.finalTips ?? alloc.totalTips) || tips;
+              }
+            }
+          }
+        }
       }
       const hoursList = audit?.derived?.employeeHours;
       if (Array.isArray(hoursList)) {
