@@ -26,7 +26,7 @@ async function upsert(locationId, date, data) {
   const d = toUTCMidnight(date);
   const set = {
     amGrossTips: data.amGrossTips,
-    pmGrossTips: data.pmGrossTips,
+    pmGrossTips: data.pmGrossTips != null ? data.pmGrossTips : 0,
   };
   if (data.createdBy != null) set.createdBy = data.createdBy;
   if (data.createdByEmail != null) set.createdByEmail = data.createdByEmail;

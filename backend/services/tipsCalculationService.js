@@ -11,7 +11,7 @@ const DailyTipAudit = require('../models/DailyTipAudit');
 const ProductionStaff = require('../models/ProductionStaff');
 const connecteamsService = require('./connecteamsService');
 const employeeService = require('./employeeService');
-const { PRODUCTION_DEDUCTION_PERCENT, SHIFT_BOUNDARIES, TARDINESS_TIERS, ROUND_DECIMALS, LOCATIONS, JOB_TIP_MULTIPLIERS } = require('../utils/constants');
+const { PRODUCTION_DEDUCTION_PERCENT, SHIFT_BOUNDARIES, LOCATION_SINGLE_SHIFT, TARDINESS_TIERS, ROUND_DECIMALS, LOCATIONS, JOB_TIP_MULTIPLIERS } = require('../utils/constants');
 const {
   getWeekStart,
   getWeekEnd,
@@ -25,22 +25,37 @@ const {
 } = require('../utils/dateUtils');
 
 
-function splitWorkedHours(clockIn, clockOut) {
+function splitWorkedHours(clockIn, clockOut, opts = {}) {
+  const inMin = timeToMinutes(clockIn);
+  const outMinRaw = timeToMinutes(clockOut);
+  if (inMin == null || outMinRaw == null || Number.isNaN(inMin) || Number.isNaN(outMinRaw)) {
+    return { amHours: 0, pmHours: 0 };
+  }
+
+  let startMin = inMin;
+  let endMin = outMinRaw;
+  if (endMin <= startMin) {
+    if (endMin === startMin) return { amHours: 0, pmHours: 0 };
+    endMin += 24 * 60;
+  }
+
+  if (opts.singleShift) {
+    // For a single-shift location (The Cove), use the full clocked duration, no AM/PM split.
+    const totalMinutes = endMin - startMin;
+    return {
+      amHours: totalMinutes / 60,
+      pmHours: 0,
+    };
+  }
+
   const AM_START = timeToMinutes(SHIFT_BOUNDARIES.AM_START);
   const AM_END = timeToMinutes(SHIFT_BOUNDARIES.AM_END);
   const PM_END = timeToMinutes(SHIFT_BOUNDARIES.PM_END);
 
-  let inMin = timeToMinutes(clockIn);
-  let outMin = timeToMinutes(clockOut);
-  if (outMin <= inMin) {
-    if (outMin === inMin) return { amHours: 0, pmHours: 0 };
-    outMin += 24 * 60;
-  }
-
   let amMinutes = 0;
   let pmMinutes = 0;
 
-  for (let m = inMin; m < outMin; m++) {
+  for (let m = startMin; m < endMin; m++) {
     const minuteOfDay = m % (24 * 60);
     if (minuteOfDay >= AM_START && minuteOfDay < AM_END) amMinutes++;
     else if (minuteOfDay >= AM_END && minuteOfDay < PM_END) pmMinutes++;
@@ -147,6 +162,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   // Time entries from Connecteam API (or pre-fetched for the week) — one source of truth for hours
   let locationKeyFilter = null;
   const locationDoc = await Location.findById(locationId).lean();
+  const isTheCove = (locationDoc?.name || '').trim().toLowerCase() === LOCATION_SINGLE_SHIFT.key;
   if (locationDoc?.name) {
     const found = LOCATIONS.find((l) => (l.name || '').toLowerCase() === (locationDoc.name || '').toLowerCase());
     if (found) locationKeyFilter = found.key;
@@ -229,7 +245,11 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   // Resolve Connecteam user to our Employee (for allocation output); use stable key for map
   const employeeHours = new Map();
   for (const [connecteamsUserId, row] of employeeFirstLast) {
-    const { amHours, pmHours } = splitWorkedHours(row.firstIn, row.lastOut);
+    const { amHours, pmHours } = splitWorkedHours(row.firstIn, row.lastOut, {
+      singleShift: isTheCove,
+      shiftStart: LOCATION_SINGLE_SHIFT.shiftStart,
+      shiftEnd: LOCATION_SINGLE_SHIFT.shiftEnd,
+    });
     let employee = await Employee.findOne({ connecteamsUserId, locationId }).lean();
     if (!employee && row.employeeName && String(row.employeeName).trim()) {
       employee = await Employee.findOne({ locationId, name: String(row.employeeName).trim() }).lean();
@@ -307,12 +327,18 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       });
     }
     const row = employeeHours.get(empId);
-    row.amHours += manual.amHours;
-    row.pmHours += manual.pmHours;
-    row.manualAmTips = (row.manualAmTips || 0) + manual.amTips;
-    row.manualPmTips = (row.manualPmTips || 0) + manual.pmTips;
-    manualAMTipsTotal += manual.amTips;
-    manualPMTipsTotal += manual.pmTips;
+    if (isTheCove) {
+      row.amHours += (manual.amHours || 0) + (manual.pmHours || 0);
+      row.manualAmTips = (row.manualAmTips || 0) + (manual.amTips || 0) + (manual.pmTips || 0);
+      manualAMTipsTotal += (manual.amTips || 0) + (manual.pmTips || 0);
+    } else {
+      row.amHours += manual.amHours;
+      row.pmHours += manual.pmHours;
+      row.manualAmTips = (row.manualAmTips || 0) + manual.amTips;
+      row.manualPmTips = (row.manualPmTips || 0) + manual.pmTips;
+      manualAMTipsTotal += manual.amTips;
+      manualPMTipsTotal += manual.pmTips;
+    }
   }
 
   // Exclude production staff: they are paid from Production Pool only, not from Daily Tips
@@ -332,16 +358,22 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   }
 
   // Step 7: Production pool deduction (4%)
-  const productionDeductionAM = tipInput.amGrossTips * PRODUCTION_DEDUCTION_PERCENT;
-  const productionDeductionPM = tipInput.pmGrossTips * PRODUCTION_DEDUCTION_PERCENT;
-  const distributableAM = tipInput.amGrossTips - productionDeductionAM;
-  const distributablePM = tipInput.pmGrossTips - productionDeductionPM;
-  const adjustedDistributableAM = Math.max(0, distributableAM - manualAMTipsTotal);
-  const adjustedDistributablePM = Math.max(0, distributablePM - manualPMTipsTotal);
+  const totalGrossTips = (Number(tipInput.amGrossTips) || 0) + (Number(tipInput.pmGrossTips) || 0);
+  const productionDeductionTotal = totalGrossTips * PRODUCTION_DEDUCTION_PERCENT;
+
+  const productionDeductionAM = isTheCove ? productionDeductionTotal : (Number(tipInput.amGrossTips) || 0) * PRODUCTION_DEDUCTION_PERCENT;
+  const productionDeductionPM = isTheCove ? 0 : (Number(tipInput.pmGrossTips) || 0) * PRODUCTION_DEDUCTION_PERCENT;
+
+  const distributableAM = isTheCove ? totalGrossTips - productionDeductionTotal : (Number(tipInput.amGrossTips) || 0) - productionDeductionAM;
+  const distributablePM = isTheCove ? 0 : (Number(tipInput.pmGrossTips) || 0) - productionDeductionPM;
+
+  const combinedManualTips = manualAMTipsTotal + manualPMTipsTotal;
+  const adjustedDistributableAM = isTheCove ? Math.max(0, distributableAM - combinedManualTips) : Math.max(0, distributableAM - manualAMTipsTotal);
+  const adjustedDistributablePM = isTheCove ? 0 : Math.max(0, distributablePM - manualPMTipsTotal);
 
   // Step 8: Tip rate (guardrail: 0 if no hours; no rounding here)
   const amTipRate = totalAMHours > 0 ? adjustedDistributableAM / totalAMHours : 0;
-  const pmTipRate = totalPMHours > 0 ? adjustedDistributablePM / totalPMHours : 0;
+  const pmTipRate = isTheCove ? 0 : (totalPMHours > 0 ? adjustedDistributablePM / totalPMHours : 0);
 
   // Step 9: Employee tip allocation; round only at output (2 decimals)
   // Apply job-based multiplier to tips
@@ -439,6 +471,8 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       manualPmTipsTotal: roundMoney(manualPMTipsTotal),
       adjustedDistributableAM: roundMoney(adjustedDistributableAM),
       adjustedDistributablePM: roundMoney(adjustedDistributablePM),
+      distributable: isTheCove ? roundMoney(adjustedDistributableAM) : null,
+      tipRate: isTheCove ? roundMoney(amTipRate) : null,
     },
     totals: {
       totalAMHours: roundMoney(totalAMHours),
