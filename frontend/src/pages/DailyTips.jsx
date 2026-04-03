@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import toast from "react-hot-toast";
 import { useApp } from "../context/AppContext";
 import {
@@ -6,6 +6,8 @@ import {
   getDailyTipCalculation,
   upsertDailyTipInput,
   upsertDailyTipAdjustment,
+  getPendingDailyTips,
+  calculateAllPendingDailyTips,
 } from "../services/dailyTipService";
 import {
   getManualWorkingByDate,
@@ -17,6 +19,29 @@ import { exportTableToCSV, exportTableToPDF } from "../utils/reportUtils";
 import Button from "../components/ui/Button";
 
 const PAGE_SIZES = [10, 25, 50, 100];
+const PRODUCTION_POOL_PERCENT = 0.04;
+const STORAGE_BREAKDOWN = "dailyTipsBreakdownContext";
+
+function locationIsTheCove(loc) {
+  return (loc?.name || "").trim().toLowerCase() === "the cove";
+}
+
+function rowDateYmd(row) {
+  const raw = row?.date;
+  if (!raw) return "";
+  if (typeof raw === "string") return raw.slice(0, 10);
+  try {
+    return toDateString(new Date(raw));
+  } catch {
+    return "";
+  }
+}
+
+function productionPoolAmount(amGross, pmGross) {
+  const am = Number(amGross) || 0;
+  const pm = Number(pmGross) || 0;
+  return Math.round((am + pm) * PRODUCTION_POOL_PERCENT * 100) / 100;
+}
 
 function shiftDescriptionForLocation(locationName) {
   const n = (locationName || "").trim().toLowerCase();
@@ -32,22 +57,54 @@ function shiftDescriptionForLocation(locationName) {
 export default function DailyTips() {
   const {
     selectedLocationId,
-    setSelectedLocationId,
     locations,
     dailyTipsCache,
     setDailyTipsCache,
   } = useApp();
-  const [date, setDate] = useState(
+  const locationsRef = useRef(locations);
+  useEffect(() => {
+    locationsRef.current = locations;
+  }, [locations]);
+  const [saveLocationId, setSaveLocationId] = useState(null);
+  const [saveDate, setSaveDate] = useState(
     () => dailyTipsCache?.date || toDateString(new Date()),
   );
-  const [_input, setInput] = useState(null);
+  const [viewerLocationId, setViewerLocationId] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_BREAKDOWN);
+      const p = raw ? JSON.parse(raw) : null;
+      if (p?.locationId) return p.locationId;
+    } catch {
+      /* ignore */
+    }
+    return null;
+  });
+  const [viewerDate, setViewerDate] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_BREAKDOWN);
+      const p = raw ? JSON.parse(raw) : null;
+      if (p?.dateStr) return p.dateStr;
+    } catch {
+      /* ignore */
+    }
+    return dailyTipsCache?.date || toDateString(new Date());
+  });
+  /** Active breakdown target (set when user loads breakdown or opens a pending row). */
+  const [breakdownView, setBreakdownView] = useState(null);
+  const [pendingPage, setPendingPage] = useState(1);
+  const pendingLimit = 25;
+  const [pendingTotal, setPendingTotal] = useState(0);
+  const [pendingItems, setPendingItems] = useState([]);
+  const [loadingPending, setLoadingPending] = useState(false);
+  const [batchCalculating, setBatchCalculating] = useState(false);
   const [calculation, setCalculation] = useState(
     () => dailyTipsCache?.calculation ?? null,
   );
   const [calculationError, setCalculationError] = useState(
     () => dailyTipsCache?.calculationError ?? null,
   );
-  const [loading, setLoading] = useState(false);
+  const [loadingCalculation, setLoadingCalculation] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState("save");
   const [form, setForm] = useState(
     () => dailyTipsCache?.form || { amGrossTips: "", pmGrossTips: "" },
   );
@@ -70,76 +127,213 @@ export default function DailyTips() {
   });
   const [manualRemoveRow, setManualRemoveRow] = useState(null);
   const [manualRemoveSaving, setManualRemoveSaving] = useState(false);
+  /** Saved gross tips for active breakdown row (shown while calculation is loading). */
+  const [breakdownSavedTips, setBreakdownSavedTips] = useState(null);
 
-  const location = locations.find((l) => l._id === selectedLocationId);
-  const isTheCove = (location?.name || '').trim().toLowerCase() === 'the cove';
+  const saveLocation = locations.find((l) => l._id === saveLocationId);
+  const breakdownLocation = locations.find(
+    (l) => l._id === breakdownView?.locationId,
+  );
+  const isSaveTheCove = locationIsTheCove(saveLocation);
+  const isBreakdownTheCove = locationIsTheCove(breakdownLocation);
 
-  const load = useCallback(
-    async (silent = false) => {
-      if (!selectedLocationId) return;
-      if (!silent) setLoading(true);
+  useEffect(() => {
+    try {
+      if (breakdownView?.locationId && breakdownView?.dateStr) {
+        sessionStorage.setItem(
+          STORAGE_BREAKDOWN,
+          JSON.stringify(breakdownView),
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [breakdownView]);
+
+  useEffect(() => {
+    if (!locations?.length) return;
+    setViewerLocationId((prev) => {
+      if (prev && locations.some((l) => l._id === prev)) return prev;
+      if (
+        selectedLocationId &&
+        locations.some((l) => l._id === selectedLocationId)
+      )
+        return selectedLocationId;
+      return locations[0]._id;
+    });
+  }, [locations, selectedLocationId]);
+
+  useEffect(() => {
+    if (!locations?.length) return;
+    setSaveLocationId((prev) => {
+      if (prev && locations.some((l) => l._id === prev)) return prev;
+      if (
+        selectedLocationId &&
+        locations.some((l) => l._id === selectedLocationId)
+      )
+        return selectedLocationId;
+      return locations[0]._id;
+    });
+  }, [locations, selectedLocationId]);
+
+  const loadPending = useCallback(
+    async (pageOverride) => {
+      const page =
+        typeof pageOverride === "number" ? pageOverride : pendingPage;
+      setLoadingPending(true);
+      try {
+        const data = await getPendingDailyTips(page, pendingLimit);
+        setPendingItems(data.items ?? []);
+        setPendingTotal(Number(data.total) || 0);
+      } catch {
+        toast.error("Failed to load pending tips");
+        setPendingItems([]);
+        setPendingTotal(0);
+      } finally {
+        setLoadingPending(false);
+      }
+    },
+    [pendingPage, pendingLimit],
+  );
+
+  useEffect(() => {
+    loadPending();
+  }, [loadPending]);
+
+  const refreshBreakdownCalculation = useCallback(
+    async (silent = false, override, forceRefresh = false) => {
+      const locationId = override?.locationId ?? breakdownView?.locationId;
+      const dateStr = override?.dateStr ?? breakdownView?.dateStr;
+      if (!locationId || !dateStr) return;
+      if (!silent) setLoadingCalculation(true);
       setCalculationError(null);
       try {
-        const [tipInput, calc] = await Promise.all([
-          getDailyTipInput(selectedLocationId, date).catch(() => null),
-          getDailyTipCalculation(selectedLocationId, date).catch(() => ({
-            error: "Failed to load calculation",
-          })),
-        ]);
-        setInput(tipInput || null);
+        const tipInput = await getDailyTipInput(locationId, dateStr).catch(
+          () => null,
+        );
+        const bdLoc = locationsRef.current.find((l) => l._id === locationId);
+        const bdCove = locationIsTheCove(bdLoc);
+        if (!tipInput) {
+          setBreakdownSavedTips(null);
+          setCalculation(null);
+          setCalculationError(
+            "No saved tips for this location and date. Use Save tips first.",
+          );
+          setDailyTipsCache((prev) => ({
+            ...prev,
+            locationId,
+            date: dateStr,
+            calculation: null,
+            calculationError:
+              "No saved tips for this location and date. Use Save tips first.",
+          }));
+          return;
+        }
+        setBreakdownSavedTips({
+          amGrossTips: tipInput.amGrossTips,
+          pmGrossTips: tipInput.pmGrossTips,
+        });
+        const calc = await getDailyTipCalculation(locationId, dateStr, {
+          refresh: forceRefresh,
+        }).catch(() => ({ error: "Failed to load calculation" }));
         if (calc?.error) {
           setCalculation(null);
           setCalculationError(calc.error);
         } else {
           setCalculation(calc || null);
           setCalculationError(null);
+          await loadPending();
         }
-        if (tipInput)
-          setForm({
-            amGrossTips: String(tipInput.amGrossTips),
-            pmGrossTips: isTheCove ? "" : String(tipInput.pmGrossTips),
-          });
-        else setForm({ amGrossTips: "", pmGrossTips: "" });
         setDailyTipsCache((prev) => ({
           ...prev,
-          locationId: selectedLocationId,
-          date,
-          form: tipInput
-            ? {
-                amGrossTips: String(tipInput.amGrossTips),
-                pmGrossTips: isTheCove ? "" : String(tipInput.pmGrossTips),
-              }
-            : { amGrossTips: "", pmGrossTips: "" },
+          locationId,
+          date: dateStr,
+          form: {
+            amGrossTips: String(tipInput.amGrossTips),
+            pmGrossTips: bdCove ? "" : String(tipInput.pmGrossTips),
+          },
           calculation: calc?.error ? null : calc || null,
           calculationError: calc?.error || null,
         }));
-      } catch (_e) {
-        setCalculationError("Failed to load data");
+      } catch {
+        setCalculation(null);
+        setCalculationError("Failed to load calculation");
       } finally {
-        if (!silent) setLoading(false);
+        if (!silent) setLoadingCalculation(false);
       }
     },
-    [selectedLocationId, date, setDailyTipsCache, isTheCove],
+    [breakdownView, setDailyTipsCache, loadPending],
   );
 
   useEffect(() => {
-    if (!selectedLocationId) return;
-    const cacheMatches =
-      dailyTipsCache?.locationId === selectedLocationId &&
-      dailyTipsCache?.date === date &&
-      (dailyTipsCache?.calculation != null ||
-        dailyTipsCache?.calculationError != null);
-    load(cacheMatches);
-  }, [load, selectedLocationId, date]);
+    if (activeSubTab !== "save") return;
+    setCalculation(null);
+    setCalculationError(null);
+    setDailyTipsCache((prev) => ({
+      ...prev,
+      calculation: null,
+      calculationError: null,
+    }));
+  }, [activeSubTab, setDailyTipsCache]);
 
   useEffect(() => {
-    if (!selectedLocationId) return;
+    if (!breakdownView?.locationId || activeSubTab !== "breakdown") return;
     setManualLoading(true);
-    getManualWorkingByDate(selectedLocationId, date)
+    getManualWorkingByDate(breakdownView.locationId, breakdownView.dateStr)
       .then(setManualRows)
       .catch(() => setManualRows([]))
       .finally(() => setManualLoading(false));
-  }, [selectedLocationId, date]);
+  }, [breakdownView, activeSubTab]);
+
+  useEffect(() => {
+    if (!breakdownView?.locationId || activeSubTab !== "breakdown") {
+      setBreakdownSavedTips(null);
+      return;
+    }
+    let cancelled = false;
+    getDailyTipInput(breakdownView.locationId, breakdownView.dateStr)
+      .then((input) => {
+        if (cancelled) return;
+        if (input) {
+          setBreakdownSavedTips({
+            amGrossTips: input.amGrossTips,
+            pmGrossTips: input.pmGrossTips,
+          });
+        } else {
+          setBreakdownSavedTips(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setBreakdownSavedTips(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [breakdownView?.locationId, breakdownView?.dateStr, activeSubTab]);
+
+  const handleCalculateAllPending = useCallback(async () => {
+    setBatchCalculating(true);
+    try {
+      const data = await calculateAllPendingDailyTips(25);
+      const ok = data.succeeded ?? 0;
+      const bad = data.failed ?? 0;
+      toast.success(
+        `Calculated ${ok} of ${data.attempted ?? 0}. ${bad > 0 ? `${bad} failed — check messages.` : ""}`,
+      );
+      if (data.results?.length && bad > 0) {
+        const firstErr = data.results.find((r) => !r.ok && r.error);
+        if (firstErr?.error) toast.error(String(firstErr.error).slice(0, 120));
+      }
+      setPendingPage(1);
+      await loadPending(1);
+    } catch (err) {
+      toast.error(
+        err.response?.data?.message || err.message || "Batch calculation failed",
+      );
+    } finally {
+      setBatchCalculating(false);
+    }
+  }, [loadPending]);
 
   useEffect(() => {
     if (!manualRemoveRow) return;
@@ -159,7 +353,9 @@ export default function DailyTips() {
       const removedId = manualRemoveRow._id;
       setManualRemoveRow(null);
       setManualRows((prev) => prev.filter((r) => r._id !== removedId));
-      await load(false);
+      await loadPending();
+      if (activeSubTab === "breakdown")
+        await refreshBreakdownCalculation(false, undefined, true);
     } catch (err) {
       toast.error(
         err.response?.data?.error || err.message || "Failed to delete",
@@ -167,18 +363,27 @@ export default function DailyTips() {
     } finally {
       setManualRemoveSaving(false);
     }
-  }, [manualRemoveRow, load]);
+  }, [
+    manualRemoveRow,
+    loadPending,
+    refreshBreakdownCalculation,
+    activeSubTab,
+  ]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!saveLocationId) {
+      toast.error("Select a location");
+      return;
+    }
     const am = parseFloat(form.amGrossTips);
-    const pm = isTheCove ? 0 : parseFloat(form.pmGrossTips);
+    const pm = isSaveTheCove ? 0 : parseFloat(form.pmGrossTips);
     if (isNaN(am) || am < 0) {
       setFormErrors({ amGrossTips: "Enter a valid amount ≥ 0" });
       toast.error("AM gross tips must be ≥ 0");
       return;
     }
-    if (!isTheCove && (form.pmGrossTips === "" || isNaN(pm) || pm < 0)) {
+    if (!isSaveTheCove && (form.pmGrossTips === "" || isNaN(pm) || pm < 0)) {
       setFormErrors({ pmGrossTips: "Enter a valid amount ≥ 0" });
       toast.error("PM gross tips must be ≥ 0");
       return;
@@ -186,18 +391,24 @@ export default function DailyTips() {
     setFormErrors({});
     setSaving(true);
     try {
-      await upsertDailyTipInput(selectedLocationId, date, {
+      await upsertDailyTipInput(saveLocationId, saveDate, {
         amGrossTips: am,
         pmGrossTips: pm,
       });
-      toast.success("Tips saved");
+      toast.success("Tips saved. Production pool uses 4% of gross from saved data.");
+      setCalculation(null);
+      setCalculationError(null);
       setDailyTipsCache((prev) => ({
         ...prev,
-        locationId: selectedLocationId,
-        date,
+        locationId: saveLocationId,
+        date: saveDate,
         form: { amGrossTips: String(am), pmGrossTips: String(pm) },
+        calculation: null,
+        calculationError: null,
       }));
-      await load();
+      setForm({ amGrossTips: "", pmGrossTips: "" });
+      setPendingPage(1);
+      await loadPending(1);
     } catch (err) {
       const details = err.response?.data?.details;
       if (details && Array.isArray(details)) {
@@ -262,28 +473,29 @@ export default function DailyTips() {
   );
 
   const saveAdjustments = useCallback(async () => {
-    if (!selectedLocationId || !adjustEmployee?.employeeId) return;
+    const lid = breakdownView?.locationId;
+    const ds = breakdownView?.dateStr;
+    if (!lid || !ds || !adjustEmployee?.employeeId) return;
     const cashAdvance = Math.max(0, parseFloat(adjustCashAdvance || "0") || 0);
     const redistribute = Math.max(0, parseFloat(adjustRedistribute || "0") || 0);
     setAdjustSaving(true);
     try {
       await Promise.all([
-        upsertDailyTipAdjustment(selectedLocationId, date, {
+        upsertDailyTipAdjustment(lid, ds, {
           employeeId: adjustEmployee.employeeId,
           type: "cash_advance",
           amount: cashAdvance,
           reason: "",
         }),
-        upsertDailyTipAdjustment(selectedLocationId, date, {
+        upsertDailyTipAdjustment(lid, ds, {
           employeeId: adjustEmployee.employeeId,
           type: "redistribute_equal",
           amount: redistribute,
           reason: "",
         }),
       ]);
-      // Keep modal open while recalculation loads so the user sees progress.
       toast.success("Adjustments saved. Recalculating…");
-      await load(false);
+      await refreshBreakdownCalculation(false, undefined, true);
       setAdjustModalOpen(false);
     } catch (_e) {
       toast.error("Failed to save adjustments");
@@ -291,15 +503,14 @@ export default function DailyTips() {
       setAdjustSaving(false);
     }
   }, [
-    selectedLocationId,
-    date,
+    breakdownView,
     adjustEmployee,
     adjustCashAdvance,
     adjustRedistribute,
-    load,
+    refreshBreakdownCalculation,
   ]);
 
-  const showShiftSplit = !isTheCove;
+  const showShiftSplit = !isBreakdownTheCove;
 
   const spinner = (
     <svg
@@ -325,7 +536,7 @@ export default function DailyTips() {
     </svg>
   );
 
-  if (!selectedLocationId) {
+  if (!locations?.length) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-slate-800">Daily Tips</h1>
@@ -336,192 +547,520 @@ export default function DailyTips() {
     );
   }
 
-  const amGross =
-    calculation?.inputs?.amGrossTips ??
-    (form.amGrossTips !== "" ? parseFloat(form.amGrossTips) : null);
-  const pmGross =
-    isTheCove
+  const draftAm =
+    form.amGrossTips !== "" ? parseFloat(form.amGrossTips) : NaN;
+  const draftPm =
+    form.pmGrossTips !== "" ? parseFloat(form.pmGrossTips) : NaN;
+  const draftTotal =
+    (Number.isFinite(draftAm) && draftAm >= 0 ? draftAm : 0) +
+    (isSaveTheCove
       ? 0
-      : calculation?.inputs?.pmGrossTips ??
-        (form.pmGrossTips !== "" ? parseFloat(form.pmGrossTips) : null);
-  const totalGross =
-    (typeof amGross === "number" && !Number.isNaN(amGross) ? amGross : 0) +
-    (typeof pmGross === "number" && !Number.isNaN(pmGross) ? pmGross : 0);
+      : Number.isFinite(draftPm) && draftPm >= 0
+        ? draftPm
+        : 0);
   const productionDeductionDollars =
-    calculation?.inputs != null
+    calculation?.inputs != null && activeSubTab === "breakdown"
       ? (Number(calculation.inputs.productionDeductionAM) || 0) +
         (Number(calculation.inputs.productionDeductionPM) || 0)
-      : totalGross > 0
-        ? Math.round(totalGross * 0.04 * 100) / 100
+      : draftTotal > 0
+        ? productionPoolAmount(
+            Number.isFinite(draftAm) && draftAm >= 0 ? draftAm : 0,
+            isSaveTheCove
+              ? 0
+              : Number.isFinite(draftPm) && draftPm >= 0
+                ? draftPm
+                : 0,
+          )
         : null;
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-slate-800">Daily Tips</h1>
       <p className="text-slate-600">
-        {location?.name} —
-        {shiftDescriptionForLocation(location?.name)}
-        4% is deducted for production pool
+        {shiftDescriptionForLocation(saveLocation?.name)}
+        Choose location and date in the form, enter gross tips, and save.{" "}
+        <strong className="text-slate-800">4% of gross</strong> counts toward
+        the production pool as soon as tips are saved. The table lists only
+        days that still need a calculation; after a successful run they leave
+        this list. Use <strong>Calculate all pending</strong> to process up to
+        25 at once. Open <strong>Breakdown</strong> to pick any location and
+        date and load the employee split.
         {productionDeductionDollars != null && (
-          <strong className="text-slate-800">
+          <span className="text-slate-800">
             {" "}
-            (${productionDeductionDollars.toFixed(2)} today)
-          </strong>
+            Estimated 4% from amounts in the form:{" "}
+            <strong>${productionDeductionDollars.toFixed(2)}</strong>.
+          </span>
         )}
-        . Save tips, then <strong>Load calculation</strong> — clock data is
-        fetched from Connecteam for this date (no need to open Time Entries).
       </p>
 
-      {/* Tip input row */}
-      <div className="flex flex-wrap items-end gap-4 rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-3">
-        <form
-          onSubmit={handleSubmit}
-          className="flex flex-wrap items-end gap-4"
+      <div className="flex gap-1 border-b border-slate-200">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab("save")}
+          className={`rounded-t-lg px-4 py-2.5 text-sm font-medium transition-colors ${
+            activeSubTab === "save"
+              ? "border border-b-0 border-slate-200 bg-white text-slate-900"
+              : "text-slate-600 hover:bg-slate-50"
+          }`}
         >
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-500">
-              Location
-            </label>
-            <select
-              value={selectedLocationId || ""}
-              onChange={(e) => setSelectedLocationId(e.target.value || null)}
-              className="min-w-[140px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-            >
-              {locations.map((loc) => (
-                <option key={loc._id} value={loc._id}>
-                  {loc.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-500">
-              Date
-            </label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-500">
-              {isTheCove ? 'Gross Tips ($)' : 'AM Gross Tips ($)'}
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={form.amGrossTips}
-              onChange={(e) =>
-                setForm({ ...form, amGrossTips: e.target.value })
-              }
-              className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-              placeholder="0"
-            />
-            {formErrors.amGrossTips && (
-              <p className="mt-0.5 text-xs text-red-600">
-                {formErrors.amGrossTips}
-              </p>
-            )}
-          </div>
-          {!isTheCove && (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">
-                PM Gross Tips ($)
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={form.pmGrossTips}
-                onChange={(e) =>
-                  setForm({ ...form, pmGrossTips: e.target.value })
-                }
-                className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-                placeholder="0"
-              />
-              {formErrors.pmGrossTips && (
-                <p className="mt-0.5 text-xs text-red-600">
-                  {formErrors.pmGrossTips}
-                </p>
-              )}
-            </div>
-          )}
-          <Button type="submit" disabled={saving}>
-            {saving ? <>{spinner}Saving…</> : "Save"}
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => load()}
-            disabled={loading}
-          >
-            {loading ? <>{spinner}Loading…</> : "Load calculation"}
-          </Button>
-        </form>
+          Save tips
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSubTab("breakdown")}
+          className={`rounded-t-lg px-4 py-2.5 text-sm font-medium transition-colors ${
+            activeSubTab === "breakdown"
+              ? "border border-b-0 border-slate-200 bg-white text-slate-900"
+              : "text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          Breakdown
+        </button>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
-        <h2 className="mb-2 text-sm font-semibold text-slate-700">
-          Manual employees (not from Connecteam)
-        </h2>
-        <p className="mb-3 text-xs text-slate-500">
-          Add worked hours for this location and date. They count toward tip
-          split and weekly payout after you save and{" "}
-          <strong className="text-slate-600">Load calculation</strong>.
-        </p>
-        <form
-          className="mb-4 flex flex-wrap items-end gap-3"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            const name = manualForm.name.trim();
-            if (!name) {
-              toast.error("Enter employee name");
-              return;
-            }
-            const am = parseFloat(manualForm.amHours) || 0;
-            const pm = parseFloat(manualForm.pmHours) || 0;
-            if (isTheCove) {
-              if (am < 0) {
-                toast.error("Hours must be ≥ 0");
-                return;
-              }
-            } else if (am < 0 || pm < 0) {
-              toast.error("Hours must be ≥ 0");
-              return;
-            }
-            setManualSaving(true);
-            try {
-              await upsertManualWorking({
-                employeeName: name,
-                locationId: selectedLocationId,
-                date,
-                amHours: isTheCove ? am : am,
-                pmHours: isTheCove ? 0 : pm,
-                amTips: 0,
-                pmTips: 0,
-              });
-              toast.success("Manual hours saved");
-              setManualForm({ name: "", amHours: "", pmHours: "" });
-              const list = await getManualWorkingByDate(
-                selectedLocationId,
-                date,
-              );
-              setManualRows(list);
-              await load(false);
-            } catch (err) {
-              toast.error(
-                err.response?.data?.error ||
-                  err.message ||
-                  "Failed to save manual hours",
-              );
-            } finally {
-              setManualSaving(false);
-            }
-          }}
-        >
+      {activeSubTab === "save" && (
+        <div className="space-y-4">
+          <div className="rounded-lg border border-slate-200 border-t-0 bg-white px-4 py-4 shadow-sm sm:border-t sm:rounded-t-none">
+            <form
+              onSubmit={handleSubmit}
+              className="flex flex-wrap items-end gap-4"
+            >
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Location
+                </label>
+                <select
+                  value={saveLocationId || ""}
+                  onChange={(e) => setSaveLocationId(e.target.value || null)}
+                  className="min-w-[160px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                >
+                  {locations.map((loc) => (
+                    <option key={loc._id} value={loc._id}>
+                      {loc.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={saveDate}
+                  onChange={(e) => setSaveDate(e.target.value)}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  {isSaveTheCove ? "Gross Tips ($)" : "AM Gross Tips ($)"}
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={form.amGrossTips}
+                  onChange={(e) =>
+                    setForm({ ...form, amGrossTips: e.target.value })
+                  }
+                  className="w-28 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                  placeholder="0"
+                />
+                {formErrors.amGrossTips && (
+                  <p className="mt-0.5 text-xs text-red-600">
+                    {formErrors.amGrossTips}
+                  </p>
+                )}
+              </div>
+              {!isSaveTheCove && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-500">
+                    PM Gross Tips ($)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={form.pmGrossTips}
+                    onChange={(e) =>
+                      setForm({ ...form, pmGrossTips: e.target.value })
+                    }
+                    className="w-28 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                    placeholder="0"
+                  />
+                  {formErrors.pmGrossTips && (
+                    <p className="mt-0.5 text-xs text-red-600">
+                      {formErrors.pmGrossTips}
+                    </p>
+                  )}
+                </div>
+              )}
+              <Button type="submit" disabled={saving || !saveLocationId}>
+                {saving ? <>{spinner}Saving…</> : "Save"}
+              </Button>
+            </form>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-slate-700">
+                Awaiting calculation (saved tips not yet calculated)
+              </h2>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={batchCalculating || pendingTotal === 0}
+                onClick={() => void handleCalculateAllPending()}
+              >
+                {batchCalculating ? (
+                  <>{spinner}Calculating…</>
+                ) : (
+                  "Calculate all pending (max 25)"
+                )}
+              </Button>
+            </div>
+            {loadingPending ? (
+              <p className="text-sm text-slate-500">Loading…</p>
+            ) : pendingItems.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                None pending — either nothing saved yet, or every saved day has
+                been calculated. Edit saved tips to recalculate.
+              </p>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left">
+                        <th className="pb-2 font-medium text-slate-700">
+                          Date
+                        </th>
+                        <th className="pb-2 font-medium text-slate-700">
+                          Location
+                        </th>
+                        <th className="pb-2 text-right font-medium text-slate-700">
+                          AM gross ($)
+                        </th>
+                        <th className="pb-2 text-right font-medium text-slate-700">
+                          PM gross ($)
+                        </th>
+                        <th className="pb-2 text-right font-medium text-slate-700">
+                          4% pool ($)
+                        </th>
+                        <th className="pb-2 text-right font-medium text-slate-700">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {pendingItems.map((row) => {
+                        const loc =
+                          typeof row.locationId === "object"
+                            ? row.locationId
+                            : null;
+                        const locId =
+                          typeof row.locationId === "object"
+                            ? row.locationId?._id
+                            : row.locationId;
+                        const rowCove = locationIsTheCove(loc);
+                        const ymd = rowDateYmd(row);
+                        return (
+                          <tr key={row._id}>
+                            <td className="py-2.5 font-medium text-slate-800">
+                              {ymd}
+                            </td>
+                            <td className="py-2.5 text-slate-700">
+                              {loc?.name ?? "—"}
+                            </td>
+                            <td className="py-2.5 text-right tabular-nums text-slate-800">
+                              {Number(row.amGrossTips).toFixed(2)}
+                            </td>
+                            <td className="py-2.5 text-right tabular-nums text-slate-600">
+                              {rowCove ? "—" : Number(row.pmGrossTips).toFixed(2)}
+                            </td>
+                            <td className="py-2.5 text-right tabular-nums text-slate-800">
+                              $
+                              {productionPoolAmount(
+                                row.amGrossTips,
+                                row.pmGrossTips,
+                              ).toFixed(2)}
+                            </td>
+                            <td className="py-2.5 text-right">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => {
+                                  if (!locId || !ymd) return;
+                                  const id = String(locId);
+                                  setViewerLocationId(id);
+                                  setViewerDate(ymd);
+                                  setBreakdownView({
+                                    locationId: id,
+                                    dateStr: ymd,
+                                  });
+                                  setActiveSubTab("breakdown");
+                                  void refreshBreakdownCalculation(false, {
+                                    locationId: id,
+                                    dateStr: ymd,
+                                  });
+                                }}
+                                disabled={loadingCalculation}
+                              >
+                                Load calculation
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-sm text-slate-600">
+                  <span>
+                    Page {pendingPage} of{" "}
+                    {Math.max(1, Math.ceil(pendingTotal / pendingLimit))} (
+                    {pendingTotal} pending)
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={pendingPage <= 1}
+                      onClick={() =>
+                        setPendingPage((p) => Math.max(1, p - 1))
+                      }
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={pendingPage * pendingLimit >= pendingTotal}
+                      onClick={() => setPendingPage((p) => p + 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeSubTab === "breakdown" && (
+        <div className="space-y-4 rounded-lg border border-slate-200 border-t-0 bg-white px-4 py-4 shadow-sm sm:border-t sm:rounded-t-none">
+          <div className="flex flex-col gap-4 border-b border-slate-100 pb-4">
+            <p className="text-sm text-slate-600">
+              Select a location and date, then load the employee breakdown. You
+              can view any day that has saved tips (including after it left the
+              pending list).
+            </p>
+            <div className="flex flex-wrap items-end gap-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Location
+                </label>
+                <select
+                  value={viewerLocationId || ""}
+                  onChange={(e) => setViewerLocationId(e.target.value || null)}
+                  className="min-w-[160px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                >
+                  {locations.map((loc) => (
+                    <option key={loc._id} value={loc._id}>
+                      {loc.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={viewerDate}
+                  onChange={(e) => setViewerDate(e.target.value)}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                />
+              </div>
+              <Button
+                type="button"
+                disabled={!viewerLocationId || !viewerDate || loadingCalculation}
+                onClick={() => {
+                  if (!viewerLocationId || !viewerDate) return;
+                  const v = {
+                    locationId: viewerLocationId,
+                    dateStr: viewerDate,
+                  };
+                  setBreakdownView(v);
+                  void refreshBreakdownCalculation(false, v);
+                }}
+              >
+                Load breakdown
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => refreshBreakdownCalculation(false, undefined, true)}
+                disabled={
+                  loadingCalculation ||
+                  !breakdownView?.locationId ||
+                  !breakdownView?.dateStr
+                }
+              >
+                {loadingCalculation ? (
+                  <>{spinner}Loading…</>
+                ) : (
+                  "Refresh calculation"
+                )}
+              </Button>
+            </div>
+            {breakdownView?.locationId && (
+              <p className="text-xs text-slate-500">
+                Active row:{" "}
+                <strong className="text-slate-700">
+                  {breakdownLocation?.name ?? "—"}
+                </strong>{" "}
+                — {breakdownView.dateStr}
+              </p>
+            )}
+            {breakdownView?.locationId && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm">
+                {loadingCalculation && !breakdownSavedTips ? (
+                  <span className="flex items-center gap-2 text-slate-600">
+                    {spinner}
+                    Loading saved gross tips…
+                  </span>
+                ) : breakdownSavedTips ? (
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-slate-700">
+                    <span className="font-semibold text-slate-800">
+                      Saved gross tips
+                    </span>
+                    {isBreakdownTheCove ? (
+                      <span className="tabular-nums">
+                        Gross:{" "}
+                        <strong>
+                          $
+                          {Number(
+                            breakdownSavedTips.amGrossTips,
+                          ).toFixed(2)}
+                        </strong>
+                      </span>
+                    ) : (
+                      <>
+                        <span className="tabular-nums">
+                          AM:{" "}
+                          <strong>
+                            $
+                            {Number(
+                              breakdownSavedTips.amGrossTips,
+                            ).toFixed(2)}
+                          </strong>
+                        </span>
+                        <span className="tabular-nums">
+                          PM:{" "}
+                          <strong>
+                            $
+                            {Number(
+                              breakdownSavedTips.pmGrossTips,
+                            ).toFixed(2)}
+                          </strong>
+                        </span>
+                      </>
+                    )}
+                    {loadingCalculation && (
+                      <span className="flex items-center gap-2 text-slate-500">
+                        {spinner}
+                        Calculating employee split…
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  !loadingCalculation && (
+                    <span className="text-amber-800">
+                      No saved gross tips for this location and date.
+                    </span>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+
+          {!breakdownView?.locationId && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-3 text-sm text-amber-900">
+              Choose location and date above, then click{" "}
+              <strong>Load breakdown</strong>. Or use{" "}
+              <strong>Load calculation</strong> on a pending row under Save tips.
+            </div>
+          )}
+
+          {breakdownView?.locationId && (
+            <>
+          <div className="rounded-lg border border-slate-200 bg-slate-50/40 px-4 py-3">
+            <h2 className="mb-2 text-sm font-semibold text-slate-700">
+              Manual employees (not from Connecteam)
+            </h2>
+            <p className="mb-3 text-xs text-slate-500">
+              Add worked hours for this location and date. They count toward the
+              tip split after you run <strong>Refresh calculation</strong>.
+            </p>
+            <form
+              className="mb-4 flex flex-wrap items-end gap-3"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const name = manualForm.name.trim();
+                if (!name) {
+                  toast.error("Enter employee name");
+                  return;
+                }
+                const am = parseFloat(manualForm.amHours) || 0;
+                const pm = parseFloat(manualForm.pmHours) || 0;
+                if (!breakdownView?.locationId || !breakdownView?.dateStr) {
+                  toast.error("Load breakdown first (location + date)");
+                  return;
+                }
+                if (isBreakdownTheCove) {
+                  if (am < 0) {
+                    toast.error("Hours must be ≥ 0");
+                    return;
+                  }
+                } else if (am < 0 || pm < 0) {
+                  toast.error("Hours must be ≥ 0");
+                  return;
+                }
+                setManualSaving(true);
+                try {
+                  await upsertManualWorking({
+                    employeeName: name,
+                    locationId: breakdownView.locationId,
+                    date: breakdownView.dateStr,
+                    amHours: isBreakdownTheCove ? am : am,
+                    pmHours: isBreakdownTheCove ? 0 : pm,
+                    amTips: 0,
+                    pmTips: 0,
+                  });
+                  toast.success("Manual hours saved");
+                  setManualForm({ name: "", amHours: "", pmHours: "" });
+                  const list = await getManualWorkingByDate(
+                    breakdownView.locationId,
+                    breakdownView.dateStr,
+                  );
+                  setManualRows(list);
+                  await refreshBreakdownCalculation(false, undefined, true);
+                } catch (err) {
+                  toast.error(
+                    err.response?.data?.error ||
+                      err.message ||
+                      "Failed to save manual hours",
+                  );
+                } finally {
+                  setManualSaving(false);
+                }
+              }}
+            >
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">
               Name
@@ -536,7 +1075,7 @@ export default function DailyTips() {
               placeholder="Employee name"
             />
           </div>
-          {isTheCove ? (
+          {isBreakdownTheCove ? (
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-500">
                 Hours worked
@@ -603,7 +1142,7 @@ export default function DailyTips() {
               <thead>
                 <tr className="border-b border-slate-200 text-left">
                   <th className="pb-2 font-medium text-slate-700">Employee</th>
-                  {isTheCove ? (
+                  {isBreakdownTheCove ? (
                     <th className="pb-2 text-right font-medium text-slate-700">
                       Hours
                     </th>
@@ -634,7 +1173,7 @@ export default function DailyTips() {
                       <td className="py-2 font-medium text-slate-800">
                         {empName}
                       </td>
-                      {isTheCove ? (
+                      {isBreakdownTheCove ? (
                         <td className="py-2 text-right tabular-nums text-slate-600">
                           {(Number(row.amHours) || 0) +
                             (Number(row.pmHours) || 0)}
@@ -702,7 +1241,7 @@ export default function DailyTips() {
                   ${productionDeductionDollars?.toFixed(2) ?? "0.00"}
                 </strong>
               </span>
-              {isTheCove ? (
+              {isBreakdownTheCove ? (
                 <>
                   <span>
                     Distributable: $
@@ -799,7 +1338,11 @@ export default function DailyTips() {
                           `$${totals.totalTips.toFixed(2)}`,
                         ]);
                       }
-                      exportTableToCSV(headers, rows, `daily-tips-${date}.csv`);
+                      exportTableToCSV(
+                        headers,
+                        rows,
+                        `daily-tips-${breakdownView?.dateStr ?? "export"}.csv`,
+                      );
                     }}
                   >
                     Export CSV
@@ -847,10 +1390,10 @@ export default function DailyTips() {
                         ]);
                       }
                       exportTableToPDF(
-                        `Daily Tips — ${location?.name ?? ""} — ${date}`,
+                        `Daily Tips — ${breakdownLocation?.name ?? ""} — ${breakdownView?.dateStr ?? ""}`,
                         headers,
                         rows,
-                        `daily-tips-${date}.pdf`,
+                        `daily-tips-${breakdownView?.dateStr ?? "export"}.pdf`,
                       );
                     }}
                   >
@@ -1087,6 +1630,10 @@ export default function DailyTips() {
           )}
         </div>
       )}
+            </>
+          )}
+        </div>
+      )}
 
       {manualRemoveRow && (
         <div
@@ -1112,9 +1659,13 @@ export default function DailyTips() {
                       ? manualRemoveRow.employeeId.name
                       : "this employee"}
                   </strong>{" "}
-                  on <strong className="text-slate-800">{date}</strong> at{" "}
+                  on{" "}
                   <strong className="text-slate-800">
-                    {location?.name ?? "this location"}
+                    {breakdownView?.dateStr ?? "—"}
+                  </strong>{" "}
+                  at{" "}
+                  <strong className="text-slate-800">
+                    {breakdownLocation?.name ?? "this location"}
                   </strong>
                   . Recalculate after removal if you already loaded tips.
                 </p>

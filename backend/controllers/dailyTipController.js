@@ -15,13 +15,35 @@ async function getByLocationAndDate(req, res, next) {
 async function getCalculation(req, res, next) {
   try {
     const { locationId, date } = req.params;
-    const result = await tipsCalculationService.getDailyTipCalculation(locationId, date);
+    const refreshRaw = req.query?.refresh;
+    const forceRefresh =
+      refreshRaw === '1' ||
+      refreshRaw === 'true' ||
+      String(refreshRaw || '').toLowerCase() === 'yes';
+
+    let result;
+    if (forceRefresh) {
+      result = await tipsCalculationService.getDailyTipCalculation(locationId, date);
+    } else {
+      const snapshot = await tipsCalculationService.getDailyTipCalculationSnapshot(
+        locationId,
+        date,
+      );
+      if (snapshot && snapshot.error) {
+        result = snapshot;
+      } else if (snapshot) {
+        result = snapshot;
+      } else {
+        result = await tipsCalculationService.getDailyTipCalculation(locationId, date);
+      }
+    }
     res.json({ success: true, data: result });
   } catch (err) {
     next(err);
   }
 }
 
+/** Persists gross tips only. Production pool (4% of gross) is derived from DailyTipInput when reporting; per-employee split is not run until GET …/calculation. */
 async function upsert(req, res, next) {
   try {
     const { locationId, date } = req.params;
@@ -87,4 +109,70 @@ async function getHistory(req, res, next) {
   }
 }
 
-module.exports = { getByLocationAndDate, getCalculation, upsert, getAdjustments, upsertAdjustment, getHistory };
+function ymdFromRowDate(d) {
+  if (!d) return '';
+  if (typeof d === 'string') return d.slice(0, 10);
+  return new Date(d).toISOString().slice(0, 10);
+}
+
+async function getPendingCalculation(req, res, next) {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 25));
+    const result = await dailyTipInputService.getPendingCalculationPaginated(page, limit);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Runs getDailyTipCalculation for up to `max` pending rows (no audit completion flag). Sequential — can be slow. */
+async function calculateAllPending(req, res, next) {
+  try {
+    const maxRaw = req.body?.max ?? req.query?.max;
+    const max = Math.min(50, Math.max(1, parseInt(maxRaw, 10) || 25));
+    const { items } = await dailyTipInputService.getPendingCalculationPaginated(1, max);
+    const results = [];
+    for (const row of items) {
+      const locationId = row.locationId?._id || row.locationId;
+      const dateStr = ymdFromRowDate(row.date);
+      if (!locationId || !dateStr) {
+        results.push({ ok: false, error: 'Invalid row', rowId: row._id });
+        continue;
+      }
+      const result = await tipsCalculationService.getDailyTipCalculation(locationId, dateStr);
+      if (result.error) {
+        results.push({
+          locationId: String(locationId),
+          date: dateStr,
+          ok: false,
+          error: result.error,
+        });
+      } else {
+        results.push({ locationId: String(locationId), date: dateStr, ok: true });
+      }
+    }
+    res.json({
+      success: true,
+      data: {
+        attempted: items.length,
+        succeeded: results.filter((r) => r.ok).length,
+        failed: results.filter((r) => !r.ok).length,
+        results,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  getByLocationAndDate,
+  getCalculation,
+  upsert,
+  getAdjustments,
+  upsertAdjustment,
+  getHistory,
+  getPendingCalculation,
+  calculateAllPending,
+};

@@ -35,6 +35,7 @@ const LOCATIONS = [
   { key: 'oranjestad', name: 'Oranjestad' },
   { key: 'casa del mar', name: 'Casa del Mar' },
   { key: 'the cove', name: 'The Cove' },
+  { key: 'royal plaza', name: 'Royal Plaza' },
   // { key: 'drive thru', name: 'Drive Thru' },
 ];
 

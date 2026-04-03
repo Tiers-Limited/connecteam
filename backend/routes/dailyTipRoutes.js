@@ -1,12 +1,13 @@
 const express = require('express');
-const { body, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
 const dailyTipController = require('../controllers/dailyTipController');
 const validate = require('../middlewares/validate');
-const { requireAdmin } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
 
-router.get('/history', requireAdmin, dailyTipController.getHistory);
+router.get('/history', dailyTipController.getHistory);
+router.get('/pending-calculation', dailyTipController.getPendingCalculation);
+router.post('/calculate-all-pending', dailyTipController.calculateAllPending);
 
 router.get(
   '/:locationId/:date',
@@ -19,6 +20,7 @@ router.get(
   '/:locationId/:date/calculation',
   param('locationId').isMongoId(),
   param('date').isISO8601().withMessage('Valid date required'),
+  query('refresh').optional().isString(),
   validate,
   dailyTipController.getCalculation
 );
