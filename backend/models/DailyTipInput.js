@@ -25,6 +25,8 @@ const dailyTipInputSchema = new mongoose.Schema(
     createdByEmail: { type: String, default: '' },
     createdByUsername: { type: String, default: '' },
     createdByRole: { type: String, enum: ['admin', 'supervisor'], default: '' },
+    /** Set when daily tip calculation completes successfully; cleared when gross tips are saved/updated. */
+    calculationCompletedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

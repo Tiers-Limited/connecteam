@@ -43,6 +43,7 @@ async function upsert(locationId, date, data) {
     amGrossTips: data.amGrossTips,
     pmGrossTips: data.pmGrossTips != null ? data.pmGrossTips : 0,
     date: dayStart,
+    calculationCompletedAt: null,
   };
   if (data.createdBy != null) set.createdBy = data.createdBy;
   if (data.createdByEmail != null) set.createdByEmail = data.createdByEmail;
@@ -53,6 +54,24 @@ async function upsert(locationId, date, data) {
     return DailyTipInput.findByIdAndUpdate(existing._id, { $set: set }, { new: true });
   }
   return DailyTipInput.create({ locationId, ...set });
+}
+
+async function getPendingCalculationPaginated(page = 1, limit = 25) {
+  const skip = Math.max(0, (Number(page) - 1) * Math.max(1, Math.min(100, Number(limit))));
+  const limitNum = Math.max(1, Math.min(100, Number(limit)));
+  const filter = {
+    $or: [{ calculationCompletedAt: null }, { calculationCompletedAt: { $exists: false } }],
+  };
+  const [items, total] = await Promise.all([
+    DailyTipInput.find(filter)
+      .sort({ date: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .populate('locationId', 'name')
+      .lean(),
+    DailyTipInput.countDocuments(filter),
+  ]);
+  return { items, total, page: Number(page), limit: limitNum };
 }
 
 async function getHistoryPaginated(page = 1, limit = 100) {
@@ -74,5 +93,6 @@ module.exports = {
   getByLocationAndDate,
   getByLocationDateRange,
   upsert,
+  getPendingCalculationPaginated,
   getHistoryPaginated,
 };

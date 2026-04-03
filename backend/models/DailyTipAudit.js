@@ -16,6 +16,17 @@ const dailyTipAuditSchema = new mongoose.Schema(
       required: true,
     },
     raw: {
+      source: String,
+      firstLastPerEmployee: [
+        {
+          connecteamsUserId: String,
+          employeeId: mongoose.Schema.Types.ObjectId,
+          employeeName: String,
+          firstClockIn: String,
+          lastClockOut: String,
+          jobTitle: String,
+        },
+      ],
       deduplicatedEntries: [
         {
           employeeId: mongoose.Schema.Types.ObjectId,
@@ -30,8 +41,12 @@ const dailyTipAuditSchema = new mongoose.Schema(
         {
           employeeId: mongoose.Schema.Types.ObjectId,
           employeeName: String,
+          jobTitle: String,
+          jobTipMultiplier: Number,
           amHours: Number,
           pmHours: Number,
+          firstClockIn: String,
+          lastClockOut: String,
         },
       ],
       totalAMHours: Number,
@@ -53,6 +68,7 @@ const dailyTipAuditSchema = new mongoose.Schema(
           amTips: Number,
           pmTips: Number,
           totalTips: Number,
+          finalTips: Number,
         },
       ],
     },

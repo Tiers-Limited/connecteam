@@ -455,13 +455,16 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     date: dateStart,
     raw: {
       source: 'Connecteam API',
-      firstLastPerEmployee: Array.from(employeeFirstLast.values()).map((r) => ({
-        connecteamsUserId: r.connecteamsUserId,
-        employeeName: r.employeeName,
-        firstClockIn: r.firstIn,
-        lastClockOut: r.lastOut,
-        jobTitle: r.jobTitle,
-      })),
+      // One row per employee with resolved hours (includes first/last punch for audit UI / snapshot).
+      firstLastPerEmployee: Array.from(employeeHours.values())
+        .filter((r) => r.clockIn && r.clockOut)
+        .map((r) => ({
+          ...(r.employeeId ? { employeeId: r.employeeId } : {}),
+          employeeName: r.employeeName,
+          firstClockIn: r.clockIn,
+          lastClockOut: r.clockOut,
+          jobTitle: r.jobTitle || undefined,
+        })),
     },
     derived: {
       employeeHours: Array.from(employeeHours.values()).map((r) => ({
@@ -471,6 +474,8 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         jobTipMultiplier: getJobTipMultiplier(r.jobTitle),
         amHours: roundMoney(r.amHours),
         pmHours: roundMoney(r.pmHours),
+        firstClockIn: r.clockIn ?? null,
+        lastClockOut: r.clockOut ?? null,
       })),
       totalAMHours: roundMoney(totalAMHours),
       totalPMHours: roundMoney(totalPMHours),
@@ -494,11 +499,18 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       })),
     },
   };
-  await DailyTipAudit.findOneAndUpdate(
-    { locationId, date: { $gte: dateStart, $lte: dateEnd } },
-    { $set: auditPayload },
-    { upsert: true, new: true }
-  ).catch(() => {});
+  try {
+    await DailyTipAudit.findOneAndUpdate(
+      { locationId, date: { $gte: dateStart, $lte: dateEnd } },
+      { $set: auditPayload },
+      { upsert: true, new: true }
+    );
+    await DailyTipInput.findByIdAndUpdate(tipInput._id, {
+      $set: { calculationCompletedAt: new Date() },
+    });
+  } catch (err) {
+    console.warn('[getDailyTipCalculation] Audit or completion flag failed:', err.message);
+  }
 
   return {
     locationId,
@@ -532,6 +544,222 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       reason: a.reason || '',
     })),
     audit: auditPayload,
+    fromSnapshot: false,
+  };
+}
+
+function normalizeTipEmployeeName(name) {
+  return String(name || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+/** First clock-in / last clock-out per employeeId for a location+day (matches tip calc aggregation). */
+function mapFirstLastClockByEmployeeFromTimeEntries(entries) {
+  const byEmp = new Map();
+  for (const entry of entries) {
+    const id = entry.employeeId != null ? String(entry.employeeId) : '';
+    if (!id || !entry.clockIn || !entry.clockOut) continue;
+    const inMin = timeToMinutes(entry.clockIn);
+    const outMin = timeToMinutes(entry.clockOut);
+    if (inMin == null || outMin == null || Number.isNaN(inMin) || Number.isNaN(outMin)) continue;
+    if (!byEmp.has(id)) {
+      byEmp.set(id, { firstIn: entry.clockIn, lastOut: entry.clockOut, inMin, outMin });
+    } else {
+      const row = byEmp.get(id);
+      if (inMin < row.inMin) {
+        row.firstIn = entry.clockIn;
+        row.inMin = inMin;
+      }
+      if (outMin > row.outMin) {
+        row.lastOut = entry.clockOut;
+        row.outMin = outMin;
+      }
+    }
+  }
+  const out = new Map();
+  for (const [id, row] of byEmp) {
+    out.set(id, { clockIn: row.firstIn, clockOut: row.lastOut });
+  }
+  return out;
+}
+
+/**
+ * Rebuild GET /calculation response from DailyTipAudit (no Connecteam). Returns null if no audit — caller runs full calc.
+ * @returns {Promise<object|null>} Full calc-shaped object, or { error } if no tip input, or null if no audit.
+ */
+async function getDailyTipCalculationSnapshot(locationId, date) {
+  const dateStr = typeof date === 'string' ? date.slice(0, 10) : toDateString(date);
+  const tz = getAppTimezone();
+  const { startMs, endMs } = dateStringToUtcRange(dateStr, tz);
+  const dateStart = new Date(startMs);
+  const dateEnd = new Date(endMs);
+
+  const tipInput = await DailyTipInput.findOne({
+    locationId,
+    date: { $gte: dateStart, $lte: dateEnd },
+  }).lean();
+  if (!tipInput) {
+    return { error: 'No tip input for this location and date', locationId, date: dateStr };
+  }
+
+  const audit = await DailyTipAudit.findOne({
+    locationId,
+    date: { $gte: dateStart, $lte: dateEnd },
+  }).lean();
+  if (!audit || !audit.financial) {
+    return null;
+  }
+
+  const locationDoc = await Location.findById(locationId).select('name').lean();
+  const isTheCove = (locationDoc?.name || '').trim().toLowerCase() === LOCATION_SINGLE_SHIFT.key;
+
+  const adjustments = await DailyTipAdjustment.find({
+    locationId,
+    date: { $gte: dateStart, $lte: dateEnd },
+  }).lean();
+
+  const fin = audit.financial;
+  const derived = audit.derived || {};
+  const raw = audit.raw || {};
+
+  const hoursByEmpId = new Map();
+  for (const h of derived.employeeHours || []) {
+    const k = h.employeeId != null ? String(h.employeeId) : '';
+    if (k) hoursByEmpId.set(k, h);
+  }
+
+  const timeEntryDocs = await TimeEntry.find({
+    locationId,
+    date: { $gte: dateStart, $lte: dateEnd },
+  })
+    .select('employeeId clockIn clockOut')
+    .lean();
+  const clockByEmployeeIdFromDb = mapFirstLastClockByEmployeeFromTimeEntries(timeEntryDocs);
+
+  const firstLastList = raw.firstLastPerEmployee || raw.deduplicatedEntries || [];
+  const clockByName = new Map();
+  const clockByEmpIdFromRaw = new Map();
+  for (const r of firstLastList) {
+    const cid = r.employeeId != null ? String(r.employeeId) : '';
+    const cin = r.firstClockIn ?? r.clockIn ?? null;
+    const cout = r.lastClockOut ?? r.clockOut ?? null;
+    if (cid && cin && cout) clockByEmpIdFromRaw.set(cid, { clockIn: cin, clockOut: cout });
+    const n = normalizeTipEmployeeName(r.employeeName);
+    if (!n || clockByName.has(n)) continue;
+    clockByName.set(n, { clockIn: cin, clockOut: cout });
+  }
+
+  const cashAdvanceByEmp = new Map();
+  const redistributeByEmp = new Map();
+  for (const a of adjustments) {
+    const empKey = a.employeeId?.toString?.() || String(a.employeeId || '');
+    const amt = Number(a.amount) || 0;
+    if (!empKey || amt <= 0) continue;
+    if (a.type === 'cash_advance') cashAdvanceByEmp.set(empKey, (cashAdvanceByEmp.get(empKey) || 0) + amt);
+    if (a.type === 'redistribute_equal') redistributeByEmp.set(empKey, (redistributeByEmp.get(empKey) || 0) + amt);
+  }
+  let redistributionPool = 0;
+  const redistributionExcluded = new Set();
+  for (const [empKey, amt] of redistributeByEmp.entries()) {
+    redistributionPool += amt;
+    redistributionExcluded.add(empKey);
+  }
+
+  const payouts = Array.isArray(fin.employeePayouts) ? fin.employeePayouts : [];
+  const employeeAllocations = payouts.map((p) => {
+    const empKey = p.employeeId != null ? String(p.employeeId) : '';
+    const h = empKey ? hoursByEmpId.get(empKey) : null;
+    const nameKey = normalizeTipEmployeeName(p.employeeName);
+    const fromDerived =
+      h && (h.firstClockIn || h.lastClockOut)
+        ? { clockIn: h.firstClockIn ?? null, clockOut: h.lastClockOut ?? null }
+        : {};
+    const fromRawEmp = empKey ? clockByEmpIdFromRaw.get(empKey) : null;
+    const fromDb = empKey ? clockByEmployeeIdFromDb.get(empKey) : null;
+    const fl = clockByName.get(nameKey) || {};
+    const clockIn =
+      fromDerived.clockIn ?? fromRawEmp?.clockIn ?? fromDb?.clockIn ?? fl.clockIn ?? null;
+    const clockOut =
+      fromDerived.clockOut ?? fromRawEmp?.clockOut ?? fromDb?.clockOut ?? fl.clockOut ?? null;
+    return {
+      employeeId: p.employeeId,
+      employeeName: p.employeeName,
+      jobTitle: h?.jobTitle ?? null,
+      jobTipMultiplier: h?.jobTipMultiplier != null ? h.jobTipMultiplier : getJobTipMultiplier(h?.jobTitle),
+      clockIn,
+      clockOut,
+      amWorkedHours: roundMoney(h?.amHours ?? 0),
+      pmWorkedHours: roundMoney(h?.pmHours ?? 0),
+      amTips: roundMoney(p.amTips ?? 0),
+      pmTips: roundMoney(p.pmTips ?? 0),
+      manualAmTips: 0,
+      manualPmTips: 0,
+      totalTips: roundMoney(p.totalTips ?? 0),
+      cashAdvanceDeduction: 0,
+      redistributeDeduction: 0,
+      redistributionShare: 0,
+      finalTips: 0,
+    };
+  });
+
+  const eligibleRecipients = employeeAllocations.filter(
+    (r) => r.employeeId && !redistributionExcluded.has(r.employeeId.toString()),
+  );
+  const equalShare = eligibleRecipients.length > 0 ? redistributionPool / eligibleRecipients.length : 0;
+
+  for (const r of employeeAllocations) {
+    const empKey = r.employeeId?.toString?.() || '';
+    const cashAdvance = cashAdvanceByEmp.get(empKey) || 0;
+    const redistributeDeduction = redistributeByEmp.get(empKey) || 0;
+    const redistributionShare =
+      eligibleRecipients.length > 0 && empKey && !redistributionExcluded.has(empKey) ? equalShare : 0;
+    const finalTipsRaw =
+      (Number(r.totalTips) || 0) - cashAdvance - redistributeDeduction + redistributionShare;
+    r.cashAdvanceDeduction = roundMoney(cashAdvance);
+    r.redistributeDeduction = roundMoney(redistributeDeduction);
+    r.redistributionShare = roundMoney(redistributionShare);
+    r.finalTips = roundMoney(Math.max(0, finalTipsRaw));
+  }
+
+  const inputs = {
+    amGrossTips: fin.amGrossTips,
+    pmGrossTips: fin.pmGrossTips,
+    productionDeductionAM: roundMoney(Number(fin.productionDeductionAM) || 0),
+    productionDeductionPM: roundMoney(Number(fin.productionDeductionPM) || 0),
+    distributableAM: roundMoney(Number(fin.distributableAM) || 0),
+    distributablePM: roundMoney(Number(fin.distributablePM) || 0),
+    manualAmTipsTotal: 0,
+    manualPmTipsTotal: 0,
+    adjustedDistributableAM: roundMoney(Number(fin.distributableAM) || 0),
+    adjustedDistributablePM: roundMoney(Number(fin.distributablePM) || 0),
+    distributable: isTheCove ? roundMoney(Number(fin.distributableAM) || 0) : null,
+    tipRate: isTheCove ? roundMoney(Number(fin.amTipRate) || 0) : null,
+    redistributionPool: roundMoney(redistributionPool),
+  };
+
+  const totals = {
+    totalAMHours: roundMoney(Number(derived.totalAMHours) || 0),
+    totalPMHours: roundMoney(Number(derived.totalPMHours) || 0),
+    amTipRate: roundMoney(Number(fin.amTipRate) || 0),
+    pmTipRate: roundMoney(Number(fin.pmTipRate) || 0),
+  };
+
+  return {
+    locationId,
+    date: dateStr,
+    inputs,
+    totals,
+    employeeAllocations,
+    adjustments: adjustments.map((a) => ({
+      employeeId: a.employeeId,
+      type: a.type,
+      amount: roundMoney(Number(a.amount) || 0),
+      reason: a.reason || '',
+    })),
+    audit,
+    fromSnapshot: true,
   };
 }
 
@@ -1008,6 +1236,7 @@ module.exports = {
   roundMoney,
   getTardinessDeductionPercent,
   getDailyTipCalculation,
+  getDailyTipCalculationSnapshot,
   getEmployeeDailyTipsForDate,
   getWeeklyPayout,
   clearProductionStaffNamesCache,
