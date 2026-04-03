@@ -12,7 +12,7 @@ const DailyTipAudit = require('../models/DailyTipAudit');
 const ProductionStaff = require('../models/ProductionStaff');
 const connecteamsService = require('./connecteamsService');
 const employeeService = require('./employeeService');
-const { PRODUCTION_DEDUCTION_PERCENT, SHIFT_BOUNDARIES, LOCATION_SINGLE_SHIFT, TARDINESS_TIERS, ROUND_DECIMALS, LOCATIONS, JOB_TIP_MULTIPLIERS } = require('../utils/constants');
+const { PRODUCTION_DEDUCTION_PERCENT, SHIFT_BOUNDARIES, shiftBoundariesForLocationName, LOCATION_SINGLE_SHIFT, TARDINESS_TIERS, ROUND_DECIMALS, LOCATIONS, JOB_TIP_MULTIPLIERS } = require('../utils/constants');
 const {
   getWeekStart,
   getWeekEnd,
@@ -21,8 +21,9 @@ const {
   isDateInWeek,
   getDatesInRange,
   getAppTimezone,
-  getStartOfDayUtcMs,
   dateStringToUtcRange,
+  dateRangeToUtcBounds,
+  formatDateStringInTimezone,
 } = require('../utils/dateUtils');
 
 
@@ -49,9 +50,10 @@ function splitWorkedHours(clockIn, clockOut, opts = {}) {
     };
   }
 
-  const AM_START = timeToMinutes(SHIFT_BOUNDARIES.AM_START);
-  const AM_END = timeToMinutes(SHIFT_BOUNDARIES.AM_END);
-  const PM_END = timeToMinutes(SHIFT_BOUNDARIES.PM_END);
+  const bounds = opts.shiftBoundaries || SHIFT_BOUNDARIES;
+  const AM_START = timeToMinutes(bounds.AM_START);
+  const AM_END = timeToMinutes(bounds.AM_END);
+  const PM_END = timeToMinutes(bounds.PM_END);
 
   let amMinutes = 0;
   let pmMinutes = 0;
@@ -113,14 +115,6 @@ function getJobTipMultiplier(jobTitle) {
   return JOB_TIP_MULTIPLIERS.default || 1.0;
 }
 
-/**
- * Normalize date to UTC midnight for query (YYYY-MM-DD)
- */
-function toUTCDate(date) {
-  const d = typeof date === 'string' ? date.slice(0, 10) : toDateString(date);
-  return new Date(d + 'T00:00:00.000Z');
-}
-
 /** Set of active production staff names (excluded from Daily Tips and Weekly Payout). */
 let productionStaffNamesCache = null;
 async function getProductionStaffNames() {
@@ -147,10 +141,13 @@ function clearProductionStaffNamesCache() {
  */
 async function getDailyTipCalculation(locationId, date, options = {}) {
   const dateStr = typeof date === 'string' ? date.slice(0, 10) : toDateString(date);
-  const dateStart = new Date(dateStr + 'T00:00:00.000Z');
-  const dateEnd = new Date(dateStr + 'T23:59:59.999Z');
-  const { startMs: timeEntryStartMs, endMs: timeEntryEndMs } = dateStringToUtcRange(dateStr, getAppTimezone());
-  const timeEntryDayStart = new Date(getStartOfDayUtcMs(dateStr, getAppTimezone()));
+  const tz = getAppTimezone();
+  const { startMs, endMs } = dateStringToUtcRange(dateStr, tz);
+  const dateStart = new Date(startMs);
+  const dateEnd = new Date(endMs);
+  const timeEntryStartMs = startMs;
+  const timeEntryEndMs = endMs;
+  const timeEntryDayStart = dateStart;
 
   const tipInput = await DailyTipInput.findOne({
     locationId,
@@ -164,6 +161,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   let locationKeyFilter = null;
   const locationDoc = await Location.findById(locationId).lean();
   const isTheCove = (locationDoc?.name || '').trim().toLowerCase() === LOCATION_SINGLE_SHIFT.key;
+  const shiftBoundaries = isTheCove ? null : shiftBoundariesForLocationName(locationDoc?.name);
   if (locationDoc?.name) {
     const found = LOCATIONS.find((l) => (l.name || '').toLowerCase() === (locationDoc.name || '').toLowerCase());
     if (found) locationKeyFilter = found.key;
@@ -248,6 +246,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   for (const [connecteamsUserId, row] of employeeFirstLast) {
     const { amHours, pmHours } = splitWorkedHours(row.firstIn, row.lastOut, {
       singleShift: isTheCove,
+      shiftBoundaries: shiftBoundaries || undefined,
       shiftStart: LOCATION_SINGLE_SHIFT.shiftStart,
       shiftEnd: LOCATION_SINGLE_SHIFT.shiftEnd,
     });
@@ -409,7 +408,10 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   }
 
   // Step 9b: Daily adjustments
-  const adjustments = await DailyTipAdjustment.find({ locationId, date: dateStart }).lean();
+  const adjustments = await DailyTipAdjustment.find({
+    locationId,
+    date: { $gte: dateStart, $lte: dateEnd },
+  }).lean();
   const cashAdvanceByEmp = new Map();
   const redistributeByEmp = new Map();
   for (const a of adjustments) {
@@ -493,7 +495,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     },
   };
   await DailyTipAudit.findOneAndUpdate(
-    { locationId, date: dateStart },
+    { locationId, date: { $gte: dateStart, $lte: dateEnd } },
     { $set: auditPayload },
     { upsert: true, new: true }
   ).catch(() => {});
@@ -743,10 +745,10 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
   const auditByDate = new Map();
   const daysWithTipInput = [];
   for (const dateStr of dateStrs) {
-    const dateStart = new Date(dateStr + 'T00:00:00.000Z');
+    const { startMs: dayStartMs, endMs: dayEndMs } = dateStringToUtcRange(dateStr, getAppTimezone());
     const audit = await DailyTipAudit.findOne({
       locationId: locationIdObj,
-      date: dateStart,
+      date: { $gte: new Date(dayStartMs), $lte: new Date(dayEndMs) },
     }).lean();
     if ((audit?.financial?.employeePayouts?.length) || (audit?.derived?.employeeHours?.length)) {
       auditByDate.set(dateStr, audit);
@@ -765,16 +767,51 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
     })),
   });
 
+  // Include employees who only appear in daily tip audits (e.g. manual hours, not in Connecteam tardiness).
+  const auditEmployeeIdSet = new Set();
+  for (const audit of auditByDate.values()) {
+    for (const p of audit?.financial?.employeePayouts || []) {
+      if (p.employeeId) auditEmployeeIdSet.add(String(p.employeeId));
+    }
+    for (const h of audit?.derived?.employeeHours || []) {
+      if (h.employeeId) auditEmployeeIdSet.add(String(h.employeeId));
+    }
+  }
+  const existingIdSet = new Set(employees.map((e) => String(e._id)));
+  const missingAuditIds = [...auditEmployeeIdSet].filter(
+    (id) => !existingIdSet.has(id) && mongoose.Types.ObjectId.isValid(id),
+  );
+  if (missingAuditIds.length > 0) {
+    const oidList = missingAuditIds.map((id) => new mongoose.Types.ObjectId(id));
+    const extra = await Employee.find({
+      _id: { $in: oidList },
+      locationId: locationIdObj,
+    }).lean();
+    for (const ex of extra) {
+      const nameTrim = (ex.name || '').toString().trim();
+      if (productionNames.has(nameTrim)) continue;
+      employees.push(ex);
+    }
+  }
+
   // Cache which days have adjustments (so legacy audits can be recomputed once).
   const adjustmentsByDateStr = new Set();
   if (dateStrs.length > 0) {
-    const start = new Date(dateStrs[0] + 'T00:00:00.000Z');
-    const end = new Date(dateStrs[dateStrs.length - 1] + 'T23:59:59.999Z');
-    const adj = await DailyTipAdjustment.find({ locationId: locationIdObj, date: { $gte: start, $lte: end } })
+    const { startMs: adjRangeStart, endMs: adjRangeEnd } = dateRangeToUtcBounds(
+      dateStrs[0],
+      dateStrs[dateStrs.length - 1],
+      getAppTimezone(),
+    );
+    const adj = await DailyTipAdjustment.find({
+      locationId: locationIdObj,
+      date: { $gte: new Date(adjRangeStart), $lte: new Date(adjRangeEnd) },
+    })
       .select('date')
       .lean();
     for (const a of adj) {
-      if (a?.date) adjustmentsByDateStr.add(new Date(a.date).toISOString().slice(0, 10));
+      if (a?.date) {
+        adjustmentsByDateStr.add(formatDateStringInTimezone(new Date(a.date).getTime(), getAppTimezone()));
+      }
     }
   }
 
@@ -788,8 +825,6 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
 
     for (let i = 0; i < numDays; i++) {
       const dateStr = dateStrs[i];
-      const dateStart = new Date(dateStr + 'T00:00:00.000Z');
-      const dateEnd = new Date(dateStr + 'T23:59:59.999Z');
       let tips = 0;
       let dayHours = 0;
 
@@ -834,16 +869,8 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
 
       weeklyGrossTips += tips;
       dailyTipsByDay[i] = roundMoney(tips);
+      // dayHours already includes manual hours merged in DailyTipAudit (from getDailyTipCalculation).
       weeklyWorkedHours += dayHours;
-
-      const manualEntries = await ManualWorking.find({
-        employeeId: emp._id,
-        locationId: locationIdObj,
-        date: { $gte: dateStart, $lte: dateEnd },
-      });
-      for (const m of manualEntries) {
-        weeklyWorkedHours += (m.amHours || 0) + (m.pmHours || 0);
-      }
     }
 
     const sumOfDailyRounded = dailyTipsByDay.reduce((s, v) => s + (Number(v) || 0), 0);

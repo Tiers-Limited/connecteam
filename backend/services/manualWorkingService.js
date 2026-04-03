@@ -1,147 +1,117 @@
 const ManualWorking = require('../models/ManualWorking');
-const { toDateString } = require('../utils/dateUtils');
+const {
+  getAppTimezone,
+  dateStringToUtcRange,
+  dateRangeToUtcBounds,
+} = require('../utils/dateUtils');
+
+function ymd(date) {
+  return typeof date === 'string' ? date.slice(0, 10) : date.toISOString().slice(0, 10);
+}
 
 /**
  * Create or update a manual working entry
- * @param {string} employeeId - Employee ID
- * @param {string} locationId - Location ID
- * @param {string} date - Date (YYYY-MM-DD or Date object)
- * @param {number} amHours - AM hours worked
- * @param {number} pmHours - PM hours worked
- * @param {number} amTips - AM tips
- * @param {number} pmTips - PM tips
- * @param {string} reason - Reason for manual entry (e.g., "No Clock In", "Adjustment", etc.)
- * @param {string} notes - Additional notes
- * @returns {Promise<Object>} Updated manual working entry
  */
 async function upsertManualWorking(employeeId, locationId, date, amHours, pmHours, amTips, pmTips, reason, notes = '') {
-  const dateObj = new Date(date);
-  dateObj.setHours(0, 0, 0, 0);
+  const dateStr = ymd(date);
+  const tz = getAppTimezone();
+  const { startMs, endMs } = dateStringToUtcRange(dateStr, tz);
+  const dayStart = new Date(startMs);
 
-  return ManualWorking.findOneAndUpdate(
-    { employeeId, locationId, date: dateObj },
-    {
-      $set: {
-        amHours,
-        pmHours,
-        amTips,
-        pmTips,
-        reason,
-        notes,
-      },
-    },
-    { new: true, upsert: true }
-  )
-    .populate('employeeId', 'name')
-    .populate('locationId', 'name');
+  const existing = await ManualWorking.findOne({
+    employeeId,
+    locationId,
+    date: { $gte: new Date(startMs), $lte: new Date(endMs) },
+  });
+
+  const set = {
+    amHours,
+    pmHours,
+    amTips,
+    pmTips,
+    reason,
+    notes,
+    date: dayStart,
+  };
+
+  if (existing) {
+    return ManualWorking.findByIdAndUpdate(existing._id, { $set: set }, { new: true })
+      .populate('employeeId', 'name')
+      .populate('locationId', 'name');
+  }
+  return ManualWorking.create({ employeeId, locationId, ...set }).then((doc) =>
+    ManualWorking.findById(doc._id).populate('employeeId', 'name').populate('locationId', 'name'),
+  );
 }
 
-/**
- * Get manual working entry for a specific employee, location, and date
- */
 async function getManualWorking(employeeId, locationId, date) {
-  const dateObj = new Date(date);
-  dateObj.setHours(0, 0, 0, 0);
-
-  return ManualWorking.findOne({ employeeId, locationId, date: dateObj })
+  const { startMs, endMs } = dateStringToUtcRange(ymd(date), getAppTimezone());
+  return ManualWorking.findOne({
+    employeeId,
+    locationId,
+    date: { $gte: new Date(startMs), $lte: new Date(endMs) },
+  })
     .populate('employeeId', 'name')
     .populate('locationId', 'name');
 }
 
-/**
- * Get all manual working entries for a location on a given date
- */
 async function getManualWorkingByLocationDate(locationId, date) {
-  const dateObj = new Date(date);
-  dateObj.setHours(0, 0, 0, 0);
-
-  return ManualWorking.find({ locationId, date: dateObj })
+  const { startMs, endMs } = dateStringToUtcRange(ymd(date), getAppTimezone());
+  return ManualWorking.find({
+    locationId,
+    date: { $gte: new Date(startMs), $lte: new Date(endMs) },
+  })
     .populate('employeeId', 'name')
     .sort({ employeeId: 1 });
 }
 
-/**
- * Get all manual working entries for a location within a date range
- */
 async function getManualWorkingByLocationDateRange(locationId, startDate, endDate) {
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(endDate);
-  end.setHours(23, 59, 59, 999);
-
+  const { startMs, endMs } = dateRangeToUtcBounds(ymd(startDate), ymd(endDate), getAppTimezone());
   return ManualWorking.find({
     locationId,
-    date: { $gte: start, $lte: end },
+    date: { $gte: new Date(startMs), $lte: new Date(endMs) },
   })
     .populate('employeeId', 'name')
     .sort({ date: 1, employeeId: 1 });
 }
 
-/**
- * Get all manual working entries for an employee within a date range
- */
 async function getEmployeeManualWorkingByDateRange(employeeId, startDate, endDate) {
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(endDate);
-  end.setHours(23, 59, 59, 999);
-
+  const { startMs, endMs } = dateRangeToUtcBounds(ymd(startDate), ymd(endDate), getAppTimezone());
   return ManualWorking.find({
     employeeId,
-    date: { $gte: start, $lte: end },
+    date: { $gte: new Date(startMs), $lte: new Date(endMs) },
   })
     .populate('locationId', 'name')
     .sort({ date: 1 });
 }
 
-/**
- * Delete a manual working entry
- */
 async function deleteManualWorking(employeeId, locationId, date) {
-  const dateObj = new Date(date);
-  dateObj.setHours(0, 0, 0, 0);
-
+  const { startMs, endMs } = dateStringToUtcRange(ymd(date), getAppTimezone());
   return ManualWorking.findOneAndDelete({
     employeeId,
     locationId,
-    date: dateObj,
+    date: { $gte: new Date(startMs), $lte: new Date(endMs) },
   });
 }
 
-/**
- * Get total manual tips for an employee at a location for a date range
- */
 async function getTotalManualTips(employeeId, locationId, startDate, endDate) {
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(endDate);
-  end.setHours(23, 59, 59, 999);
-
+  const { startMs, endMs } = dateRangeToUtcBounds(ymd(startDate), ymd(endDate), getAppTimezone());
   const entries = await ManualWorking.find({
     employeeId,
     locationId,
-    date: { $gte: start, $lte: end },
+    date: { $gte: new Date(startMs), $lte: new Date(endMs) },
   });
-
   const total = entries.reduce((sum, entry) => sum + entry.amTips + entry.pmTips, 0);
   return Math.round(total * 100) / 100;
 }
 
-/**
- * Get total manual hours for an employee at a location for a date range
- */
 async function getTotalManualHours(employeeId, locationId, startDate, endDate) {
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(endDate);
-  end.setHours(23, 59, 59, 999);
-
+  const { startMs, endMs } = dateRangeToUtcBounds(ymd(startDate), ymd(endDate), getAppTimezone());
   const entries = await ManualWorking.find({
     employeeId,
     locationId,
-    date: { $gte: start, $lte: end },
+    date: { $gte: new Date(startMs), $lte: new Date(endMs) },
   });
-
   const total = entries.reduce((sum, entry) => sum + entry.amHours + entry.pmHours, 0);
   return Math.round(total * 100) / 100;
 }

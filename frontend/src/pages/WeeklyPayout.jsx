@@ -44,6 +44,8 @@ export default function WeeklyPayout() {
   const [modalEmployee, setModalEmployee] = useState(null);
   const [editManualAmount, setEditManualAmount] = useState("");
   const [editManualReason, setEditManualReason] = useState("");
+  const [reportScope, setReportScope] = useState("current_location");
+  const [reportExporting, setReportExporting] = useState(false);
 
   const loadPayout = useCallback(
     (refresh = false) => {
@@ -97,7 +99,7 @@ export default function WeeklyPayout() {
             err.response?.data?.error || err.message || "Failed to load payout";
           console.error("[WeeklyPayout] Load payout failed:", {
             locationId: selectedLocationId,
-            weekStart,
+            dateRange: { start: startDate.trim().slice(0, 10), end: endDate.trim().slice(0, 10) },
             error: msg,
             response: err.response?.data,
           });
@@ -207,6 +209,123 @@ export default function WeeklyPayout() {
   const currentPage = Math.min(Math.max(1, page), totalPages);
   const start = (currentPage - 1) * pageSize;
   const paginatedPayouts = payouts.slice(start, start + pageSize);
+
+  const exportDateColumns =
+    data?.dateRange != null
+      ? getDateRangeColumns(data.dateRange.startDate, data.dateRange.endDate)
+      : data
+        ? getWeekDateColumns(startDate)
+        : getDateRangeColumns(displayRangeStart, displayRangeEnd);
+
+  function payoutToExportRow(p, locLabel, cols) {
+    const wh = p.totalWorkingMinutes ?? 0;
+    const whStr =
+      wh <= 0
+        ? "–"
+        : `${Math.floor(wh / 60)}h${wh % 60 ? ` ${wh % 60}m` : ""}`;
+    return [
+      p.employeeName ?? "",
+      locLabel,
+      ...cols.map((_, idx) =>
+        formatMoney((p.dailyTipsByDay || [])[idx] ?? 0),
+      ),
+      formatMoney(p.weeklyGrossTips ?? p.dailyTipsMonToSun),
+      whStr,
+      String(p.weeklyTardinessMinutes ?? 0),
+      `${p.tardinessPercent ?? 0}%`,
+      formatMoney(p.tardinessDeduction),
+      formatMoney(p.weeklyAfterTardiness),
+      formatMoney(p.manualDeduction),
+      formatMoney(p.netWeeklyTips),
+      formatMoney(p.tardinessRedistribution ?? 0),
+      formatMoney(p.finalWeeklyTipsPayable ?? 0),
+    ];
+  }
+
+  const weeklyReportHeaders = [
+    "Employee",
+    "Location",
+    ...exportDateColumns.map((c) => c.label),
+    "Weekly Gross Tips",
+    "Working hours",
+    "Weekly Tardiness (min)",
+    "Tardiness %",
+    "Tardiness Deduction",
+    "Weekly After Tardiness",
+    "Manual Deduction",
+    "Net Weekly Tips",
+    "Tardiness Redistribution",
+    "Final Weekly Tips Payable",
+  ];
+
+  async function runWeeklyReportExport(kind) {
+    const ds = displayRangeStart;
+    const de = displayRangeEnd;
+    if (
+      !ds ||
+      !de ||
+      new Date(de + "T12:00:00") < new Date(ds + "T12:00:00")
+    ) {
+      toast.error("Please select a valid date range (From ≤ To).");
+      return;
+    }
+    setReportExporting(true);
+    try {
+      const cols = exportDateColumns;
+      let rows;
+      let fileBase;
+      let pdfTitle;
+      if (reportScope === "all_locations") {
+        const payloads = await Promise.all(
+          locations.map((loc) =>
+            getWeeklyPayout(loc._id, ds, false, ds, de).catch(() => null),
+          ),
+        );
+        const combined = [];
+        locations.forEach((loc, i) => {
+          const payload = payloads[i];
+          const locLabel = payload?.locationName ?? loc.name ?? "—";
+          for (const p of payload?.payouts ?? []) {
+            combined.push(payoutToExportRow(p, locLabel, cols));
+          }
+        });
+        combined.sort((a, b) => {
+          const byName = (a[0] || "").localeCompare(b[0] || "", undefined, {
+            sensitivity: "base",
+          });
+          if (byName !== 0) return byName;
+          return (a[1] || "").localeCompare(b[1] || "", undefined, {
+            sensitivity: "base",
+          });
+        });
+        rows = combined;
+        fileBase = `weekly-payout-all-locations-${ds}-${de}`;
+        pdfTitle = `Weekly Payout — All locations — ${ds} – ${de}`;
+      } else {
+        rows = payouts.map((p) =>
+          payoutToExportRow(p, locationName, exportDateColumns),
+        );
+        const safeLoc = String(locationName).replace(/\s+/g, "-");
+        fileBase = `weekly-payout-${safeLoc}-${ds}-${de}`;
+        pdfTitle = `Weekly Payout — ${locationName} — ${ds} – ${de}`;
+      }
+      if (reportScope === "current_location" && rows.length === 0) {
+        toast.error("Load payout for this location first, or choose “All locations”.");
+        return;
+      }
+      if (kind === "csv") {
+        exportTableToCSV(weeklyReportHeaders, rows, `${fileBase}.csv`);
+      } else {
+        exportTableToPDF(pdfTitle, weeklyReportHeaders, rows, `${fileBase}.pdf`);
+      }
+    } catch (err) {
+      toast.error(
+        err.response?.data?.error || err.message || "Export failed",
+      );
+    } finally {
+      setReportExporting(false);
+    }
+  }
 
   if (!selectedLocationId) {
     return (
@@ -386,167 +505,102 @@ export default function WeeklyPayout() {
                   </div>
                 )}
 
-              {totalRows > 0 && (
+              {data && (
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
                   <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-sm text-slate-500">
-                      {totalRows} employee{totalRows !== 1 ? "s" : ""}
-                    </span>
-                    <label className="flex items-center gap-2 text-sm text-slate-500">
-                      Rows per page
-                      <select
-                        value={pageSize}
-                        onChange={(e) => {
-                          setPageSize(Number(e.target.value));
-                          setPage(1);
-                        }}
-                        className="rounded border border-slate-200 bg-white/90 px-2 py-1.5 text-sm text-slate-700"
-                      >
-                        {PAGE_SIZES.map((n) => (
-                          <option key={n} value={n}>
-                            {n}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+                    {totalRows > 0 && (
+                      <>
+                        <span className="text-sm text-slate-500">
+                          {totalRows} employee{totalRows !== 1 ? "s" : ""}
+                        </span>
+                        <label className="flex items-center gap-2 text-sm text-slate-500">
+                          Rows per page
+                          <select
+                            value={pageSize}
+                            onChange={(e) => {
+                              setPageSize(Number(e.target.value));
+                              setPage(1);
+                            }}
+                            className="rounded border border-slate-200 bg-white/90 px-2 py-1.5 text-sm text-slate-700"
+                          >
+                            {PAGE_SIZES.map((n) => (
+                              <option key={n} value={n}>
+                                {n}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </>
+                    )}
+                    <div
+                      className={
+                        totalRows > 0
+                          ? "flex flex-wrap items-center gap-2 border-l border-slate-200 pl-3"
+                          : "flex flex-wrap items-center gap-2"
+                      }
+                    >
                       <span className="text-xs font-medium text-slate-400">
                         Report:
                       </span>
+                      <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                        <span className="text-slate-400">Scope</span>
+                        <select
+                          value={reportScope}
+                          onChange={(e) => setReportScope(e.target.value)}
+                          disabled={reportExporting}
+                          className="max-w-[200px] rounded border border-slate-200 bg-white/90 px-2 py-1 text-xs text-slate-700"
+                        >
+                          <option value="current_location">
+                            This location only
+                          </option>
+                          <option value="all_locations">
+                            All locations (by employee)
+                          </option>
+                        </select>
+                      </label>
                       <Button
                         type="button"
                         variant="secondary"
-                        onClick={() => {
-                          const headers = [
-                            "Employee",
-                            "Location",
-                            ...weekDateColumns.map((c) => c.label),
-                            "Weekly Gross Tips",
-                            "Working hours",
-                            "Weekly Tardiness (min)",
-                            "Tardiness %",
-                            "Tardiness Deduction",
-                            "Weekly After Tardiness",
-                            "Manual Deduction",
-                            "Net Weekly Tips",
-                            "Tardiness Redistribution",
-                            "Final Weekly Tips Payable",
-                          ];
-                          const rows = payouts.map((p) => {
-                            const wh = p.totalWorkingMinutes ?? 0;
-                            const whStr =
-                              wh <= 0
-                                ? "–"
-                                : `${Math.floor(wh / 60)}h${wh % 60 ? ` ${wh % 60}m` : ""}`;
-                            return [
-                              p.employeeName ?? "",
-                              locationName,
-                              ...weekDateColumns.map((col, idx) =>
-                                formatMoney((p.dailyTipsByDay || [])[idx] ?? 0),
-                              ),
-                              formatMoney(
-                                p.weeklyGrossTips ?? p.dailyTipsMonToSun,
-                              ),
-                              whStr,
-                              String(p.weeklyTardinessMinutes ?? 0),
-                              `${p.tardinessPercent ?? 0}%`,
-                              formatMoney(p.tardinessDeduction),
-                              formatMoney(p.weeklyAfterTardiness),
-                              formatMoney(p.manualDeduction),
-                              formatMoney(p.netWeeklyTips),
-                              formatMoney(p.tardinessRedistribution ?? 0),
-                              formatMoney(p.finalWeeklyTipsPayable ?? 0),
-                            ];
-                          });
-                          exportTableToCSV(
-                            headers,
-                            rows,
-                            `weekly-payout-${displayRangeStart}-${displayRangeEnd}.csv`,
-                          );
-                        }}
+                        disabled={reportExporting}
+                        onClick={() => runWeeklyReportExport("csv")}
                       >
-                        Export CSV
+                        {reportExporting ? "…" : "Export CSV"}
                       </Button>
                       <Button
                         type="button"
                         variant="secondary"
-                        onClick={() => {
-                          const headers = [
-                            "Employee",
-                            "Location",
-                            ...weekDateColumns.map((c) => c.label),
-                            "Weekly Gross Tips",
-                            "Working hours",
-                            "Weekly Tardiness (min)",
-                            "Tardiness %",
-                            "Tardiness Deduction",
-                            "Weekly After Tardiness",
-                            "Manual Deduction",
-                            "Net Weekly Tips",
-                            "Tardiness Redistribution",
-                            "Final Weekly Tips Payable",
-                          ];
-                          const rows = payouts.map((p) => {
-                            const wh = p.totalWorkingMinutes ?? 0;
-                            const whStr =
-                              wh <= 0
-                                ? "–"
-                                : `${Math.floor(wh / 60)}h${wh % 60 ? ` ${wh % 60}m` : ""}`;
-                            return [
-                              p.employeeName ?? "",
-                              locationName,
-                              ...weekDateColumns.map((col, idx) =>
-                                formatMoney((p.dailyTipsByDay || [])[idx] ?? 0),
-                              ),
-                              formatMoney(
-                                p.weeklyGrossTips ?? p.dailyTipsMonToSun,
-                              ),
-                              whStr,
-                              String(p.weeklyTardinessMinutes ?? 0),
-                              `${p.tardinessPercent ?? 0}%`,
-                              formatMoney(p.tardinessDeduction),
-                              formatMoney(p.weeklyAfterTardiness),
-                              formatMoney(p.manualDeduction),
-                              formatMoney(p.netWeeklyTips),
-                              formatMoney(p.tardinessRedistribution ?? 0),
-                              formatMoney(p.finalWeeklyTipsPayable ?? 0),
-                            ];
-                          });
-                          exportTableToPDF(
-                            `Weekly Payout — ${locationName} — ${displayRangeStart} – ${displayRangeEnd}`,
-                            headers,
-                            rows,
-                            `weekly-payout-${displayRangeStart}-${displayRangeEnd}.pdf`,
-                          );
-                        }}
+                        disabled={reportExporting}
+                        onClick={() => runWeeklyReportExport("pdf")}
                       >
-                        Export PDF
+                        {reportExporting ? "…" : "Export PDF"}
                       </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <button
-                      type="button"
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={currentPage <= 1}
-                      className="rounded-lg border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
-                    >
-                      Previous
-                    </button>
-                    <span className="min-w-[100px] text-center text-slate-500">
-                      Page {currentPage} of {totalPages}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPage((p) => Math.min(totalPages, p + 1))
-                      }
-                      disabled={currentPage >= totalPages}
-                      className="rounded-lg border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
-                    >
-                      Next
-                    </button>
-                  </div>
+                  {totalRows > 0 && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage <= 1}
+                        className="rounded-lg border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                      >
+                        Previous
+                      </button>
+                      <span className="min-w-[100px] text-center text-slate-500">
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPage((p) => Math.min(totalPages, p + 1))
+                        }
+                        disabled={currentPage >= totalPages}
+                        className="rounded-lg border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 

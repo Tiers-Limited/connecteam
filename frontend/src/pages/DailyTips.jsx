@@ -7,11 +7,27 @@ import {
   upsertDailyTipInput,
   upsertDailyTipAdjustment,
 } from "../services/dailyTipService";
+import {
+  getManualWorkingByDate,
+  upsertManualWorking,
+  deleteManualWorking,
+} from "../services/manualWorkingService";
 import { toDateString } from "../utils/dateUtils";
 import { exportTableToCSV, exportTableToPDF } from "../utils/reportUtils";
 import Button from "../components/ui/Button";
 
 const PAGE_SIZES = [10, 25, 50, 100];
+
+function shiftDescriptionForLocation(locationName) {
+  const n = (locationName || "").trim().toLowerCase();
+  if (n === "the cove") {
+    return " Enter gross tips for one combined shift (all hours counted, no AM/PM split). ";
+  }
+  if (n === "casa del mar" || n === "oranjestad") {
+    return " Enter gross tips per shift (AM 06:00–14:00, PM 14:00–23:00). ";
+  }
+  return " Enter gross tips per shift (AM 06:00–15:00, PM 15:00–23:00). ";
+}
 
 export default function DailyTips() {
   const {
@@ -44,6 +60,16 @@ export default function DailyTips() {
   const [adjustCashAdvance, setAdjustCashAdvance] = useState("");
   const [adjustRedistribute, setAdjustRedistribute] = useState("");
   const [adjustSaving, setAdjustSaving] = useState(false);
+  const [manualRows, setManualRows] = useState([]);
+  const [manualLoading, setManualLoading] = useState(false);
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualForm, setManualForm] = useState({
+    name: "",
+    amHours: "",
+    pmHours: "",
+  });
+  const [manualRemoveRow, setManualRemoveRow] = useState(null);
+  const [manualRemoveSaving, setManualRemoveSaving] = useState(false);
 
   const location = locations.find((l) => l._id === selectedLocationId);
   const isTheCove = (location?.name || '').trim().toLowerCase() === 'the cove';
@@ -105,6 +131,43 @@ export default function DailyTips() {
         dailyTipsCache?.calculationError != null);
     load(cacheMatches);
   }, [load, selectedLocationId, date]);
+
+  useEffect(() => {
+    if (!selectedLocationId) return;
+    setManualLoading(true);
+    getManualWorkingByDate(selectedLocationId, date)
+      .then(setManualRows)
+      .catch(() => setManualRows([]))
+      .finally(() => setManualLoading(false));
+  }, [selectedLocationId, date]);
+
+  useEffect(() => {
+    if (!manualRemoveRow) return;
+    const onEscape = (e) => {
+      if (e.key === "Escape") setManualRemoveRow(null);
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, [manualRemoveRow]);
+
+  const confirmRemoveManual = useCallback(async () => {
+    if (!manualRemoveRow?._id) return;
+    setManualRemoveSaving(true);
+    try {
+      await deleteManualWorking(manualRemoveRow._id);
+      toast.success("Removed");
+      const removedId = manualRemoveRow._id;
+      setManualRemoveRow(null);
+      setManualRows((prev) => prev.filter((r) => r._id !== removedId));
+      await load(false);
+    } catch (err) {
+      toast.error(
+        err.response?.data?.error || err.message || "Failed to delete",
+      );
+    } finally {
+      setManualRemoveSaving(false);
+    }
+  }, [manualRemoveRow, load]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -297,9 +360,7 @@ export default function DailyTips() {
       <h1 className="text-2xl font-bold text-slate-800">Daily Tips</h1>
       <p className="text-slate-600">
         {location?.name} —
-        {isTheCove
-          ? ' Enter gross tips for one combined shift (all hours counted, no AM/PM split). '
-          : ' Enter gross tips per shift (AM 06:00–15:00, PM 15:00–23:00). '}
+        {shiftDescriptionForLocation(location?.name)}
         4% is deducted for production pool
         {productionDeductionDollars != null && (
           <strong className="text-slate-800">
@@ -400,6 +461,210 @@ export default function DailyTips() {
             {loading ? <>{spinner}Loading…</> : "Load calculation"}
           </Button>
         </form>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <h2 className="mb-2 text-sm font-semibold text-slate-700">
+          Manual employees (not from Connecteam)
+        </h2>
+        <p className="mb-3 text-xs text-slate-500">
+          Add worked hours for this location and date. They count toward tip
+          split and weekly payout after you save and{" "}
+          <strong className="text-slate-600">Load calculation</strong>.
+        </p>
+        <form
+          className="mb-4 flex flex-wrap items-end gap-3"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const name = manualForm.name.trim();
+            if (!name) {
+              toast.error("Enter employee name");
+              return;
+            }
+            const am = parseFloat(manualForm.amHours) || 0;
+            const pm = parseFloat(manualForm.pmHours) || 0;
+            if (isTheCove) {
+              if (am < 0) {
+                toast.error("Hours must be ≥ 0");
+                return;
+              }
+            } else if (am < 0 || pm < 0) {
+              toast.error("Hours must be ≥ 0");
+              return;
+            }
+            setManualSaving(true);
+            try {
+              await upsertManualWorking({
+                employeeName: name,
+                locationId: selectedLocationId,
+                date,
+                amHours: isTheCove ? am : am,
+                pmHours: isTheCove ? 0 : pm,
+                amTips: 0,
+                pmTips: 0,
+              });
+              toast.success("Manual hours saved");
+              setManualForm({ name: "", amHours: "", pmHours: "" });
+              const list = await getManualWorkingByDate(
+                selectedLocationId,
+                date,
+              );
+              setManualRows(list);
+              await load(false);
+            } catch (err) {
+              toast.error(
+                err.response?.data?.error ||
+                  err.message ||
+                  "Failed to save manual hours",
+              );
+            } finally {
+              setManualSaving(false);
+            }
+          }}
+        >
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">
+              Name
+            </label>
+            <input
+              type="text"
+              value={manualForm.name}
+              onChange={(e) =>
+                setManualForm((f) => ({ ...f, name: e.target.value }))
+              }
+              className="min-w-[160px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+              placeholder="Employee name"
+            />
+          </div>
+          {isTheCove ? (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-500">
+                Hours worked
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={manualForm.amHours}
+                onChange={(e) =>
+                  setManualForm((f) => ({ ...f, amHours: e.target.value }))
+                }
+                className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                placeholder="0"
+              />
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  AM hours
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={manualForm.amHours}
+                  onChange={(e) =>
+                    setManualForm((f) => ({ ...f, amHours: e.target.value }))
+                  }
+                  className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">
+                  PM hours
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={manualForm.pmHours}
+                  onChange={(e) =>
+                    setManualForm((f) => ({ ...f, pmHours: e.target.value }))
+                  }
+                  className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                  placeholder="0"
+                />
+              </div>
+            </>
+          )}
+          <Button type="submit" disabled={manualSaving}>
+            {manualSaving ? "Saving…" : "Add / update"}
+          </Button>
+        </form>
+        {manualLoading ? (
+          <p className="text-sm text-slate-500">Loading manual entries…</p>
+        ) : manualRows.length === 0 ? (
+          <p className="text-sm text-slate-500">No manual entries for this date.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left">
+                  <th className="pb-2 font-medium text-slate-700">Employee</th>
+                  {isTheCove ? (
+                    <th className="pb-2 text-right font-medium text-slate-700">
+                      Hours
+                    </th>
+                  ) : (
+                    <>
+                      <th className="pb-2 text-right font-medium text-slate-700">
+                        AM hrs
+                      </th>
+                      <th className="pb-2 text-right font-medium text-slate-700">
+                        PM hrs
+                      </th>
+                    </>
+                  )}
+                  <th className="pb-2 text-right font-medium text-slate-700">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {manualRows.map((row) => {
+                  const emp = row.employeeId;
+                  const empName =
+                    typeof emp === "object" && emp?.name
+                      ? emp.name
+                      : "—";
+                  return (
+                    <tr key={row._id}>
+                      <td className="py-2 font-medium text-slate-800">
+                        {empName}
+                      </td>
+                      {isTheCove ? (
+                        <td className="py-2 text-right tabular-nums text-slate-600">
+                          {(Number(row.amHours) || 0) +
+                            (Number(row.pmHours) || 0)}
+                        </td>
+                      ) : (
+                        <>
+                          <td className="py-2 text-right tabular-nums text-slate-600">
+                            {Number(row.amHours) || 0}
+                          </td>
+                          <td className="py-2 text-right tabular-nums text-slate-600">
+                            {Number(row.pmHours) || 0}
+                          </td>
+                        </>
+                      )}
+                      <td className="py-2 text-right">
+                        <button
+                          type="button"
+                          className="text-xs font-medium text-red-600 hover:text-red-700"
+                          onClick={() => setManualRemoveRow(row)}
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {calculationError && (
@@ -820,6 +1085,75 @@ export default function DailyTips() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {manualRemoveRow && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="manual-remove-title"
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3
+                  id="manual-remove-title"
+                  className="text-base font-semibold text-slate-800"
+                >
+                  Remove manual entry?
+                </h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  This removes manual hours for{" "}
+                  <strong className="text-slate-800">
+                    {typeof manualRemoveRow.employeeId === "object" &&
+                    manualRemoveRow.employeeId?.name
+                      ? manualRemoveRow.employeeId.name
+                      : "this employee"}
+                  </strong>{" "}
+                  on <strong className="text-slate-800">{date}</strong> at{" "}
+                  <strong className="text-slate-800">
+                    {location?.name ?? "this location"}
+                  </strong>
+                  . Recalculate after removal if you already loaded tips.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => !manualRemoveSaving && setManualRemoveRow(null)}
+                className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-5 flex items-center justify-end gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setManualRemoveRow(null)}
+                disabled={manualRemoveSaving}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                onClick={confirmRemoveManual}
+                disabled={manualRemoveSaving}
+              >
+                {manualRemoveSaving ? (
+                  <>
+                    {spinner}
+                    Removing…
+                  </>
+                ) : (
+                  "Remove"
+                )}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

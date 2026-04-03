@@ -26,6 +26,17 @@ const employeeSchema = new mongoose.Schema(
 );
 
 employeeSchema.index({ locationId: 1, name: 1 });
-employeeSchema.index({ connecteamsUserId: 1, locationId: 1 }, { unique: true, sparse: true });
+/**
+ * Uniqueness only when Connecteam id is a non-empty string.
+ * Sparse unique on null is wrong: MongoDB still indexes explicit null, so only one
+ * manual (no Connecteam) employee per location could exist — use partial index instead.
+ */
+employeeSchema.index(
+  { connecteamsUserId: 1, locationId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { connecteamsUserId: { $type: 'string', $gt: '' } },
+  }
+);
 
 module.exports = mongoose.model('Employee', employeeSchema);
