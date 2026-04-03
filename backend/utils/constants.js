@@ -1,13 +1,22 @@
 /**
- * Tip calculation constants per Front Staff - Tips Calculation Logic PDF
+ * Tip calculation — default shifts (e.g. The Cove when not single-shift, or other locations).
  * AM: 06:00 – 15:00, PM: 15:00 – 23:00
+ * Casa del Mar & Oranjestad: AM 06:00 – 14:00, PM 14:00 – 23:00
  */
 const PRODUCTION_DEDUCTION_PERCENT = 0.04;
 
 const SHIFT_BOUNDARIES = {
   AM_START: '06:00',
-  AM_END: '15:00',   // PM starts at 15:00
+  AM_END: '15:00',
   PM_START: '15:00',
+  PM_END: '23:00',
+};
+
+/** AM/PM split for Oranjestad and Casa del Mar (clock-based hours from Connecteam). */
+const SHIFT_BOUNDARIES_CASA_ORANJESTAD = {
+  AM_START: '06:00',
+  AM_END: '14:00',
+  PM_START: '14:00',
   PM_END: '23:00',
 };
 
@@ -28,6 +37,21 @@ const LOCATIONS = [
   { key: 'the cove', name: 'The Cove' },
   // { key: 'drive thru', name: 'Drive Thru' },
 ];
+
+const LOCATION_KEYS_EARLY_PM_START = new Set(['oranjestad', 'casa del mar']);
+
+/**
+ * @param {string} [locationName] - Location document name
+ * @returns {{ AM_START: string, AM_END: string, PM_START: string, PM_END: string }}
+ */
+function shiftBoundariesForLocationName(locationName) {
+  const n = (locationName || '').trim().toLowerCase();
+  const found = LOCATIONS.find((l) => (l.name || '').toLowerCase() === n);
+  if (found && LOCATION_KEYS_EARLY_PM_START.has(found.key)) {
+    return SHIFT_BOUNDARIES_CASA_ORANJESTAD;
+  }
+  return SHIFT_BOUNDARIES;
+}
 
 /**
  * Tardiness deduction tiers (Phase 2)
@@ -56,6 +80,9 @@ const JOB_TIP_MULTIPLIERS = {
 module.exports = {
   PRODUCTION_DEDUCTION_PERCENT,
   SHIFT_BOUNDARIES,
+  SHIFT_BOUNDARIES_CASA_ORANJESTAD,
+  LOCATION_KEYS_EARLY_PM_START,
+  shiftBoundariesForLocationName,
   LOCATION_SINGLE_SHIFT,
   TARDINESS_TIERS,
   ROUND_DECIMALS,

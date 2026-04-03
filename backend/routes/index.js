@@ -9,6 +9,7 @@ const connecteamsRoutes = require('./connecteamsRoutes');
 const productionRoutes = require('./productionRoutes');
 const dashboardRoutes = require('./dashboardRoutes');
 const supervisorRoutes = require('./supervisorRoutes');
+const manualWorkingRoutes = require('./manualWorkingRoutes');
 const { authMiddleware } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
@@ -26,5 +27,6 @@ router.use('/weekly-payout', weeklyPayoutRoutes);
 router.use('/connecteams', connecteamsRoutes);
 router.use('/production', productionRoutes);
 router.use('/supervisors', supervisorRoutes);
+router.use('/manual-working', manualWorkingRoutes);
 
 module.exports = router;

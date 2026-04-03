@@ -207,6 +207,27 @@ function formatDateStringInTimezone(utcMs, timezone) {
  * @param {string} endStr - YYYY-MM-DD
  * @returns {string[]}
  */
+/**
+ * Calendar day YYYY-MM-DD as a single Date for MongoDB: start of that day in the app timezone
+ * (TIMEZONE env, default America/Aruba). Not UTC midnight — same meaning as date pickers on site.
+ * @param {string|Date} date - YYYY-MM-DD string or Date
+ * @param {string} [timezone] - IANA zone (default: getAppTimezone())
+ * @returns {Date}
+ */
+function dateStringToAppDayStart(date, timezone) {
+  const str =
+    typeof date === 'string'
+      ? date.slice(0, 10)
+      : date.toISOString().slice(0, 10);
+  const tz = (timezone || getAppTimezone()).trim() || getAppTimezone();
+  return new Date(getStartOfDayUtcMs(str, tz));
+}
+
+/** @deprecated Use dateStringToAppDayStart — kept for any external requires */
+function dateStringToUtcMidnight(date) {
+  return dateStringToAppDayStart(date);
+}
+
 function getDatesInRange(startStr, endStr) {
   const start = new Date(startStr + 'T12:00:00');
   const end = new Date(endStr + 'T12:00:00');
@@ -237,4 +258,6 @@ module.exports = {
   toDateString,
   isDateInWeek,
   getDatesInRange,
+  dateStringToAppDayStart,
+  dateStringToUtcMidnight,
 };
