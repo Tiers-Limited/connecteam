@@ -18,7 +18,7 @@ async function getPayout(req, res, next) {
       new Date(endDate + 'T12:00:00') >= new Date(startDate + 'T12:00:00');
     const weekStartStr = useDateRange ? startDate : weekStartToYYYYMMDD(weekStart);
 
-    if (!refresh && !useDateRange) {
+    if (!refresh) {
       const cached = await WeeklyPayoutCache.findOne({
         locationId,
         weekStart: weekStartStr,
@@ -44,13 +44,11 @@ async function getPayout(req, res, next) {
       payoutsCount: result?.payouts?.length ?? 0,
       fromCache: false,
     });
-    if (!useDateRange) {
-      await WeeklyPayoutCache.findOneAndUpdate(
-        { locationId, weekStart: weekStartStr },
-        { $set: { payload: result } },
-        { upsert: true, new: true }
-      );
-    }
+    await WeeklyPayoutCache.findOneAndUpdate(
+      { locationId, weekStart: weekStartStr },
+      { $set: { payload: result } },
+      { upsert: true, new: true }
+    );
     res.json({ success: true, data: result, fromCache: false });
   } catch (err) {
     next(err);
@@ -100,10 +98,41 @@ async function upsertManualDeduction(req, res, next) {
   }
 }
 
+async function postReport(req, res, next) {
+  try {
+    const {
+      startDate,
+      endDate,
+      geographicScope,
+      singleLocationId,
+      employeeScope,
+      employeeName,
+    } = req.body;
+    const data = await weeklyPayoutService.buildWeeklyPayoutReport({
+      startDate,
+      endDate,
+      geographicScope,
+      singleLocationId,
+      employeeScope,
+      employeeName,
+    });
+    res.json({ success: true, data });
+  } catch (err) {
+    if (err.status === 400) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    if (err.status === 404) {
+      return res.status(404).json({ success: false, error: err.message });
+    }
+    next(err);
+  }
+}
+
 module.exports = {
   getPayout,
   getTardiness,
   upsertTardiness,
   getManualDeductions,
   upsertManualDeduction,
+  postReport,
 };

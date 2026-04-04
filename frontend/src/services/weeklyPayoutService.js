@@ -43,3 +43,12 @@ export async function upsertManualDeduction(body) {
   const { data } = await api.post('/weekly-payout/manual-deduction', body);
   return data.data;
 }
+
+/**
+ * Build report rows for CSV/PDF (same data as Weekly Payout table).
+ * @param {object} body - startDate, endDate, geographicScope, employeeScope, locationId?, singleLocationId?, employeeName?
+ */
+export async function postWeeklyPayoutReport(body) {
+  const { data } = await api.post('/weekly-payout/report', body);
+  return data.data;
+}

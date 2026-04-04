@@ -13,6 +13,40 @@ const weekStartBody = body('weekStart')
   .matches(/^\d{4}-\d{2}-\d{2}$/)
   .withMessage('weekStart must be YYYY-MM-DD');
 
+router.post(
+  '/report',
+  body('startDate')
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('startDate must be YYYY-MM-DD'),
+  body('endDate')
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('endDate must be YYYY-MM-DD'),
+  body('geographicScope')
+    .isIn(['one_location', 'all_locations'])
+    .withMessage('Invalid geographicScope'),
+  body('employeeScope')
+    .isIn(['all', 'one_employee'])
+    .withMessage('Invalid employeeScope'),
+  body('singleLocationId').optional({ values: 'falsy' }).isMongoId(),
+  body('employeeName').optional({ values: 'falsy' }).isString(),
+  body().custom((_, { req }) => {
+    const { geographicScope, singleLocationId, employeeScope, employeeName } =
+      req.body || {};
+    if (geographicScope === 'one_location' && !singleLocationId) {
+      throw new Error('singleLocationId is required for one-location scope');
+    }
+    if (
+      employeeScope === 'one_employee' &&
+      !(employeeName && String(employeeName).trim())
+    ) {
+      throw new Error('employeeName is required for single-employee scope');
+    }
+    return true;
+  }),
+  validate,
+  weeklyPayoutController.postReport,
+);
+
 router.get(
   '/:locationId/:weekStart',
   param('locationId').isMongoId(),
