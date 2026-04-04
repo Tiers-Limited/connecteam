@@ -1,8 +1,11 @@
+const mongoose = require('mongoose');
 const WeeklyTardiness = require('../models/WeeklyTardiness');
 const ManualDeduction = require('../models/ManualDeduction');
 const Employee = require('../models/Employee');
+const Location = require('../models/Location');
 const locationService = require('./locationService');
 const employeeService = require('./employeeService');
+const WeeklyPayoutCache = require('../models/WeeklyPayoutCache');
 const { LOCATIONS } = require('../utils/constants');
 
 /** Normalize week start to UTC midnight (YYYY-MM-DD) so it matches getWeeklyPayout. */
@@ -202,10 +205,160 @@ async function upsertManualDeduction(employeeId, locationId, weekStart, amount, 
   );
 }
 
+function payloadDateToYMD(v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'string') return v.trim().slice(0, 10);
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+  return String(v).slice(0, 10);
+}
+
+/** Cached payload must match the requested From/To (range or classic week). */
+function cachedPayloadMatchesRange(payload, sd, ed) {
+  if (!payload || typeof payload !== 'object') return false;
+  if (payload.dateRange && payload.dateRange.startDate && payload.dateRange.endDate) {
+    return payload.dateRange.startDate === sd && payload.dateRange.endDate === ed;
+  }
+  const ws = payloadDateToYMD(payload.weekStart);
+  const we = payloadDateToYMD(payload.weekEnd);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ws) && /^\d{4}-\d{2}-\d{2}$/.test(we)) {
+    return ws === sd && we === ed;
+  }
+  return false;
+}
+
+/**
+ * Build report rows from WeeklyPayoutCache only (no live recompute). User must load payout on Weekly Payout first.
+ * @param {object} opts
+ * @param {string} opts.startDate - YYYY-MM-DD (cache key; must match Load payout From date)
+ * @param {string} opts.endDate - YYYY-MM-DD
+ * @param {'one_location'|'all_locations'} opts.geographicScope
+ * @param {string} [opts.singleLocationId] - when scope is one_location
+ * @param {'all'|'one_employee'} opts.employeeScope
+ * @param {string} [opts.employeeName] - substring match when employeeScope is one_employee
+ */
+async function buildWeeklyPayoutReport(opts) {
+  const {
+    startDate,
+    endDate,
+    geographicScope,
+    singleLocationId,
+    employeeScope,
+    employeeName,
+  } = opts;
+
+  const sd = String(startDate || '').trim().slice(0, 10);
+  const ed = String(endDate || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(sd) || !/^\d{4}-\d{2}-\d{2}$/.test(ed)) {
+    const err = new Error('startDate and endDate must be YYYY-MM-DD');
+    err.status = 400;
+    throw err;
+  }
+  if (new Date(`${ed}T12:00:00`) < new Date(`${sd}T12:00:00`)) {
+    const err = new Error('Invalid date range (end before start)');
+    err.status = 400;
+    throw err;
+  }
+
+  let locationIds = [];
+  if (geographicScope === 'all_locations') {
+    const locs = await Location.find({ isActive: true }).select('_id').sort({ name: 1 }).lean();
+    locationIds = locs.map((l) => l._id.toString());
+    if (locationIds.length === 0) {
+      const err = new Error('No active locations to include in the report.');
+      err.status = 404;
+      throw err;
+    }
+  } else if (geographicScope === 'one_location') {
+    if (!singleLocationId || !mongoose.Types.ObjectId.isValid(String(singleLocationId))) {
+      const err = new Error('Location is required for one-location report');
+      err.status = 400;
+      throw err;
+    }
+    const locDoc = await Location.findById(singleLocationId).select('isActive').lean();
+    if (!locDoc) {
+      const err = new Error('Location not found');
+      err.status = 400;
+      throw err;
+    }
+    if (locDoc.isActive === false) {
+      return {
+        dateRange: { startDate: sd, endDate: ed },
+        payouts: [],
+        geographicScope,
+        employeeScope,
+        exportSkippedReason: 'location_inactive',
+      };
+    }
+    locationIds = [String(singleLocationId)];
+  } else {
+    const err = new Error('Invalid geographicScope');
+    err.status = 400;
+    throw err;
+  }
+
+  const nameFilter =
+    employeeScope === 'one_employee' && employeeName && String(employeeName).trim()
+      ? String(employeeName).trim().toLowerCase()
+      : null;
+  if (employeeScope === 'one_employee' && !nameFilter) {
+    const err = new Error('Employee name is required for single-employee report');
+    err.status = 400;
+    throw err;
+  }
+
+  const payloadsForExport = [];
+  for (const lid of locationIds) {
+    const cached = await WeeklyPayoutCache.findOne({ locationId: lid, weekStart: sd }).lean();
+    const payload = cached?.payload;
+    if (cached && payload && cachedPayloadMatchesRange(payload, sd, ed)) {
+      payloadsForExport.push(payload);
+    }
+  }
+
+  if (payloadsForExport.length === 0) {
+    const err = new Error(
+      geographicScope === 'all_locations'
+        ? 'No saved payout in the database for this date range for any active location. Load payout on the Weekly Payout page for the sites you need, then try again.'
+        : 'No saved payout in the database for this date range. Open Weekly Payout, pick the same From and To dates, and click Load payout (or Recalculate), then try again.',
+    );
+    err.status = 404;
+    throw err;
+  }
+
+  const flat = [];
+  for (const payload of payloadsForExport) {
+    const locName = payload.locationName || '';
+    for (const p of payload.payouts || []) {
+      if (nameFilter && !(String(p.employeeName || '').toLowerCase().includes(nameFilter))) {
+        continue;
+      }
+      flat.push({ ...p, locationName: locName });
+    }
+  }
+
+  flat.sort((a, b) => {
+    const byName = (a.employeeName || '').localeCompare(b.employeeName || '', undefined, {
+      sensitivity: 'base',
+    });
+    if (byName !== 0) return byName;
+    return (a.locationName || '').localeCompare(b.locationName || '', undefined, {
+      sensitivity: 'base',
+    });
+  });
+
+  return {
+    dateRange: { startDate: sd, endDate: ed },
+    payouts: flat,
+    geographicScope,
+    employeeScope,
+  };
+}
+
 module.exports = {
   getTardiness,
   upsertTardiness,
   getManualDeductions,
   upsertManualDeduction,
   persistTardinessFromPayload,
+  buildWeeklyPayoutReport,
 };

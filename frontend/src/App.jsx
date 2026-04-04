@@ -10,6 +10,7 @@ import DailyTips from './pages/DailyTips';
 import DailyTipsHistory from './pages/DailyTipsHistory';
 import TimeEntries from './pages/TimeEntries';
 import WeeklyPayout from './pages/WeeklyPayout';
+import PayoutReports from './pages/PayoutReports';
 import WeeklyTardiness from './pages/WeeklyTardiness';
 import ProductionPool from './pages/ProductionPool';
 import CreateSupervisor from './pages/CreateSupervisor';
@@ -43,6 +44,7 @@ export default function App() {
               <Route path="daily-tips-history" element={<DailyTipsHistory />} />
               <Route path="weekly-payout" element={<WeeklyPayout />} />
               <Route path="weekly-tardiness" element={<WeeklyTardiness />} />
+              <Route path="payout-reports" element={<PayoutReports />} />
               <Route path="production-pool" element={<ProductionPool />} />
               <Route path="supervisors" element={<CreateSupervisor />} />
               <Route path="settings" element={<Settings />} />
