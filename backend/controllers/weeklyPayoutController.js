@@ -107,6 +107,7 @@ async function postReport(req, res, next) {
       singleLocationId,
       employeeScope,
       employeeName,
+      employeeId,
     } = req.body;
     const data = await weeklyPayoutService.buildWeeklyPayoutReport({
       startDate,
@@ -115,6 +116,7 @@ async function postReport(req, res, next) {
       singleLocationId,
       employeeScope,
       employeeName,
+      employeeId,
     });
     res.json({ success: true, data });
   } catch (err) {
@@ -128,6 +130,24 @@ async function postReport(req, res, next) {
   }
 }
 
+async function getReportEmployees(req, res, next) {
+  try {
+    const { startDate, endDate, geographicScope, singleLocationId } = req.query;
+    const data = await weeklyPayoutService.listWeeklyPayoutReportEmployees({
+      startDate,
+      endDate,
+      geographicScope,
+      singleLocationId,
+    });
+    res.json({ success: true, data });
+  } catch (err) {
+    if (err.status === 400) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    next(err);
+  }
+}
+
 module.exports = {
   getPayout,
   getTardiness,
@@ -135,4 +155,5 @@ module.exports = {
   getManualDeductions,
   upsertManualDeduction,
   postReport,
+  getReportEmployees,
 };

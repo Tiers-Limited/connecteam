@@ -1,9 +1,15 @@
 const ManualWorking = require('../models/ManualWorking');
 const Employee = require('../models/Employee');
 const Location = require('../models/Location');
+const { splitWorkedHours } = require('../services/tipsCalculationService');
+const { shiftBoundariesForLocationName, LOCATION_SINGLE_SHIFT } = require('../utils/constants');
 const { toDateString, dateStringToAppDayStart, dateStringToUtcRange, dateRangeToUtcBounds, getAppTimezone } = require('../utils/dateUtils');
 
 const MANUAL_TIPS_HOURS_REASON = 'Manual hours (not from Connecteam)';
+
+function roundHours4(value) {
+  return Math.round(Math.max(0, Number(value) || 0) * 10000) / 10000;
+}
 
 /**
  * Create or update manual working entry.
@@ -11,10 +17,27 @@ const MANUAL_TIPS_HOURS_REASON = 'Manual hours (not from Connecteam)';
  */
 async function createOrUpdateManualWorking(req, res) {
   try {
-    let { employeeId, employeeName, locationId, date, amHours, pmHours, amTips, pmTips, reason, notes } = req.body;
+    let {
+      employeeId,
+      employeeName,
+      locationId,
+      date,
+      amHours,
+      pmHours,
+      amTips,
+      pmTips,
+      reason,
+      notes,
+      clockIn: bodyClockIn,
+      clockOut: bodyClockOut,
+    } = req.body;
 
-    const amH = Math.max(0, Number(amHours) || 0);
-    const pmH = Math.max(0, Number(pmHours) || 0);
+    const clockIn = bodyClockIn != null ? String(bodyClockIn).trim() : '';
+    const clockOut = bodyClockOut != null ? String(bodyClockOut).trim() : '';
+
+    let amH;
+    let pmH;
+
     const amT = Math.max(0, Number(amTips) || 0);
     const pmT = Math.max(0, Number(pmTips) || 0);
 
@@ -50,10 +73,6 @@ async function createOrUpdateManualWorking(req, res) {
       employeeId = employee._id;
     }
 
-    if (amH < 0 || pmH < 0 || amT < 0 || pmT < 0) {
-      return res.status(400).json({ error: 'Hours and tips must be non-negative' });
-    }
-
     const dateStr = String(date).trim().slice(0, 10);
     const tz = getAppTimezone();
     const { startMs, endMs } = dateStringToUtcRange(dateStr, tz);
@@ -69,6 +88,30 @@ async function createOrUpdateManualWorking(req, res) {
       return res.status(404).json({ error: 'Location not found' });
     }
 
+    const locationKey = (location.name || '').trim().toLowerCase();
+    const isSingleShift = locationKey === LOCATION_SINGLE_SHIFT.key;
+
+    if (clockIn && clockOut) {
+      const split = splitWorkedHours(clockIn, clockOut, {
+        singleShift: isSingleShift,
+        shiftBoundaries: shiftBoundariesForLocationName(location.name),
+      });
+      amH = roundHours4(split.amHours);
+      pmH = roundHours4(split.pmHours);
+      if (amH + pmH <= 0) {
+        return res.status(400).json({ error: 'Clock out must be after clock in (or invalid times)' });
+      }
+    } else if (clockIn || clockOut) {
+      return res.status(400).json({ error: 'Provide both clock in and clock out' });
+    } else {
+      amH = Math.max(0, Number(amHours) || 0);
+      pmH = Math.max(0, Number(pmHours) || 0);
+    }
+
+    if (amH < 0 || pmH < 0 || amT < 0 || pmT < 0) {
+      return res.status(400).json({ error: 'Hours and tips must be non-negative' });
+    }
+
     const set = {
       amHours: amH,
       pmHours: pmH,
@@ -78,6 +121,10 @@ async function createOrUpdateManualWorking(req, res) {
       notes: notes || '',
       date: dayStart,
     };
+    if (clockIn && clockOut) {
+      set.clockIn = clockIn;
+      set.clockOut = clockOut;
+    }
 
     const existing = await ManualWorking.findOne({
       employeeId,

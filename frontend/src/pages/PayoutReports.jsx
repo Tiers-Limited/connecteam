@@ -1,7 +1,10 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import toast from "react-hot-toast";
 import { useApp } from "../context/AppContext";
-import { postWeeklyPayoutReport } from "../services/weeklyPayoutService";
+import {
+  postWeeklyPayoutReport,
+  getWeeklyPayoutReportEmployees,
+} from "../services/weeklyPayoutService";
 import {
   getWeekStart,
   getWeekEnd,
@@ -88,8 +91,18 @@ export default function PayoutReports() {
   const [geographicScope, setGeographicScope] = useState("one_location");
   const [singleLocationId, setSingleLocationId] = useState("");
   const [employeeScope, setEmployeeScope] = useState("all");
-  const [employeeName, setEmployeeName] = useState("");
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [employeeOptions, setEmployeeOptions] = useState([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  const selectedEmployeeLabel = useMemo(() => {
+    const opt = employeeOptions.find((e) => e.employeeId === selectedEmployeeId);
+    if (!opt) return "";
+    return geographicScope === "all_locations"
+      ? `${opt.employeeName} — ${opt.locationName}`
+      : opt.employeeName;
+  }, [employeeOptions, selectedEmployeeId, geographicScope]);
 
   useEffect(() => {
     if (geographicScope !== "one_location" || singleLocationId) return;
@@ -105,6 +118,66 @@ export default function PayoutReports() {
     selectedLocationId,
     activeLocations,
   ]);
+
+  useEffect(() => {
+    if (employeeScope !== "one_employee") {
+      setEmployeeOptions([]);
+      setSelectedEmployeeId("");
+      return;
+    }
+    const sd = startDate.trim().slice(0, 10);
+    const ed = endDate.trim().slice(0, 10);
+    if (
+      !sd ||
+      !ed ||
+      new Date(`${ed}T12:00:00`) < new Date(`${sd}T12:00:00`)
+    ) {
+      setEmployeeOptions([]);
+      return;
+    }
+    if (geographicScope === "one_location" && !singleLocationId) {
+      setEmployeeOptions([]);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingEmployees(true);
+    getWeeklyPayoutReportEmployees({
+      startDate: sd,
+      endDate: ed,
+      geographicScope,
+      ...(geographicScope === "one_location"
+        ? { singleLocationId }
+        : {}),
+    })
+      .then((res) => {
+        if (cancelled) return;
+        const list = Array.isArray(res?.employees) ? res.employees : [];
+        setEmployeeOptions(list);
+      })
+      .catch(() => {
+        if (!cancelled) setEmployeeOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingEmployees(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    startDate,
+    endDate,
+    geographicScope,
+    singleLocationId,
+    employeeScope,
+  ]);
+
+  useEffect(() => {
+    if (!selectedEmployeeId || employeeOptions.length === 0) return;
+    const ok = employeeOptions.some((e) => e.employeeId === selectedEmployeeId);
+    if (!ok) setSelectedEmployeeId("");
+  }, [employeeOptions, selectedEmployeeId]);
 
   const scopeSummary = useCallback(() => {
     if (geographicScope === "all_locations") return "All locations";
@@ -127,11 +200,8 @@ export default function PayoutReports() {
       toast.error("Choose which location to include.");
       return null;
     }
-    if (
-      employeeScope === "one_employee" &&
-      !String(employeeName || "").trim()
-    ) {
-      toast.error("Enter an employee name to match.");
+    if (employeeScope === "one_employee" && !String(selectedEmployeeId || "").trim()) {
+      toast.error("Select an employee.");
       return null;
     }
     const body = {
@@ -144,7 +214,7 @@ export default function PayoutReports() {
       body.singleLocationId = singleLocationId;
     }
     if (employeeScope === "one_employee") {
-      body.employeeName = String(employeeName).trim();
+      body.employeeId = String(selectedEmployeeId).trim();
     }
     return body;
   }, [
@@ -153,7 +223,7 @@ export default function PayoutReports() {
     geographicScope,
     singleLocationId,
     employeeScope,
-    employeeName,
+    selectedEmployeeId,
   ]);
 
   const runExport = useCallback(
@@ -174,7 +244,7 @@ export default function PayoutReports() {
         if (!payouts.length) {
           if (employeeScope === "one_employee") {
             toast.error(
-              "No employees matched that name in the saved payout data.",
+              "No payout row for that employee in the saved data for this range.",
             );
           } else {
             toast.error("Saved payout has no rows to export for this scope.");
@@ -195,7 +265,7 @@ export default function PayoutReports() {
           geographicScope === "all_locations" ? "all-locations" : "one-loc";
         const empSlug =
           employeeScope === "one_employee"
-            ? `emp-${String(employeeName).replace(/\s+/g, "-").slice(0, 24)}`
+            ? `emp-${String(selectedEmployeeId).slice(0, 12)}`
             : "all-employees";
         const fileBase = `weekly-payout-report-${scopeSlug}-${empSlug}-${sd}-${ed}`;
 
@@ -206,7 +276,7 @@ export default function PayoutReports() {
             headers: hdr,
             rows,
             filename: `${fileBase}.pdf`,
-            searchQuery: String(employeeName).trim(),
+            searchQuery: selectedEmployeeLabel || String(selectedEmployeeId),
             periodLabel: `${sd} – ${ed}`,
             scopeLabel: scopeSummary(),
             payouts,
@@ -241,7 +311,8 @@ export default function PayoutReports() {
       endDate,
       geographicScope,
       employeeScope,
-      employeeName,
+      selectedEmployeeId,
+      selectedEmployeeLabel,
       scopeSummary,
     ],
   );
@@ -377,7 +448,10 @@ export default function PayoutReports() {
                 type="radio"
                 name="employeeScope"
                 checked={employeeScope === "all"}
-                onChange={() => setEmployeeScope("all")}
+                onChange={() => {
+                  setEmployeeScope("all");
+                  setSelectedEmployeeId("");
+                }}
                 className="h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-500"
               />
               All employees
@@ -387,7 +461,10 @@ export default function PayoutReports() {
                 type="radio"
                 name="employeeScope"
                 checked={employeeScope === "one_employee"}
-                onChange={() => setEmployeeScope("one_employee")}
+                onChange={() => {
+                  setEmployeeScope("one_employee");
+                  setSelectedEmployeeId("");
+                }}
                 className="h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-500"
               />
               One employee
@@ -396,15 +473,32 @@ export default function PayoutReports() {
           {employeeScope === "one_employee" && (
             <div className="min-w-[220px] flex-1 sm:max-w-md">
               <label className="mb-1 block text-xs font-medium text-slate-500">
-                Name contains (match is not case-sensitive)
+                Employee (from saved payout for this date range)
               </label>
-              <input
-                type="text"
-                placeholder="e.g. Maria"
-                value={employeeName}
-                onChange={(e) => setEmployeeName(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-white/90 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-              />
+              <select
+                value={selectedEmployeeId}
+                onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                disabled={loadingEmployees}
+                className="w-full rounded-lg border border-slate-200 bg-white/90 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:opacity-60"
+              >
+                <option value="">
+                  {loadingEmployees
+                    ? "Loading employees…"
+                    : employeeOptions.length === 0
+                      ? "No saved payout — load payout on Weekly Payout first"
+                      : "Select employee…"}
+                </option>
+                {employeeOptions.map((e) => (
+                  <option
+                    key={`${e.locationId}-${e.employeeId}`}
+                    value={e.employeeId}
+                  >
+                    {geographicScope === "all_locations"
+                      ? `${e.employeeName} — ${e.locationName}`
+                      : e.employeeName}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
         </div>
@@ -418,10 +512,10 @@ export default function PayoutReports() {
             </p>
             <p className="mt-1 text-sm font-medium text-slate-800">
               {scopeSummary()}
-              {employeeScope === "one_employee" && employeeName.trim()
-                ? ` · Employee filter: “${employeeName.trim()}”`
+              {employeeScope === "one_employee" && selectedEmployeeLabel
+                ? ` · Employee: ${selectedEmployeeLabel}`
                 : employeeScope === "one_employee"
-                  ? " · Employee filter: (enter name)"
+                  ? " · Employee: (select)"
                   : ""}
             </p>
             <p className="mt-1 text-xs leading-relaxed text-slate-600">

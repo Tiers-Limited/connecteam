@@ -15,6 +15,11 @@ import {
   deleteManualWorking,
 } from "../services/manualWorkingService";
 import { toDateString } from "../utils/dateUtils";
+import {
+  splitWorkedHoursForLocation,
+  formatClockLabel,
+  toTimeInputValue,
+} from "../utils/tipShiftUtils";
 import { exportTableToCSV, exportTableToPDF } from "../utils/reportUtils";
 import Button from "../components/ui/Button";
 
@@ -41,6 +46,13 @@ function productionPoolAmount(amGross, pmGross) {
   const am = Number(amGross) || 0;
   const pm = Number(pmGross) || 0;
   return Math.round((am + pm) * PRODUCTION_POOL_PERCENT * 100) / 100;
+}
+
+/** DailyTipInput.createdBy* from API when tips were last saved. */
+function tipAddedByLabel(row) {
+  const name = (row?.createdByUsername || "").trim();
+  const email = (row?.createdByEmail || "").trim();
+  return name || email || "—";
 }
 
 function shiftDescriptionForLocation(locationName) {
@@ -122,8 +134,8 @@ export default function DailyTips() {
   const [manualSaving, setManualSaving] = useState(false);
   const [manualForm, setManualForm] = useState({
     name: "",
-    amHours: "",
-    pmHours: "",
+    clockIn: "",
+    clockOut: "",
   });
   const [manualRemoveRow, setManualRemoveRow] = useState(null);
   const [manualRemoveSaving, setManualRemoveSaving] = useState(false);
@@ -740,6 +752,9 @@ export default function DailyTips() {
                         <th className="pb-2 font-medium text-slate-700">
                           Location
                         </th>
+                        <th className="pb-2 font-medium text-slate-700">
+                          Added by
+                        </th>
                         <th className="pb-2 text-right font-medium text-slate-700">
                           AM gross ($)
                         </th>
@@ -773,6 +788,18 @@ export default function DailyTips() {
                             </td>
                             <td className="py-2.5 text-slate-700">
                               {loc?.name ?? "—"}
+                            </td>
+                            <td className="py-2.5 text-slate-700">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-slate-800">
+                                  {tipAddedByLabel(row)}
+                                </span>
+                                {(row.createdByRole || "").trim() ? (
+                                  <span className="text-xs capitalize text-slate-500">
+                                    {String(row.createdByRole).trim()}
+                                  </span>
+                                ) : null}
+                              </div>
                             </td>
                             <td className="py-2.5 text-right tabular-nums text-slate-800">
                               {Number(row.amGrossTips).toFixed(2)}
@@ -1004,8 +1031,10 @@ export default function DailyTips() {
               Manual employees (not from Connecteam)
             </h2>
             <p className="mb-3 text-xs text-slate-500">
-              Add worked hours for this location and date. They count toward the
-              tip split after you run <strong>Refresh calculation</strong>.
+              Add clock in and clock out for this location and date. AM/PM hours
+              are derived using the same shift windows as Connecteam. They count
+              toward the tip split after you run{" "}
+              <strong>Refresh calculation</strong>.
             </p>
             <form
               className="mb-4 flex flex-wrap items-end gap-3"
@@ -1016,19 +1045,14 @@ export default function DailyTips() {
                   toast.error("Enter employee name");
                   return;
                 }
-                const am = parseFloat(manualForm.amHours) || 0;
-                const pm = parseFloat(manualForm.pmHours) || 0;
-                if (!breakdownView?.locationId || !breakdownView?.dateStr) {
-                  toast.error("Load breakdown first (location + date)");
+                const cin = manualForm.clockIn?.trim();
+                const cout = manualForm.clockOut?.trim();
+                if (!cin || !cout) {
+                  toast.error("Enter clock in and clock out");
                   return;
                 }
-                if (isBreakdownTheCove) {
-                  if (am < 0) {
-                    toast.error("Hours must be ≥ 0");
-                    return;
-                  }
-                } else if (am < 0 || pm < 0) {
-                  toast.error("Hours must be ≥ 0");
+                if (!breakdownView?.locationId || !breakdownView?.dateStr) {
+                  toast.error("Load breakdown first (location + date)");
                   return;
                 }
                 setManualSaving(true);
@@ -1037,13 +1061,13 @@ export default function DailyTips() {
                     employeeName: name,
                     locationId: breakdownView.locationId,
                     date: breakdownView.dateStr,
-                    amHours: isBreakdownTheCove ? am : am,
-                    pmHours: isBreakdownTheCove ? 0 : pm,
+                    clockIn: cin,
+                    clockOut: cout,
                     amTips: 0,
                     pmTips: 0,
                   });
                   toast.success("Manual hours saved");
-                  setManualForm({ name: "", amHours: "", pmHours: "" });
+                  setManualForm({ name: "", clockIn: "", clockOut: "" });
                   const list = await getManualWorkingByDate(
                     breakdownView.locationId,
                     breakdownView.dateStr,
@@ -1075,63 +1099,77 @@ export default function DailyTips() {
               placeholder="Employee name"
             />
           </div>
-          {isBreakdownTheCove ? (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">
-                Hours worked
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={manualForm.amHours}
-                onChange={(e) =>
-                  setManualForm((f) => ({ ...f, amHours: e.target.value }))
-                }
-                className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-                placeholder="0"
-              />
-            </div>
-          ) : (
-            <>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-500">
-                  AM hours
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={manualForm.amHours}
-                  onChange={(e) =>
-                    setManualForm((f) => ({ ...f, amHours: e.target.value }))
-                  }
-                  className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-500">
-                  PM hours
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={manualForm.pmHours}
-                  onChange={(e) =>
-                    setManualForm((f) => ({ ...f, pmHours: e.target.value }))
-                  }
-                  className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-                  placeholder="0"
-                />
-              </div>
-            </>
-          )}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">
+              Clock in
+            </label>
+            <input
+              type="time"
+              value={toTimeInputValue(manualForm.clockIn)}
+              onChange={(e) =>
+                setManualForm((f) => ({ ...f, clockIn: e.target.value }))
+              }
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">
+              Clock out
+            </label>
+            <input
+              type="time"
+              value={toTimeInputValue(manualForm.clockOut)}
+              onChange={(e) =>
+                setManualForm((f) => ({ ...f, clockOut: e.target.value }))
+              }
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+            />
+          </div>
           <Button type="submit" disabled={manualSaving}>
             {manualSaving ? "Saving…" : "Add / update"}
           </Button>
         </form>
+            {manualForm.clockIn &&
+              manualForm.clockOut &&
+              breakdownLocation?.name && (
+                <p className="mb-4 text-xs text-slate-600">
+                  {(() => {
+                    const { amHours, pmHours } = splitWorkedHoursForLocation(
+                      manualForm.clockIn,
+                      manualForm.clockOut,
+                      breakdownLocation.name,
+                    );
+                    const total = amHours + pmHours;
+                    if (total <= 0) {
+                      return (
+                        <span className="text-amber-700">
+                          Clock out must be after clock in.
+                        </span>
+                      );
+                    }
+                    return isBreakdownTheCove ? (
+                      <>
+                        Calculated hours:{" "}
+                        <strong className="tabular-nums">
+                          {(amHours + pmHours).toFixed(2)} h
+                        </strong>{" "}
+                        (single shift)
+                      </>
+                    ) : (
+                      <>
+                        Calculated split: AM{" "}
+                        <strong className="tabular-nums">
+                          {amHours.toFixed(2)} h
+                        </strong>
+                        , PM{" "}
+                        <strong className="tabular-nums">
+                          {pmHours.toFixed(2)} h
+                        </strong>
+                      </>
+                    );
+                  })()}
+                </p>
+              )}
         {manualLoading ? (
           <p className="text-sm text-slate-500">Loading manual entries…</p>
         ) : manualRows.length === 0 ? (
@@ -1142,6 +1180,12 @@ export default function DailyTips() {
               <thead>
                 <tr className="border-b border-slate-200 text-left">
                   <th className="pb-2 font-medium text-slate-700">Employee</th>
+                  <th className="pb-2 font-medium text-slate-700">
+                    Clock in
+                  </th>
+                  <th className="pb-2 font-medium text-slate-700">
+                    Clock out
+                  </th>
                   {isBreakdownTheCove ? (
                     <th className="pb-2 text-right font-medium text-slate-700">
                       Hours
@@ -1168,23 +1212,30 @@ export default function DailyTips() {
                     typeof emp === "object" && emp?.name
                       ? emp.name
                       : "—";
+                  const am = Number(row.amHours) || 0;
+                  const pm = Number(row.pmHours) || 0;
                   return (
                     <tr key={row._id}>
                       <td className="py-2 font-medium text-slate-800">
                         {empName}
                       </td>
+                      <td className="py-2 tabular-nums text-slate-600">
+                        {formatClockLabel(row.clockIn)}
+                      </td>
+                      <td className="py-2 tabular-nums text-slate-600">
+                        {formatClockLabel(row.clockOut)}
+                      </td>
                       {isBreakdownTheCove ? (
                         <td className="py-2 text-right tabular-nums text-slate-600">
-                          {(Number(row.amHours) || 0) +
-                            (Number(row.pmHours) || 0)}
+                          {(am + pm).toFixed(2)}
                         </td>
                       ) : (
                         <>
                           <td className="py-2 text-right tabular-nums text-slate-600">
-                            {Number(row.amHours) || 0}
+                            {am.toFixed(2)}
                           </td>
                           <td className="py-2 text-right tabular-nums text-slate-600">
-                            {Number(row.pmHours) || 0}
+                            {pm.toFixed(2)}
                           </td>
                         </>
                       )}
@@ -1460,10 +1511,10 @@ export default function DailyTips() {
                       {a.employeeName}
                     </td>
                     <td className="py-2 tabular-nums text-slate-600">
-                      {a.clockIn ?? "–"}
+                      {formatClockLabel(a.clockIn)}
                     </td>
                     <td className="py-2 tabular-nums text-slate-600">
-                      {a.clockOut ?? "–"}
+                      {formatClockLabel(a.clockOut)}
                     </td>
                     {showShiftSplit ? (
                       <>

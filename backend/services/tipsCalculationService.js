@@ -83,6 +83,40 @@ function roundMoney4(value) {
 }
 
 /**
+ * 4% production pool is taken from total gross (AM + PM). Each shift’s share of the pool
+ * is proportional to that shift’s gross, so:
+ *   AM distributable = AM gross − pool × (AM gross / total gross)
+ *   PM distributable = PM gross − pool × (PM gross / total gross)
+ * (Same numeric result as subtracting 4% of each shift’s gross when the pool is 4% of total.)
+ */
+function computeProductionPoolAndDistributables(tipInput, isTheCove) {
+  const amGross = Number(tipInput.amGrossTips) || 0;
+  const pmGross = Number(tipInput.pmGrossTips) || 0;
+  const totalGross = amGross + pmGross;
+  const productionDeductionTotal = totalGross * PRODUCTION_DEDUCTION_PERCENT;
+  if (isTheCove) {
+    return {
+      productionDeductionTotal,
+      productionDeductionAM: productionDeductionTotal,
+      productionDeductionPM: 0,
+      distributableAM: totalGross - productionDeductionTotal,
+      distributablePM: 0,
+    };
+  }
+  const productionDeductionAM =
+    totalGross <= 0 ? 0 : (amGross / totalGross) * productionDeductionTotal;
+  const productionDeductionPM =
+    totalGross <= 0 ? 0 : (pmGross / totalGross) * productionDeductionTotal;
+  return {
+    productionDeductionTotal,
+    productionDeductionAM,
+    productionDeductionPM,
+    distributableAM: amGross - productionDeductionAM,
+    distributablePM: pmGross - productionDeductionPM,
+  };
+}
+
+/**
  * Get tardiness deduction percent for weekly minutes
  */
 function getTardinessDeductionPercent(minutes) {
@@ -339,6 +373,12 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       manualAMTipsTotal += manual.amTips;
       manualPMTipsTotal += manual.pmTips;
     }
+    const mcIn = (manual.clockIn || '').trim();
+    const mcOut = (manual.clockOut || '').trim();
+    if (mcIn && mcOut && !row.clockIn && !row.clockOut) {
+      row.clockIn = mcIn;
+      row.clockOut = mcOut;
+    }
   }
 
   // Exclude production staff: they are paid from Production Pool only, not from Daily Tips
@@ -357,15 +397,14 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     totalPMHours += row.pmHours;
   }
 
-  // Step 7: Production pool deduction (4%)
-  const totalGrossTips = (Number(tipInput.amGrossTips) || 0) + (Number(tipInput.pmGrossTips) || 0);
-  const productionDeductionTotal = totalGrossTips * PRODUCTION_DEDUCTION_PERCENT;
-
-  const productionDeductionAM = isTheCove ? productionDeductionTotal : (Number(tipInput.amGrossTips) || 0) * PRODUCTION_DEDUCTION_PERCENT;
-  const productionDeductionPM = isTheCove ? 0 : (Number(tipInput.pmGrossTips) || 0) * PRODUCTION_DEDUCTION_PERCENT;
-
-  const distributableAM = isTheCove ? totalGrossTips - productionDeductionTotal : (Number(tipInput.amGrossTips) || 0) - productionDeductionAM;
-  const distributablePM = isTheCove ? 0 : (Number(tipInput.pmGrossTips) || 0) - productionDeductionPM;
+  // Step 7: Production pool (4% of total gross); AM/PM distributable = shift gross minus that shift’s share of the pool
+  const {
+    productionDeductionTotal,
+    productionDeductionAM,
+    productionDeductionPM,
+    distributableAM,
+    distributablePM,
+  } = computeProductionPoolAndDistributables(tipInput, isTheCove);
 
   const combinedManualTips = manualAMTipsTotal + manualPMTipsTotal;
   const adjustedDistributableAM = isTheCove ? Math.max(0, distributableAM - combinedManualTips) : Math.max(0, distributableAM - manualAMTipsTotal);
@@ -620,9 +659,51 @@ async function getDailyTipCalculationSnapshot(locationId, date) {
     date: { $gte: dateStart, $lte: dateEnd },
   }).lean();
 
+  const manualEntries = await ManualWorking.find({
+    locationId,
+    date: { $gte: dateStart, $lte: dateEnd },
+  }).lean();
+
+  let manualAMTipsTotal = 0;
+  let manualPMTipsTotal = 0;
+  for (const manual of manualEntries) {
+    if (isTheCove) {
+      manualAMTipsTotal += (Number(manual.amTips) || 0) + (Number(manual.pmTips) || 0);
+    } else {
+      manualAMTipsTotal += Number(manual.amTips) || 0;
+      manualPMTipsTotal += Number(manual.pmTips) || 0;
+    }
+  }
+
+  const manualClockByEmpId = new Map();
+  for (const m of manualEntries) {
+    const eid = m.employeeId != null ? String(m.employeeId) : '';
+    const cin = (m.clockIn || '').trim();
+    const cout = (m.clockOut || '').trim();
+    if (eid && cin && cout) manualClockByEmpId.set(eid, { clockIn: cin, clockOut: cout });
+  }
+
   const fin = audit.financial;
   const derived = audit.derived || {};
   const raw = audit.raw || {};
+
+  const {
+    productionDeductionAM,
+    productionDeductionPM,
+    distributableAM,
+    distributablePM,
+  } = computeProductionPoolAndDistributables(tipInput, isTheCove);
+
+  const combinedManualTips = manualAMTipsTotal + manualPMTipsTotal;
+  const adjustedDistributableAM = isTheCove
+    ? Math.max(0, distributableAM - combinedManualTips)
+    : Math.max(0, distributableAM - manualAMTipsTotal);
+  const adjustedDistributablePM = isTheCove ? 0 : Math.max(0, distributablePM - manualPMTipsTotal);
+
+  const totalAMHours = Number(derived.totalAMHours) || 0;
+  const totalPMHours = Number(derived.totalPMHours) || 0;
+  const amTipRate = totalAMHours > 0 ? adjustedDistributableAM / totalAMHours : 0;
+  const pmTipRate = isTheCove ? 0 : (totalPMHours > 0 ? adjustedDistributablePM / totalPMHours : 0);
 
   const hoursByEmpId = new Map();
   for (const h of derived.employeeHours || []) {
@@ -679,10 +760,15 @@ async function getDailyTipCalculationSnapshot(locationId, date) {
     const fromRawEmp = empKey ? clockByEmpIdFromRaw.get(empKey) : null;
     const fromDb = empKey ? clockByEmployeeIdFromDb.get(empKey) : null;
     const fl = clockByName.get(nameKey) || {};
-    const clockIn =
+    let clockIn =
       fromDerived.clockIn ?? fromRawEmp?.clockIn ?? fromDb?.clockIn ?? fl.clockIn ?? null;
-    const clockOut =
+    let clockOut =
       fromDerived.clockOut ?? fromRawEmp?.clockOut ?? fromDb?.clockOut ?? fl.clockOut ?? null;
+    const manualClock = manualClockByEmpId.get(empKey);
+    if (manualClock && (!clockIn || !clockOut)) {
+      clockIn = manualClock.clockIn;
+      clockOut = manualClock.clockOut;
+    }
     return {
       employeeId: p.employeeId,
       employeeName: p.employeeName,
@@ -724,26 +810,26 @@ async function getDailyTipCalculationSnapshot(locationId, date) {
   }
 
   const inputs = {
-    amGrossTips: fin.amGrossTips,
-    pmGrossTips: fin.pmGrossTips,
-    productionDeductionAM: roundMoney(Number(fin.productionDeductionAM) || 0),
-    productionDeductionPM: roundMoney(Number(fin.productionDeductionPM) || 0),
-    distributableAM: roundMoney(Number(fin.distributableAM) || 0),
-    distributablePM: roundMoney(Number(fin.distributablePM) || 0),
-    manualAmTipsTotal: 0,
-    manualPmTipsTotal: 0,
-    adjustedDistributableAM: roundMoney(Number(fin.distributableAM) || 0),
-    adjustedDistributablePM: roundMoney(Number(fin.distributablePM) || 0),
-    distributable: isTheCove ? roundMoney(Number(fin.distributableAM) || 0) : null,
-    tipRate: isTheCove ? roundMoney(Number(fin.amTipRate) || 0) : null,
+    amGrossTips: tipInput.amGrossTips,
+    pmGrossTips: tipInput.pmGrossTips,
+    productionDeductionAM: roundMoney(productionDeductionAM),
+    productionDeductionPM: roundMoney(productionDeductionPM),
+    distributableAM: roundMoney(distributableAM),
+    distributablePM: roundMoney(distributablePM),
+    manualAmTipsTotal: roundMoney(manualAMTipsTotal),
+    manualPmTipsTotal: roundMoney(manualPMTipsTotal),
+    adjustedDistributableAM: roundMoney(adjustedDistributableAM),
+    adjustedDistributablePM: roundMoney(adjustedDistributablePM),
+    distributable: isTheCove ? roundMoney(adjustedDistributableAM) : null,
+    tipRate: isTheCove ? roundMoney(amTipRate) : null,
     redistributionPool: roundMoney(redistributionPool),
   };
 
   const totals = {
-    totalAMHours: roundMoney(Number(derived.totalAMHours) || 0),
-    totalPMHours: roundMoney(Number(derived.totalPMHours) || 0),
-    amTipRate: roundMoney(Number(fin.amTipRate) || 0),
-    pmTipRate: roundMoney(Number(fin.pmTipRate) || 0),
+    totalAMHours: roundMoney(totalAMHours),
+    totalPMHours: roundMoney(totalPMHours),
+    amTipRate: roundMoney(amTipRate),
+    pmTipRate: roundMoney(pmTipRate),
   };
 
   return {
