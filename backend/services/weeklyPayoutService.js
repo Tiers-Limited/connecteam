@@ -227,6 +227,90 @@ function cachedPayloadMatchesRange(payload, sd, ed) {
 }
 
 /**
+ * Employees present in saved payout cache for the same scope/dates as the report (for dropdowns).
+ * Returns an empty list when no cache exists (no error).
+ */
+async function listWeeklyPayoutReportEmployees(opts) {
+  const { startDate, endDate, geographicScope, singleLocationId } = opts;
+
+  const sd = String(startDate || '').trim().slice(0, 10);
+  const ed = String(endDate || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(sd) || !/^\d{4}-\d{2}-\d{2}$/.test(ed)) {
+    const err = new Error('startDate and endDate must be YYYY-MM-DD');
+    err.status = 400;
+    throw err;
+  }
+  if (new Date(`${ed}T12:00:00`) < new Date(`${sd}T12:00:00`)) {
+    const err = new Error('Invalid date range (end before start)');
+    err.status = 400;
+    throw err;
+  }
+
+  let locationIds = [];
+  if (geographicScope === 'all_locations') {
+    const locs = await Location.find({ isActive: true }).select('_id').sort({ name: 1 }).lean();
+    locationIds = locs.map((l) => l._id.toString());
+    if (locationIds.length === 0) return { employees: [] };
+  } else if (geographicScope === 'one_location') {
+    if (!singleLocationId || !mongoose.Types.ObjectId.isValid(String(singleLocationId))) {
+      const err = new Error('Location is required for one-location scope');
+      err.status = 400;
+      throw err;
+    }
+    const locDoc = await Location.findById(singleLocationId).select('isActive').lean();
+    if (!locDoc || locDoc.isActive === false) return { employees: [] };
+    locationIds = [String(singleLocationId)];
+  } else {
+    const err = new Error('Invalid geographicScope');
+    err.status = 400;
+    throw err;
+  }
+
+  const payloadsForExport = [];
+  for (const lid of locationIds) {
+    const cached = await WeeklyPayoutCache.findOne({ locationId: lid, weekStart: sd }).lean();
+    const payload = cached?.payload;
+    if (cached && payload && cachedPayloadMatchesRange(payload, sd, ed)) {
+      payloadsForExport.push(payload);
+    }
+  }
+
+  if (payloadsForExport.length === 0) return { employees: [] };
+
+  const seen = new Set();
+  const employees = [];
+  for (const payload of payloadsForExport) {
+    const locName = payload.locationName || '';
+    const lid = payload.locationId != null ? String(payload.locationId) : '';
+    for (const p of payload.payouts || []) {
+      const eid = p.employeeId != null ? String(p.employeeId) : '';
+      if (!eid) continue;
+      const key = `${lid}|${eid}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      employees.push({
+        employeeId: eid,
+        employeeName: p.employeeName || '—',
+        locationId: lid,
+        locationName: locName,
+      });
+    }
+  }
+
+  employees.sort((a, b) => {
+    const byName = (a.employeeName || '').localeCompare(b.employeeName || '', undefined, {
+      sensitivity: 'base',
+    });
+    if (byName !== 0) return byName;
+    return (a.locationName || '').localeCompare(b.locationName || '', undefined, {
+      sensitivity: 'base',
+    });
+  });
+
+  return { employees };
+}
+
+/**
  * Build report rows from WeeklyPayoutCache only (no live recompute). User must load payout on Weekly Payout first.
  * @param {object} opts
  * @param {string} opts.startDate - YYYY-MM-DD (cache key; must match Load payout From date)
@@ -234,7 +318,8 @@ function cachedPayloadMatchesRange(payload, sd, ed) {
  * @param {'one_location'|'all_locations'} opts.geographicScope
  * @param {string} [opts.singleLocationId] - when scope is one_location
  * @param {'all'|'one_employee'} opts.employeeScope
- * @param {string} [opts.employeeName] - substring match when employeeScope is one_employee
+ * @param {string} [opts.employeeName] - substring match when employeeScope is one_employee (if employeeId not set)
+ * @param {string} [opts.employeeId] - exact match when employeeScope is one_employee
  */
 async function buildWeeklyPayoutReport(opts) {
   const {
@@ -244,6 +329,7 @@ async function buildWeeklyPayoutReport(opts) {
     singleLocationId,
     employeeScope,
     employeeName,
+    employeeId: employeeIdOpt,
   } = opts;
 
   const sd = String(startDate || '').trim().slice(0, 10);
@@ -296,12 +382,21 @@ async function buildWeeklyPayoutReport(opts) {
     throw err;
   }
 
+  const employeeIdParam = employeeIdOpt != null ? String(employeeIdOpt).trim() : '';
+  const employeeIdFilter =
+    employeeScope === 'one_employee' &&
+    employeeIdParam &&
+    mongoose.Types.ObjectId.isValid(employeeIdParam)
+      ? employeeIdParam
+      : null;
+
   const nameFilter =
-    employeeScope === 'one_employee' && employeeName && String(employeeName).trim()
+    employeeScope === 'one_employee' && !employeeIdFilter && employeeName && String(employeeName).trim()
       ? String(employeeName).trim().toLowerCase()
       : null;
-  if (employeeScope === 'one_employee' && !nameFilter) {
-    const err = new Error('Employee name is required for single-employee report');
+
+  if (employeeScope === 'one_employee' && !nameFilter && !employeeIdFilter) {
+    const err = new Error('Employee name or employee id is required for single-employee report');
     err.status = 400;
     throw err;
   }
@@ -329,6 +424,9 @@ async function buildWeeklyPayoutReport(opts) {
   for (const payload of payloadsForExport) {
     const locName = payload.locationName || '';
     for (const p of payload.payouts || []) {
+      if (employeeIdFilter && String(p.employeeId) !== employeeIdFilter) {
+        continue;
+      }
       if (nameFilter && !(String(p.employeeName || '').toLowerCase().includes(nameFilter))) {
         continue;
       }
@@ -361,4 +459,5 @@ module.exports = {
   upsertManualDeduction,
   persistTardinessFromPayload,
   buildWeeklyPayoutReport,
+  listWeeklyPayoutReportEmployees,
 };

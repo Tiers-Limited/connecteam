@@ -28,6 +28,9 @@ const manualWorkingSchema = new mongoose.Schema(
       min: 0,
       default: 0,
     },
+    /** When set, amHours/pmHours are derived from these using the same AM/PM split as Connecteam. */
+    clockIn: { type: String, default: '' },
+    clockOut: { type: String, default: '' },
     amTips: {
       type: Number,
       required: true,

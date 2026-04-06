@@ -1,5 +1,5 @@
 const express = require('express');
-const { param, body } = require('express-validator');
+const { param, body, query } = require('express-validator');
 const weeklyPayoutController = require('../controllers/weeklyPayoutController');
 const validate = require('../middlewares/validate');
 
@@ -12,6 +12,29 @@ const weekStartParam = param('weekStart')
 const weekStartBody = body('weekStart')
   .matches(/^\d{4}-\d{2}-\d{2}$/)
   .withMessage('weekStart must be YYYY-MM-DD');
+
+router.get(
+  '/report/employees',
+  query('startDate')
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('startDate must be YYYY-MM-DD'),
+  query('endDate')
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('endDate must be YYYY-MM-DD'),
+  query('geographicScope')
+    .isIn(['one_location', 'all_locations'])
+    .withMessage('Invalid geographicScope'),
+  query('singleLocationId').optional({ values: 'falsy' }).isMongoId(),
+  query('singleLocationId').custom((val, { req }) => {
+    const gs = req.query?.geographicScope;
+    if (gs === 'one_location' && !val) {
+      throw new Error('singleLocationId is required for one-location scope');
+    }
+    return true;
+  }),
+  validate,
+  weeklyPayoutController.getReportEmployees,
+);
 
 router.post(
   '/report',
@@ -29,17 +52,19 @@ router.post(
     .withMessage('Invalid employeeScope'),
   body('singleLocationId').optional({ values: 'falsy' }).isMongoId(),
   body('employeeName').optional({ values: 'falsy' }).isString(),
+  body('employeeId').optional({ values: 'falsy' }).isMongoId(),
   body().custom((_, { req }) => {
-    const { geographicScope, singleLocationId, employeeScope, employeeName } =
+    const { geographicScope, singleLocationId, employeeScope, employeeName, employeeId } =
       req.body || {};
     if (geographicScope === 'one_location' && !singleLocationId) {
       throw new Error('singleLocationId is required for one-location scope');
     }
-    if (
-      employeeScope === 'one_employee' &&
-      !(employeeName && String(employeeName).trim())
-    ) {
-      throw new Error('employeeName is required for single-employee scope');
+    if (employeeScope === 'one_employee') {
+      const hasName = employeeName && String(employeeName).trim();
+      const hasId = employeeId && /^[a-f\d]{24}$/i.test(String(employeeId));
+      if (!hasName && !hasId) {
+        throw new Error('Either employeeName or employeeId is required for single-employee scope');
+      }
     }
     return true;
   }),

@@ -46,9 +46,18 @@ export async function upsertManualDeduction(body) {
 
 /**
  * Build report rows for CSV/PDF (same data as Weekly Payout table).
- * @param {object} body - startDate, endDate, geographicScope, employeeScope, locationId?, singleLocationId?, employeeName?
+ * @param {object} body - startDate, endDate, geographicScope, employeeScope, singleLocationId?, employeeName? (substring) or employeeId? (exact)
  */
 export async function postWeeklyPayoutReport(body) {
   const { data } = await api.post('/weekly-payout/report', body);
   return data.data;
+}
+
+/**
+ * Employees present in saved payout cache for the date range and location scope (for report dropdown).
+ * @param {object} params - startDate, endDate, geographicScope, singleLocationId? (required when one_location)
+ */
+export async function getWeeklyPayoutReportEmployees(params) {
+  const { data } = await api.get("/weekly-payout/report/employees", { params });
+  return data?.data ?? data;
 }
