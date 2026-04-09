@@ -6,6 +6,7 @@ const Location = require('../models/Location');
 const locationService = require('./locationService');
 const employeeService = require('./employeeService');
 const WeeklyPayoutCache = require('../models/WeeklyPayoutCache');
+const tipsCalculationService = require('./tipsCalculationService');
 const { LOCATIONS } = require('../utils/constants');
 
 /** Normalize week start to UTC midnight (YYYY-MM-DD) so it matches getWeeklyPayout. */
@@ -212,6 +213,13 @@ function payloadDateToYMD(v) {
   return String(v).slice(0, 10);
 }
 
+function addDaysYMD(ymd, daysToAdd) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ""))) return "";
+  const [y, m, d] = String(ymd).split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + Number(daysToAdd || 0), 0, 0, 0, 0));
+  return dt.toISOString().slice(0, 10);
+}
+
 /** Cached payload must match the requested From/To (range or classic week). */
 function cachedPayloadMatchesRange(payload, sd, ed) {
   if (!payload || typeof payload !== 'object') return false;
@@ -223,7 +231,37 @@ function cachedPayloadMatchesRange(payload, sd, ed) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(ws) && /^\d{4}-\d{2}-\d{2}$/.test(we)) {
     return ws === sd && we === ed;
   }
+  // Legacy cache compatibility:
+  // older payloads may only have weekStart (no explicit weekEnd/dateRange).
+  // Accept those when the requested range is the same 7-day week window.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ws) && ws === sd) {
+    const expectedWeekEnd = addDaysYMD(sd, 6);
+    if (expectedWeekEnd && expectedWeekEnd === ed) return true;
+  }
   return false;
+}
+
+async function getOrBuildWeeklyPayoutPayload(locationId, sd, ed) {
+  const cached = await WeeklyPayoutCache.findOne({
+    locationId,
+    weekStart: sd,
+  }).lean();
+  const payload = cached?.payload;
+  if (cached && payload && cachedPayloadMatchesRange(payload, sd, ed)) {
+    return payload;
+  }
+
+  const rebuilt = await tipsCalculationService.getWeeklyPayout(locationId, sd, {
+    startDate: sd,
+    endDate: ed,
+  });
+
+  await WeeklyPayoutCache.findOneAndUpdate(
+    { locationId, weekStart: sd },
+    { $set: { payload: rebuilt } },
+    { upsert: true, new: true },
+  );
+  return rebuilt;
 }
 
 /**
@@ -268,9 +306,10 @@ async function listWeeklyPayoutReportEmployees(opts) {
 
   const payloadsForExport = [];
   for (const lid of locationIds) {
-    const cached = await WeeklyPayoutCache.findOne({ locationId: lid, weekStart: sd }).lean();
-    const payload = cached?.payload;
-    if (cached && payload && cachedPayloadMatchesRange(payload, sd, ed)) {
+    const payload = await getOrBuildWeeklyPayoutPayload(lid, sd, ed).catch(
+      () => null,
+    );
+    if (payload && cachedPayloadMatchesRange(payload, sd, ed)) {
       payloadsForExport.push(payload);
     }
   }
@@ -403,9 +442,10 @@ async function buildWeeklyPayoutReport(opts) {
 
   const payloadsForExport = [];
   for (const lid of locationIds) {
-    const cached = await WeeklyPayoutCache.findOne({ locationId: lid, weekStart: sd }).lean();
-    const payload = cached?.payload;
-    if (cached && payload && cachedPayloadMatchesRange(payload, sd, ed)) {
+    const payload = await getOrBuildWeeklyPayoutPayload(lid, sd, ed).catch(
+      () => null,
+    );
+    if (payload && cachedPayloadMatchesRange(payload, sd, ed)) {
       payloadsForExport.push(payload);
     }
   }
