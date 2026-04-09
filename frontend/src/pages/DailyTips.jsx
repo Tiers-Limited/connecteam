@@ -122,6 +122,8 @@ export default function DailyTips() {
   );
   const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const [hasExistingTipInput, setHasExistingTipInput] = useState(false);
+  const [checkingExistingTipInput, setCheckingExistingTipInput] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
@@ -187,6 +189,48 @@ export default function DailyTips() {
       return locations[0]._id;
     });
   }, [locations, selectedLocationId]);
+
+  useEffect(() => {
+    if (!saveLocationId || !saveDate || activeSubTab !== "save") {
+      setHasExistingTipInput(false);
+      return;
+    }
+    let cancelled = false;
+    setCheckingExistingTipInput(true);
+    getDailyTipInput(saveLocationId, saveDate)
+      .then((tipInput) => {
+        if (cancelled) return;
+        if (!tipInput) {
+          setHasExistingTipInput(false);
+          setForm({ amGrossTips: "", pmGrossTips: "" });
+          return;
+        }
+        const am = Number(tipInput.amGrossTips);
+        const pm = Number(tipInput.pmGrossTips);
+        setHasExistingTipInput(true);
+        setForm({
+          amGrossTips: Number.isFinite(am) ? String(am) : "",
+          pmGrossTips: isSaveTheCove
+            ? ""
+            : Number.isFinite(pm)
+              ? String(pm)
+              : "",
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHasExistingTipInput(false);
+          setForm({ amGrossTips: "", pmGrossTips: "" });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingExistingTipInput(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [saveLocationId, saveDate, activeSubTab, isSaveTheCove]);
 
   const loadPending = useCallback(
     async (pageOverride) => {
@@ -407,7 +451,11 @@ export default function DailyTips() {
         amGrossTips: am,
         pmGrossTips: pm,
       });
-      toast.success("Tips saved. Production pool uses 4% of gross from saved data.");
+      toast.success(
+        hasExistingTipInput
+          ? "Tips updated. Run calculation to refresh employee split."
+          : "Tips saved. Production pool uses 4% of gross from saved data.",
+      );
       setCalculation(null);
       setCalculationError(null);
       setDailyTipsCache((prev) => ({
@@ -418,7 +466,7 @@ export default function DailyTips() {
         calculation: null,
         calculationError: null,
       }));
-      setForm({ amGrossTips: "", pmGrossTips: "" });
+      setHasExistingTipInput(true);
       setPendingPage(1);
       await loadPending(1);
     } catch (err) {
@@ -710,8 +758,19 @@ export default function DailyTips() {
                 </div>
               )}
               <Button type="submit" disabled={saving || !saveLocationId}>
-                {saving ? <>{spinner}Saving…</> : "Save"}
+                {saving ? (
+                  <>{spinner}{hasExistingTipInput ? "Updating…" : "Saving…"}</>
+                ) : hasExistingTipInput ? (
+                  "Update"
+                ) : (
+                  "Save"
+                )}
               </Button>
+              {checkingExistingTipInput ? (
+                <span className="text-xs text-slate-500">
+                  Checking existing tips…
+                </span>
+              ) : null}
             </form>
           </div>
 
@@ -831,7 +890,7 @@ export default function DailyTips() {
                                   void refreshBreakdownCalculation(false, {
                                     locationId: id,
                                     dateStr: ymd,
-                                  });
+                                  }, true);
                                 }}
                                 disabled={loadingCalculation}
                               >
