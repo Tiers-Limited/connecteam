@@ -15,6 +15,10 @@ import {
   exportTableToCSV,
   exportTableToPDF,
   exportSingleEmployeeWeeklyPayoutPDF,
+  groupPayoutsByLocationDisplayOrder,
+  exportSectionedTableToCSV,
+  exportSectionedTableToPDF,
+  buildWeeklyPayoutExportMeta,
 } from "../utils/reportUtils";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
@@ -42,7 +46,7 @@ function payoutToExportRow(p, locLabel, cols) {
   const wh = p.totalWorkingMinutes ?? 0;
   const whStr =
     wh <= 0
-      ? "–"
+      ? "-"
       : `${Math.floor(wh / 60)}h${wh % 60 ? ` ${wh % 60}m` : ""}`;
   return [
     p.employeeName ?? "",
@@ -258,9 +262,8 @@ export default function PayoutReports() {
           reportData.dateRange?.endDate ?? endDate.trim().slice(0, 10);
         const cols = getDateRangeColumns(sd, ed);
         const hdr = weeklyReportHeaders(cols);
-        const rows = payouts.map((p) =>
-          payoutToExportRow(p, p.locationName ?? "—", cols),
-        );
+        const exportMeta = buildWeeklyPayoutExportMeta(sd, ed, scopeSummary());
+
         const scopeSlug =
           geographicScope === "all_locations" ? "all-locations" : "one-loc";
         const empSlug =
@@ -269,23 +272,68 @@ export default function PayoutReports() {
             : "all-employees";
         const fileBase = `weekly-payout-report-${scopeSlug}-${empSlug}-${sd}-${ed}`;
 
-        if (kind === "csv") {
-          exportTableToCSV(hdr, rows, `${fileBase}.csv`);
-        } else if (employeeScope === "one_employee") {
-          exportSingleEmployeeWeeklyPayoutPDF({
-            headers: hdr,
-            rows,
-            filename: `${fileBase}.pdf`,
-            searchQuery: selectedEmployeeLabel || String(selectedEmployeeId),
-            periodLabel: `${sd} – ${ed}`,
-            scopeLabel: scopeSummary(),
+        const allLocationsAllEmployees =
+          geographicScope === "all_locations" && employeeScope !== "one_employee";
+
+        if (allLocationsAllEmployees) {
+          const groups = groupPayoutsByLocationDisplayOrder(
             payouts,
-          });
+            activeLocations,
+          );
+          const sections = groups.map((g) => ({
+            sectionTitle: g.label,
+            headers: hdr,
+            rows: g.payouts.map((p) =>
+              payoutToExportRow(p, p.locationName ?? g.label, cols),
+            ),
+          }));
+          if (kind === "csv") {
+            exportSectionedTableToCSV(
+              exportMeta.csvMetaLines,
+              sections,
+              `${fileBase}.csv`,
+            );
+          } else {
+            exportSectionedTableToPDF(
+              "",
+              sections,
+              `${fileBase}.pdf`,
+              {
+                headFillColor: PDF_HEAD_INDIGO,
+                weeklyPayoutHeader: exportMeta.weeklyPayoutHeader,
+              },
+            );
+          }
         } else {
-          const pdfTitle = `Weekly payout — ${scopeSummary()} — ${sd} – ${ed}`;
-          exportTableToPDF(pdfTitle, hdr, rows, `${fileBase}.pdf`, {
-            headFillColor: PDF_HEAD_INDIGO,
-          });
+          const orderedPayouts =
+            geographicScope === "all_locations"
+              ? groupPayoutsByLocationDisplayOrder(
+                  payouts,
+                  activeLocations,
+                ).flatMap((g) => g.payouts)
+              : payouts;
+          const rows = orderedPayouts.map((p) =>
+            payoutToExportRow(p, p.locationName ?? "-", cols),
+          );
+
+          if (kind === "csv") {
+            exportTableToCSV(hdr, rows, `${fileBase}.csv`);
+          } else if (employeeScope === "one_employee") {
+            exportSingleEmployeeWeeklyPayoutPDF({
+              headers: hdr,
+              rows,
+              filename: `${fileBase}.pdf`,
+              searchQuery: selectedEmployeeLabel || String(selectedEmployeeId),
+              periodLabel: `${sd} - ${ed}`,
+              scopeLabel: scopeSummary(),
+              payouts: orderedPayouts,
+            });
+          } else {
+            exportTableToPDF("", hdr, rows, `${fileBase}.pdf`, {
+              headFillColor: PDF_HEAD_INDIGO,
+              weeklyPayoutHeader: exportMeta.weeklyPayoutHeader,
+            });
+          }
         }
         toast.success(kind === "csv" ? "CSV downloaded." : "PDF downloaded.");
       } catch (err) {
@@ -314,6 +362,7 @@ export default function PayoutReports() {
       selectedEmployeeId,
       selectedEmployeeLabel,
       scopeSummary,
+      activeLocations,
     ],
   );
 
