@@ -470,16 +470,20 @@ async function buildWeeklyPayoutReport(opts) {
       if (nameFilter && !(String(p.employeeName || '').toLowerCase().includes(nameFilter))) {
         continue;
       }
-      flat.push({ ...p, locationName: locName });
+      flat.push({
+        ...p,
+        locationName: locName,
+        locationId: String(payload.locationId ?? lid),
+      });
     }
   }
 
   flat.sort((a, b) => {
-    const byName = (a.employeeName || '').localeCompare(b.employeeName || '', undefined, {
+    const byLoc = (a.locationName || '').localeCompare(b.locationName || '', undefined, {
       sensitivity: 'base',
     });
-    if (byName !== 0) return byName;
-    return (a.locationName || '').localeCompare(b.locationName || '', undefined, {
+    if (byLoc !== 0) return byLoc;
+    return (a.employeeName || '').localeCompare(b.employeeName || '', undefined, {
       sensitivity: 'base',
     });
   });
