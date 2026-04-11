@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import toast from "react-hot-toast";
 import { useApp } from "../context/AppContext";
 import {
@@ -14,6 +14,7 @@ import {
   upsertManualWorking,
   deleteManualWorking,
 } from "../services/manualWorkingService";
+import { getEmployees } from "../services/employeeService";
 import { toDateString } from "../utils/dateUtils";
 import {
   splitWorkedHoursForLocation,
@@ -64,6 +65,45 @@ function shiftDescriptionForLocation(locationName) {
     return " Enter gross tips per shift (AM 06:00–14:00, PM 14:00–23:00). ";
   }
   return " Enter gross tips per shift (AM 06:00–15:00, PM 15:00–23:00). ";
+}
+
+function getAdjustmentReasonForEmployee(adjustments, employeeId, type) {
+  const eid = String(employeeId ?? "");
+  if (!eid) return "";
+  const list = Array.isArray(adjustments) ? adjustments : [];
+  const hit = list.find((x) => {
+    const xid =
+      x?.employeeId &&
+      typeof x.employeeId === "object" &&
+      x.employeeId._id != null
+        ? String(x.employeeId._id)
+        : String(x?.employeeId ?? "");
+    return xid === eid && x.type === type;
+  });
+  return String(hit?.reason ?? "").trim();
+}
+
+/** After cash advance & Deduct & Redistribute, before equal pool share (matches final − share). */
+function netTipsAfterDeductions(allocation) {
+  const fin = Number(allocation?.finalTips ?? allocation?.totalTips) || 0;
+  const share = Number(allocation?.redistributionShare) || 0;
+  return Math.max(0, Math.round((fin - share) * 100) / 100);
+}
+
+function dailyRedistributionCellTitle(allocation, redistributionPool) {
+  const redIn = Number(allocation?.redistributeDeduction) || 0;
+  const share = Number(allocation?.redistributionShare) || 0;
+  const pool = Number(redistributionPool) || 0;
+  if (redIn > 0) {
+    return "Amount withheld for Deduct & Redistribute; split equally among other eligible employees";
+  }
+  if (share > 0) {
+    return "Tips received from redistribution pool (equal split among employees not subject to Deduct & Redistribute)";
+  }
+  if (pool > 0) {
+    return "No share for this row; pool is split only among eligible staff";
+  }
+  return "Tips received from redistribution pool (aligned with Weekly Payout tardiness redistribution)";
 }
 
 export default function DailyTips() {
@@ -130,15 +170,20 @@ export default function DailyTips() {
   const [adjustEmployee, setAdjustEmployee] = useState(null);
   const [adjustCashAdvance, setAdjustCashAdvance] = useState("");
   const [adjustRedistribute, setAdjustRedistribute] = useState("");
+  const [adjustRedistributeReason, setAdjustRedistributeReason] = useState("");
   const [adjustSaving, setAdjustSaving] = useState(false);
   const [manualRows, setManualRows] = useState([]);
   const [manualLoading, setManualLoading] = useState(false);
   const [manualSaving, setManualSaving] = useState(false);
   const [manualForm, setManualForm] = useState({
-    name: "",
+    employeeId: "",
     clockIn: "",
     clockOut: "",
   });
+  const [breakdownLocationEmployees, setBreakdownLocationEmployees] =
+    useState([]);
+  const [breakdownEmployeesLoading, setBreakdownEmployeesLoading] =
+    useState(false);
   const [manualRemoveRow, setManualRemoveRow] = useState(null);
   const [manualRemoveSaving, setManualRemoveSaving] = useState(false);
   /** Saved gross tips for active breakdown row (shown while calculation is loading). */
@@ -343,6 +388,83 @@ export default function DailyTips() {
 
   useEffect(() => {
     if (!breakdownView?.locationId || activeSubTab !== "breakdown") {
+      setBreakdownLocationEmployees([]);
+      setBreakdownEmployeesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setBreakdownEmployeesLoading(true);
+    getEmployees(breakdownView.locationId)
+      .then((list) => {
+        if (!cancelled)
+          setBreakdownLocationEmployees(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (!cancelled) setBreakdownLocationEmployees([]);
+      })
+      .finally(() => {
+        if (!cancelled) setBreakdownEmployeesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [breakdownView?.locationId, activeSubTab]);
+
+  useEffect(() => {
+    setManualForm((f) => ({ ...f, employeeId: "" }));
+  }, [breakdownView?.locationId, breakdownView?.dateStr]);
+
+  const manualConnecteamSelectOptions = useMemo(() => {
+    const inManual = new Set();
+    for (const row of manualRows) {
+      const emp = row?.employeeId;
+      const id =
+        emp && typeof emp === "object" && emp._id != null
+          ? String(emp._id)
+          : emp != null
+            ? String(emp)
+            : "";
+      if (id) inManual.add(id);
+    }
+    const inAudit = new Set();
+    for (const a of calculation?.employeeAllocations ?? []) {
+      const raw = a?.employeeId;
+      const aid =
+        raw && typeof raw === "object" && raw._id != null
+          ? String(raw._id)
+          : raw != null
+            ? String(raw)
+            : "";
+      if (aid) inAudit.add(aid);
+    }
+    return breakdownLocationEmployees
+      .filter(
+        (e) => e?._id && String(e.connecteamsUserId || "").trim(),
+      )
+      .filter(
+        (e) =>
+          !inManual.has(String(e._id)) && !inAudit.has(String(e._id)),
+      )
+      .slice()
+      .sort((a, b) =>
+        (a.name || "").localeCompare(b.name || "", undefined, {
+          sensitivity: "base",
+        }),
+      );
+  }, [breakdownLocationEmployees, manualRows, calculation]);
+
+  useEffect(() => {
+    setManualForm((f) => {
+      if (!f.employeeId) return f;
+      const ok = manualConnecteamSelectOptions.some(
+        (e) => String(e._id) === f.employeeId,
+      );
+      return ok ? f : { ...f, employeeId: "" };
+    });
+  }, [manualConnecteamSelectOptions]);
+
+  useEffect(() => {
+    if (!breakdownView?.locationId || activeSubTab !== "breakdown") {
       setBreakdownSavedTips(null);
       return;
     }
@@ -505,6 +627,10 @@ export default function DailyTips() {
             pmWorkedHours: acc.pmWorkedHours + (Number(a.pmWorkedHours) || 0),
             amTips: acc.amTips + (Number(a.amTips) || 0),
             pmTips: acc.pmTips + (Number(a.pmTips) || 0),
+            netTips: acc.netTips + netTipsAfterDeductions(a),
+            redistributionShare:
+              acc.redistributionShare +
+              (Number(a.redistributionShare) || 0),
             totalTips:
               acc.totalTips + (Number(a.finalTips ?? a.totalTips) || 0),
           }),
@@ -513,6 +639,8 @@ export default function DailyTips() {
             pmWorkedHours: 0,
             amTips: 0,
             pmTips: 0,
+            netTips: 0,
+            redistributionShare: 0,
             totalTips: 0,
           },
         )
@@ -527,9 +655,16 @@ export default function DailyTips() {
       setAdjustRedistribute(
         String(row.redistributeDeduction ?? 0),
       );
+      setAdjustRedistributeReason(
+        getAdjustmentReasonForEmployee(
+          calculation?.adjustments,
+          row.employeeId,
+          "redistribute_equal",
+        ),
+      );
       setAdjustModalOpen(true);
     },
-    [],
+    [calculation?.adjustments],
   );
 
   const saveAdjustments = useCallback(async () => {
@@ -538,6 +673,11 @@ export default function DailyTips() {
     if (!lid || !ds || !adjustEmployee?.employeeId) return;
     const cashAdvance = Math.max(0, parseFloat(adjustCashAdvance || "0") || 0);
     const redistribute = Math.max(0, parseFloat(adjustRedistribute || "0") || 0);
+    const redistributeReason = adjustRedistributeReason.trim();
+    if (redistribute > 0 && !redistributeReason) {
+      toast.error("Reason is required when Deduct & Redistribute is greater than 0");
+      return;
+    }
     setAdjustSaving(true);
     try {
       await Promise.all([
@@ -551,7 +691,7 @@ export default function DailyTips() {
           employeeId: adjustEmployee.employeeId,
           type: "redistribute_equal",
           amount: redistribute,
-          reason: "",
+          reason: redistribute > 0 ? redistributeReason : "",
         }),
       ]);
       toast.success("Adjustments saved. Recalculating…");
@@ -567,6 +707,7 @@ export default function DailyTips() {
     adjustEmployee,
     adjustCashAdvance,
     adjustRedistribute,
+    adjustRedistributeReason,
     refreshBreakdownCalculation,
   ]);
 
@@ -1087,21 +1228,22 @@ export default function DailyTips() {
             <>
           <div className="rounded-lg border border-slate-200 bg-slate-50/40 px-4 py-3">
             <h2 className="mb-2 text-sm font-semibold text-slate-700">
-              Manual employees (not from Connecteam)
+              Manual clock times (Connecteam employees)
             </h2>
             <p className="mb-3 text-xs text-slate-500">
-              Add clock in and clock out for this location and date. AM/PM hours
-              are derived using the same shift windows as Connecteam. They count
-              toward the tip split after you run{" "}
+              Pick an employee who exists in Connecteam for this location (synced
+              roster). Anyone already in the <strong>Daily calculation (audit)</strong>{" "}
+              table or the manual list below is omitted. Enter clock in and out;
+              AM/PM hours use the same shift windows as Connecteam. Then run{" "}
               <strong>Refresh calculation</strong>.
             </p>
             <form
               className="mb-4 flex flex-wrap items-end gap-3"
               onSubmit={async (e) => {
                 e.preventDefault();
-                const name = manualForm.name.trim();
-                if (!name) {
-                  toast.error("Enter employee name");
+                const empId = String(manualForm.employeeId || "").trim();
+                if (!empId) {
+                  toast.error("Select an employee from the list");
                   return;
                 }
                 const cin = manualForm.clockIn?.trim();
@@ -1117,7 +1259,7 @@ export default function DailyTips() {
                 setManualSaving(true);
                 try {
                   await upsertManualWorking({
-                    employeeName: name,
+                    employeeId: empId,
                     locationId: breakdownView.locationId,
                     date: breakdownView.dateStr,
                     clockIn: cin,
@@ -1126,7 +1268,7 @@ export default function DailyTips() {
                     pmTips: 0,
                   });
                   toast.success("Manual hours saved");
-                  setManualForm({ name: "", clockIn: "", clockOut: "" });
+                  setManualForm({ employeeId: "", clockIn: "", clockOut: "" });
                   const list = await getManualWorkingByDate(
                     breakdownView.locationId,
                     breakdownView.dateStr,
@@ -1146,17 +1288,38 @@ export default function DailyTips() {
             >
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">
-              Name
+              Employee
             </label>
-            <input
-              type="text"
-              value={manualForm.name}
+            <select
+              value={manualForm.employeeId}
               onChange={(e) =>
-                setManualForm((f) => ({ ...f, name: e.target.value }))
+                setManualForm((f) => ({
+                  ...f,
+                  employeeId: e.target.value,
+                }))
               }
-              className="min-w-[160px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-              placeholder="Employee name"
-            />
+              disabled={breakdownEmployeesLoading || manualSaving}
+              className="min-w-[200px] max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 disabled:opacity-60"
+            >
+              <option value="">
+                {breakdownEmployeesLoading
+                  ? "Loading employees…"
+                  : breakdownLocationEmployees.length === 0
+                    ? "No employees for this location"
+                    : manualConnecteamSelectOptions.length === 0
+                      ? breakdownLocationEmployees.some((e) =>
+                          String(e.connecteamsUserId || "").trim(),
+                        )
+                        ? "All Connecteam employees are already in the audit or manual list"
+                        : "No Connecteam-linked employees at this location"
+                      : "Select employee…"}
+              </option>
+              {manualConnecteamSelectOptions.map((emp) => (
+                <option key={emp._id} value={emp._id}>
+                  {emp.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-500">
@@ -1410,43 +1573,89 @@ export default function DailyTips() {
                     type="button"
                     variant="secondary"
                     onClick={() => {
-                      const headers = [
-                        "Employee",
-                        "Clock In",
-                        "Clock Out",
-                        "AM hrs",
-                        "PM hrs",
-                        "AM tips",
-                        "PM tips",
-                        "Total",
-                      ];
-                      const rows = allocations.map((a) => [
-                        a.employeeName ?? "",
-                        a.clockIn ?? "–",
-                        a.clockOut ?? "–",
-                        a.amWorkedHours?.toFixed(2) ?? "",
-                        a.pmWorkedHours?.toFixed(2) ?? "",
-                        a.amTips != null
-                          ? `$${Number(a.amTips).toFixed(2)}`
-                          : "",
-                        a.pmTips != null
-                          ? `$${Number(a.pmTips).toFixed(2)}`
-                          : "",
+                      const headers = showShiftSplit
+                        ? [
+                            "Employee",
+                            "Clock In",
+                            "Clock Out",
+                            "AM hrs",
+                            "PM hrs",
+                            "AM tips",
+                            "PM tips",
+                            "Net tips",
+                            "Tardiness Redistribution",
+                            "Total",
+                          ]
+                        : [
+                            "Employee",
+                            "Clock In",
+                            "Clock Out",
+                            "Hours",
+                            "Tips",
+                            "Net tips",
+                            "Tardiness Redistribution",
+                            "Total",
+                          ];
+                      const tail = (a) => [
+                        `$${netTipsAfterDeductions(a).toFixed(2)}`,
+                        `$${Number(a.redistributionShare ?? 0).toFixed(2)}`,
                         (a.finalTips ?? a.totalTips) != null
                           ? `$${Number(a.finalTips ?? a.totalTips).toFixed(2)}`
                           : "",
-                      ]);
+                      ];
+                      const rows = allocations.map((a) =>
+                        showShiftSplit
+                          ? [
+                              a.employeeName ?? "",
+                              a.clockIn ?? "–",
+                              a.clockOut ?? "–",
+                              a.amWorkedHours?.toFixed(2) ?? "",
+                              a.pmWorkedHours?.toFixed(2) ?? "",
+                              a.amTips != null
+                                ? `$${Number(a.amTips).toFixed(2)}`
+                                : "",
+                              a.pmTips != null
+                                ? `$${Number(a.pmTips).toFixed(2)}`
+                                : "",
+                              ...tail(a),
+                            ]
+                          : [
+                              a.employeeName ?? "",
+                              a.clockIn ?? "–",
+                              a.clockOut ?? "–",
+                              a.amWorkedHours?.toFixed(2) ?? "",
+                              a.amTips != null
+                                ? `$${Number(a.amTips).toFixed(2)}`
+                                : "",
+                              ...tail(a),
+                            ],
+                      );
                       if (totals) {
-                        rows.push([
-                          "Total",
-                          "",
-                          "",
-                          totals.amWorkedHours.toFixed(2),
-                          totals.pmWorkedHours.toFixed(2),
-                          `$${totals.amTips.toFixed(2)}`,
-                          `$${totals.pmTips.toFixed(2)}`,
-                          `$${totals.totalTips.toFixed(2)}`,
-                        ]);
+                        rows.push(
+                          showShiftSplit
+                            ? [
+                                "Total",
+                                "",
+                                "",
+                                totals.amWorkedHours.toFixed(2),
+                                totals.pmWorkedHours.toFixed(2),
+                                `$${totals.amTips.toFixed(2)}`,
+                                `$${totals.pmTips.toFixed(2)}`,
+                                `$${totals.netTips.toFixed(2)}`,
+                                `$${totals.redistributionShare.toFixed(2)}`,
+                                `$${totals.totalTips.toFixed(2)}`,
+                              ]
+                            : [
+                                "Total",
+                                "",
+                                "",
+                                totals.amWorkedHours.toFixed(2),
+                                `$${totals.amTips.toFixed(2)}`,
+                                `$${totals.netTips.toFixed(2)}`,
+                                `$${totals.redistributionShare.toFixed(2)}`,
+                                `$${totals.totalTips.toFixed(2)}`,
+                              ],
+                        );
                       }
                       exportTableToCSV(
                         headers,
@@ -1461,43 +1670,89 @@ export default function DailyTips() {
                     type="button"
                     variant="secondary"
                     onClick={() => {
-                      const headers = [
-                        "Employee",
-                        "Clock In",
-                        "Clock Out",
-                        "AM hrs",
-                        "PM hrs",
-                        "AM tips",
-                        "PM tips",
-                        "Total",
-                      ];
-                      const rows = allocations.map((a) => [
-                        a.employeeName ?? "",
-                        a.clockIn ?? "–",
-                        a.clockOut ?? "–",
-                        a.amWorkedHours?.toFixed(2) ?? "",
-                        a.pmWorkedHours?.toFixed(2) ?? "",
-                        a.amTips != null
-                          ? `$${Number(a.amTips).toFixed(2)}`
-                          : "",
-                        a.pmTips != null
-                          ? `$${Number(a.pmTips).toFixed(2)}`
-                          : "",
+                      const headers = showShiftSplit
+                        ? [
+                            "Employee",
+                            "Clock In",
+                            "Clock Out",
+                            "AM hrs",
+                            "PM hrs",
+                            "AM tips",
+                            "PM tips",
+                            "Net tips",
+                            "Tardiness Redistribution",
+                            "Total",
+                          ]
+                        : [
+                            "Employee",
+                            "Clock In",
+                            "Clock Out",
+                            "Hours",
+                            "Tips",
+                            "Net tips",
+                            "Tardiness Redistribution",
+                            "Total",
+                          ];
+                      const tail = (a) => [
+                        `$${netTipsAfterDeductions(a).toFixed(2)}`,
+                        `$${Number(a.redistributionShare ?? 0).toFixed(2)}`,
                         (a.finalTips ?? a.totalTips) != null
                           ? `$${Number(a.finalTips ?? a.totalTips).toFixed(2)}`
                           : "",
-                      ]);
+                      ];
+                      const rows = allocations.map((a) =>
+                        showShiftSplit
+                          ? [
+                              a.employeeName ?? "",
+                              a.clockIn ?? "–",
+                              a.clockOut ?? "–",
+                              a.amWorkedHours?.toFixed(2) ?? "",
+                              a.pmWorkedHours?.toFixed(2) ?? "",
+                              a.amTips != null
+                                ? `$${Number(a.amTips).toFixed(2)}`
+                                : "",
+                              a.pmTips != null
+                                ? `$${Number(a.pmTips).toFixed(2)}`
+                                : "",
+                              ...tail(a),
+                            ]
+                          : [
+                              a.employeeName ?? "",
+                              a.clockIn ?? "–",
+                              a.clockOut ?? "–",
+                              a.amWorkedHours?.toFixed(2) ?? "",
+                              a.amTips != null
+                                ? `$${Number(a.amTips).toFixed(2)}`
+                                : "",
+                              ...tail(a),
+                            ],
+                      );
                       if (totals) {
-                        rows.push([
-                          "Total",
-                          "",
-                          "",
-                          totals.amWorkedHours.toFixed(2),
-                          totals.pmWorkedHours.toFixed(2),
-                          `$${totals.amTips.toFixed(2)}`,
-                          `$${totals.pmTips.toFixed(2)}`,
-                          `$${totals.totalTips.toFixed(2)}`,
-                        ]);
+                        rows.push(
+                          showShiftSplit
+                            ? [
+                                "Total",
+                                "",
+                                "",
+                                totals.amWorkedHours.toFixed(2),
+                                totals.pmWorkedHours.toFixed(2),
+                                `$${totals.amTips.toFixed(2)}`,
+                                `$${totals.pmTips.toFixed(2)}`,
+                                `$${totals.netTips.toFixed(2)}`,
+                                `$${totals.redistributionShare.toFixed(2)}`,
+                                `$${totals.totalTips.toFixed(2)}`,
+                              ]
+                            : [
+                                "Total",
+                                "",
+                                "",
+                                totals.amWorkedHours.toFixed(2),
+                                `$${totals.amTips.toFixed(2)}`,
+                                `$${totals.netTips.toFixed(2)}`,
+                                `$${totals.redistributionShare.toFixed(2)}`,
+                                `$${totals.totalTips.toFixed(2)}`,
+                              ],
+                        );
                       }
                       exportTableToPDF(
                         `Daily Tips — ${breakdownLocation?.name ?? ""} — ${breakdownView?.dateStr ?? ""}`,
@@ -1553,6 +1808,15 @@ export default function DailyTips() {
                     </>
                   )}
                   <th className="pb-2 text-right font-medium text-slate-700">
+                    Net tips
+                  </th>
+                  <th
+                    className="pb-2 text-right font-medium text-slate-700"
+                    title="Equal share of Deduct & Redistribute pool (same role as Weekly Payout)"
+                  >
+                    Tardiness Redistribution
+                  </th>
+                  <th className="pb-2 text-right font-medium text-slate-700">
                     Total
                   </th>
                   <th className="pb-2 text-right font-medium text-slate-700">
@@ -1600,6 +1864,18 @@ export default function DailyTips() {
                         </td>
                       </>
                     )}
+                    <td className="py-2 text-right tabular-nums font-medium text-slate-700">
+                      ${netTipsAfterDeductions(a).toFixed(2)}
+                    </td>
+                    <td
+                      className="py-2 text-right tabular-nums text-emerald-500"
+                      title={dailyRedistributionCellTitle(
+                        a,
+                        calculation?.inputs?.redistributionPool,
+                      )}
+                    >
+                      ${Number(a.redistributionShare ?? 0).toFixed(2)}
+                    </td>
                     <td className="py-2 text-right font-medium tabular-nums text-slate-800">
                       ${(a.finalTips ?? a.totalTips)?.toFixed(2)}
                     </td>
@@ -1646,6 +1922,12 @@ export default function DailyTips() {
                         </td>
                       </>
                     )}
+                    <td className="py-3 text-right tabular-nums text-slate-800">
+                      ${totals.netTips.toFixed(2)}
+                    </td>
+                    <td className="py-3 text-right tabular-nums text-emerald-700">
+                      ${totals.redistributionShare.toFixed(2)}
+                    </td>
                     <td className="py-3 text-right tabular-nums text-slate-800">
                       ${totals.totalTips.toFixed(2)}
                     </td>
@@ -1706,7 +1988,19 @@ export default function DailyTips() {
                   </>
                 )}
                 <span>
-                  Total tips:{" "}
+                  Net tips (after deductions):{" "}
+                  <strong className="text-slate-800">
+                    ${totals.netTips.toFixed(2)}
+                  </strong>
+                </span>
+                <span>
+                  Tardiness redistribution:{" "}
+                  <strong className="text-emerald-700">
+                    ${totals.redistributionShare.toFixed(2)}
+                  </strong>
+                </span>
+                <span>
+                  Total (final):{" "}
                   <strong className="text-slate-800">
                     ${totals.totalTips.toFixed(2)}
                   </strong>
@@ -1872,6 +2166,22 @@ export default function DailyTips() {
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
                 />
               </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-1 block text-xs font-medium text-slate-500">
+                Reason for Deduct &amp; Redistribute{" "}
+                <span className="font-normal text-slate-400">
+                  (required if amount &gt; 0)
+                </span>
+              </label>
+              <input
+                type="text"
+                value={adjustRedistributeReason}
+                onChange={(e) => setAdjustRedistributeReason(e.target.value)}
+                placeholder="e.g. Shared register shortage"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+              />
             </div>
 
             <div className="mt-5 flex items-center justify-end gap-3">

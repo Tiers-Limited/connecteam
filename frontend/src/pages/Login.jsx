@@ -142,7 +142,7 @@ export default function Login() {
 
           <div className="mt-8 pt-6 border-t border-slate-100">
             <p className="text-xs text-slate-400">
-              © ConnectTeam. Authorized access only.
+              © Corvia Tips. Authorized access only.
             </p>
           </div>
         </div>
@@ -155,7 +155,7 @@ export default function Login() {
               <FiUsers className="h-5 w-5 text-white" />
             </div>
             <span className="text-xl font-semibold text-slate-800">
-              ConnectTeam
+              Corvia Tips
             </span>
           </div>
 

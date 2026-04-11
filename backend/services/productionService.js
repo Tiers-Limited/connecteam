@@ -108,7 +108,7 @@ async function getProductionStaff() {
 
 /**
  * Build tardiness map (staff name -> weekly minutes).
- * When options.connecteamPayload is provided, uses that (from ConnectTeam API for date range); otherwise reads from WeeklyTardinessCache.
+ * When options.connecteamPayload is provided, uses that (from Connecteam API for date range); otherwise reads from WeeklyTardinessCache.
  * First punch per (name, date).
  */
 async function getProductionTardinessMap(weekStartStr, staffNames, options = {}) {
@@ -147,7 +147,7 @@ async function getProductionTardinessMap(weekStartStr, staffNames, options = {})
 
 /**
  * Weekly production payout: daily pool × allocation → weekly gross → tardiness → manual → redistribution (by %) → final.
- * options: { startDate, endDate } — when both set, fetches tardiness from ConnectTeam for that range and uses range for days.
+ * options: { startDate, endDate } — when both set, fetches tardiness from Connecteam for that range and uses range for days.
  */
 async function getWeeklyProductionPayout(weekStartStr, options = {}) {
   const staff = await ProductionStaff.find({ isActive: true }).sort({ name: 1 });

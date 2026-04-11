@@ -1,4 +1,4 @@
-# Netlify build and deploy settings for ConnectTeam frontend
+# Netlify build and deploy settings for Corvia Tips frontend
 
 # SPA: all routes go to index.html (React Router)
 [[redirects]]

@@ -127,9 +127,9 @@ export default function ProductionPool() {
     }
     setSaving(true);
     try {
-      await updateProductionStaff(staffId, {
-        allocationPercent: alloc,
-        subjectToTardiness: editSubjectToTardiness,
+      const savedStaff = await updateProductionStaff(staffId, {
+        allocationPercent: Number(alloc),
+        subjectToTardiness: Boolean(editSubjectToTardiness),
       });
       await upsertProductionManualDeduction({
         productionStaffId: staffId,
@@ -139,7 +139,30 @@ export default function ProductionPool() {
       });
       toast.success(`Saved for ${modalRow.name}`);
       closeModal();
-      loadPayout();
+      const staffIdStr = String(staffId);
+      setData((prev) => {
+        if (!prev?.payouts?.length) return prev;
+        return {
+          ...prev,
+          payouts: prev.payouts.map((p) => {
+            if (String(getStaffId(p) ?? "") !== staffIdStr) return p;
+            return {
+              ...p,
+              allocationPercent:
+                savedStaff?.allocationPercent ?? Number(alloc),
+              subjectToTardiness:
+                savedStaff?.subjectToTardiness ?? Boolean(editSubjectToTardiness),
+              manualDeduction: amt,
+              manualDeductionReason: amt > 0 ? reason : "",
+            };
+          }),
+        };
+      });
+      setManualEdits((prev) => ({
+        ...prev,
+        [staffIdStr]: { amount: String(amt), reason: amt > 0 ? reason : "" },
+      }));
+      await loadPayout();
     } catch (e) {
       if (e.response?.data?.details) {
         e.response.data.details.forEach((d) => toast.error(d.message));
@@ -209,7 +232,7 @@ export default function ProductionPool() {
           <p className="mt-1 text-sm text-slate-500">
             Select <strong>From date</strong> and <strong>To date</strong>, then
             click <strong>Load payout</strong>. Tardiness is pulled from
-            ConnectTeam for the selected range (all locations). 4% of gross tips
+            Connecteam for the selected range (all locations). 4% of gross tips
             forms the daily pool.
           </p>
         </div>
@@ -634,8 +657,8 @@ export default function ProductionPool() {
         <LightCard>
           <p className="py-8 text-center text-slate-500">
             Select date range (From and To) and click{" "}
-            <strong>Load payout</strong> to load production payout from
-            ConnectTeam for that range. Ensure daily tips are entered for all
+            <strong>Load payout</strong> to load production payout for that
+            range. Ensure daily tips are entered for all
             locations (4% forms the pool).
           </p>
         </LightCard>

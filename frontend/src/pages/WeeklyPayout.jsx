@@ -329,11 +329,11 @@ export default function WeeklyPayout() {
               Select <strong className="text-slate-600">From date</strong> and{" "}
               <strong className="text-slate-600">To date</strong>, then click{" "}
               <strong className="text-slate-600">Load payout</strong>. Tardiness
-              and working hours are pulled from ConnectTeam for the selected
+              and working hours are pulled from Connecteam for the selected
               range. Weekly Gross Tips = Σ Daily Tips in range. Tardiness: 0–5
               min → 0%; &gt;5–10 min → 15%; &gt;10 min → 20%. Redistribution by{" "}
               <strong className="text-slate-600">total working hours</strong>{" "}
-              from ConnectTeam.
+              from Connecteam.
             </p>
           </div>
         </div>
@@ -344,7 +344,7 @@ export default function WeeklyPayout() {
           <p className="text-slate-500">
             Select location and date range (From and To), then click{" "}
             <strong className="text-slate-600">Load payout</strong> to fetch
-            data from ConnectTeam for that range. Ensure daily tips are entered
+            data from Connecteam for that range. Ensure daily tips are entered
             for the days in range (Phase 1).
           </p>
         </div>

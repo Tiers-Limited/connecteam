@@ -861,7 +861,7 @@ async function getEmployeeDailyTipsForDate(employeeId, locationId, date) {
 
 /**
  * Phase 2: Get weekly payout for a location and week (Monday–Sunday) or date range.
- * options: { startDate, endDate } — when both set, fetches tardiness from ConnectTeam for that range and uses range for days.
+ * options: { startDate, endDate } — when both set, fetches tardiness from Connecteam for that range and uses range for days.
  */
 async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
   const useDateRange =

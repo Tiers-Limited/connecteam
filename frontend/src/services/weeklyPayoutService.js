@@ -4,7 +4,7 @@ import api from './api';
  * @param {string} locationId
  * @param {string} weekStart - YYYY-MM-DD (Monday or range start)
  * @param {boolean} [refresh=false] - if true, force recompute and save to DB (e.g. after updating Weekly Tardiness)
- * @param {string} [startDate] - YYYY-MM-DD; with endDate = fetch tardiness from ConnectTeam for this range (like Weekly Tardiness)
+ * @param {string} [startDate] - YYYY-MM-DD; with endDate = fetch tardiness from Connecteam for this range (like Weekly Tardiness)
  * @param {string} [endDate] - YYYY-MM-DD
  */
 export async function getWeeklyPayout(locationId, weekStart, refresh = false, startDate = null, endDate = null) {

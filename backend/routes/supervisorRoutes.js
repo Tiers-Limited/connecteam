@@ -17,11 +17,17 @@ function generatePassword() {
 
 router.use(requireAdmin);
 
+const MAX_SUPERVISOR_PASSWORD_LENGTH = 128;
+
 router.post('/', async (req, res) => {
   try {
-    const { email, username } = req.body || {};
+    const { email, username, password: bodyPassword } = req.body || {};
     const trimmedEmail = email ? String(email).trim().toLowerCase() : '';
     const trimmedUsername = username ? String(username).trim() : '';
+    const trimmedPwd =
+      bodyPassword != null && String(bodyPassword).trim() !== ''
+        ? String(bodyPassword).trim()
+        : '';
     if (!trimmedEmail) {
       return res.status(400).json({ message: 'Email is required' });
     }
@@ -32,7 +38,18 @@ router.post('/', async (req, res) => {
     if (existing) {
       return res.status(400).json({ message: 'A supervisor with this email already exists' });
     }
-    const password = generatePassword();
+    let password;
+    if (trimmedPwd) {
+      if (trimmedPwd.length < 6) {
+        return res.status(400).json({ message: 'Password must be at least 6 characters' });
+      }
+      if (trimmedPwd.length > MAX_SUPERVISOR_PASSWORD_LENGTH) {
+        return res.status(400).json({ message: `Password must be at most ${MAX_SUPERVISOR_PASSWORD_LENGTH} characters` });
+      }
+      password = trimmedPwd;
+    } else {
+      password = generatePassword();
+    }
     const supervisor = new Supervisor({
       email: trimmedEmail,
       username: trimmedUsername,
@@ -66,6 +83,28 @@ router.get('/', async (req, res) => {
   } catch (err) {
     console.error('List supervisors error:', err);
     return res.status(500).json({ message: 'Failed to list supervisors' });
+  }
+});
+
+/** Admin: set a supervisor’s password (plain text is hashed by Supervisor model). */
+router.post('/:id/password', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { newPassword } = req.body || {};
+    const pwd = newPassword != null ? String(newPassword) : '';
+    if (pwd.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+    const supervisor = await Supervisor.findById(id);
+    if (!supervisor) {
+      return res.status(404).json({ message: 'Supervisor not found' });
+    }
+    supervisor.password = pwd;
+    await supervisor.save();
+    return res.json({ message: 'Password updated successfully' });
+  } catch (err) {
+    console.error('Set supervisor password error:', err);
+    return res.status(500).json({ message: 'Failed to update password' });
   }
 });
 

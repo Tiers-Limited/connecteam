@@ -12,7 +12,7 @@ export async function updateProductionStaff(id, body) {
 
 /**
  * @param {string} weekStart - YYYY-MM-DD (Monday or range start)
- * @param {string} [startDate] - with endDate = fetch tardiness from ConnectTeam for this range
+ * @param {string} [startDate] - with endDate = fetch tardiness from Connecteam for this range
  * @param {string} [endDate]
  */
 export async function getWeeklyProductionPayout(weekStart, startDate = null, endDate = null) {

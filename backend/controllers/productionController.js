@@ -16,11 +16,35 @@ async function updateStaff(req, res, next) {
     const { allocationPercent, subjectToTardiness } = req.body;
     const ProductionStaff = require('../models/ProductionStaff');
     const update = {};
-    if (typeof allocationPercent === 'number' && allocationPercent >= 0 && allocationPercent <= 100) {
-      update.allocationPercent = allocationPercent;
+    if (
+      allocationPercent !== undefined &&
+      allocationPercent !== null &&
+      String(allocationPercent).trim() !== ''
+    ) {
+      const n = Number(allocationPercent);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        return res.status(400).json({
+          success: false,
+          error: 'allocationPercent must be a number between 0 and 100',
+        });
+      }
+      update.allocationPercent = n;
     }
-    if (typeof subjectToTardiness === 'boolean') update.subjectToTardiness = subjectToTardiness;
-    const doc = await ProductionStaff.findByIdAndUpdate(id, { $set: update }, { new: true }).lean();
+    if (typeof subjectToTardiness === 'boolean') {
+      update.subjectToTardiness = subjectToTardiness;
+    } else if (subjectToTardiness === 'true' || subjectToTardiness === 'false') {
+      update.subjectToTardiness = subjectToTardiness === 'true';
+    }
+    let doc;
+    if (Object.keys(update).length > 0) {
+      doc = await ProductionStaff.findByIdAndUpdate(
+        id,
+        { $set: update },
+        { new: true, runValidators: true },
+      ).lean();
+    } else {
+      doc = await ProductionStaff.findById(id).lean();
+    }
     if (!doc) return res.status(404).json({ success: false, error: 'Production staff not found' });
     clearProductionStaffNamesCache();
     res.json({ success: true, data: doc });
