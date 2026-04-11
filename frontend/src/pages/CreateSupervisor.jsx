@@ -6,6 +6,7 @@ import {
   getSupervisors,
   updateSupervisor,
   deleteSupervisor,
+  setSupervisorPassword,
 } from "../services/supervisorService";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
@@ -16,12 +17,15 @@ import {
   FiX,
   FiEdit2,
   FiTrash2,
+  FiKey,
 } from "react-icons/fi";
 
 export default function CreateSupervisor() {
   const { user } = useAuth();
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
+  const [autoGeneratePassword, setAutoGeneratePassword] = useState(true);
+  const [createPassword, setCreatePassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [list, setList] = useState([]);
   const [listLoading, setListLoading] = useState(true);
@@ -30,6 +34,10 @@ export default function CreateSupervisor() {
   const [editEmail, setEditEmail] = useState("");
   const [editUsername, setEditUsername] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [passwordTarget, setPasswordTarget] = useState(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
 
   const isAdmin = user?.role === "admin";
 
@@ -50,21 +58,24 @@ export default function CreateSupervisor() {
   }, [isAdmin, loadList]);
 
   useEffect(() => {
-    if (!modalOpen && !editId && !deleteTarget) return;
+    if (!modalOpen && !editId && !deleteTarget && !passwordTarget) return;
     const onEscape = (e) => {
       if (e.key === "Escape") {
         closeModal();
         closeEditModal();
         closeDeleteModal();
+        closePasswordModal();
       }
     };
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [modalOpen, editId, deleteTarget]);
+  }, [modalOpen, editId, deleteTarget, passwordTarget]);
 
   function openModal() {
     setEmail("");
     setUsername("");
+    setAutoGeneratePassword(true);
+    setCreatePassword("");
     setModalOpen(true);
   }
 
@@ -72,6 +83,8 @@ export default function CreateSupervisor() {
     setModalOpen(false);
     setEmail("");
     setUsername("");
+    setAutoGeneratePassword(true);
+    setCreatePassword("");
   }
 
   function openEditModal(s) {
@@ -94,6 +107,45 @@ export default function CreateSupervisor() {
     setDeleteTarget(null);
   }
 
+  function openPasswordModal(s) {
+    setPasswordTarget({ id: s._id, email: s.email });
+    setNewPassword("");
+    setConfirmPassword("");
+  }
+
+  function closePasswordModal() {
+    setPasswordTarget(null);
+    setNewPassword("");
+    setConfirmPassword("");
+  }
+
+  async function handlePasswordSubmit(e) {
+    e.preventDefault();
+    if (!passwordTarget?.id) return;
+    const p = newPassword;
+    const c = confirmPassword;
+    if (p.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+    if (p !== c) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    setPasswordSaving(true);
+    try {
+      await setSupervisorPassword(passwordTarget.id, p);
+      toast.success("Password updated for this supervisor.");
+      closePasswordModal();
+    } catch (err) {
+      toast.error(
+        err.response?.data?.message || "Failed to update password",
+      );
+    } finally {
+      setPasswordSaving(false);
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     const trimmedEmail = email.trim();
@@ -106,9 +158,24 @@ export default function CreateSupervisor() {
       toast.error("Username is required");
       return;
     }
+    if (!autoGeneratePassword) {
+      const p = createPassword;
+      if (p.length < 6) {
+        toast.error("Password must be at least 6 characters");
+        return;
+      }
+      if (p.length > 128) {
+        toast.error("Password must be at most 128 characters");
+        return;
+      }
+    }
     setLoading(true);
     try {
-      await createSupervisor(trimmedEmail, trimmedUsername);
+      await createSupervisor(
+        trimmedEmail,
+        trimmedUsername,
+        !autoGeneratePassword ? { password: createPassword } : {},
+      );
       toast.success(
         "Supervisor created. Credentials have been sent to their email.",
       );
@@ -205,7 +272,7 @@ export default function CreateSupervisor() {
           <h1 className="text-2xl font-bold text-slate-800">Supervisors</h1>
           <p className="mt-1 text-sm text-slate-500">
             Manage supervisors. Add new ones to send them login credentials by
-            email.
+            email. Use the key icon to set or reset a supervisor’s password.
           </p>
         </div>
         <Button
@@ -270,6 +337,15 @@ export default function CreateSupervisor() {
                         <div className="flex items-center justify-end gap-1">
                           <button
                             type="button"
+                            onClick={() => openPasswordModal(s)}
+                            className="rounded-lg p-2 text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                            aria-label="Set password"
+                            title="Set password"
+                          >
+                            <FiKey className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => openEditModal(s)}
                             className="rounded-lg p-2 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
                             aria-label="Edit"
@@ -325,32 +401,6 @@ export default function CreateSupervisor() {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-5 p-5">
-              <p className="text-sm text-slate-500">
-                A password will be generated and sent to their email.
-              </p>
-              <div>
-                <label
-                  htmlFor="supervisor-email"
-                  className="mb-1 block text-sm font-medium text-slate-600"
-                >
-                  Email address
-                </label>
-                <div className="relative flex items-center rounded-lg border border-slate-200 bg-white/80 shadow-sm transition-colors focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100">
-                  <div className="absolute left-0 pl-3 flex items-center pointer-events-none">
-                    <FiMail className="h-5 w-5 text-slate-400" />
-                  </div>
-                  <input
-                    id="supervisor-email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="supervisor@company.com"
-                    autoComplete="email"
-                    disabled={loading}
-                    className="w-full rounded-lg border-0 bg-transparent py-2 pl-10 pr-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0"
-                  />
-                </div>
-              </div>
               <div>
                 <label
                   htmlFor="supervisor-username"
@@ -374,6 +424,61 @@ export default function CreateSupervisor() {
                   />
                 </div>
               </div>
+              <div>
+                <label
+                  htmlFor="supervisor-email"
+                  className="mb-1 block text-sm font-medium text-slate-600"
+                >
+                  Email address
+                </label>
+                <div className="relative flex items-center rounded-lg border border-slate-200 bg-white/80 shadow-sm transition-colors focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100">
+                  <div className="absolute left-0 pl-3 flex items-center pointer-events-none">
+                    <FiMail className="h-5 w-5 text-slate-400" />
+                  </div>
+                  <input
+                    id="supervisor-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="supervisor@company.com"
+                    autoComplete="email"
+                    disabled={loading}
+                    className="w-full rounded-lg border-0 bg-transparent py-2 pl-10 pr-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0"
+                  />
+                </div>
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={autoGeneratePassword}
+                  onChange={(e) => {
+                    setAutoGeneratePassword(e.target.checked);
+                    if (e.target.checked) setCreatePassword("");
+                  }}
+                  disabled={loading}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                Auto-generate password
+              </label>
+              {!autoGeneratePassword && (
+                <div>
+                  <label
+                    htmlFor="create-supervisor-password"
+                    className="mb-1 block text-sm font-medium text-slate-600"
+                  >
+                    Password
+                  </label>
+                  <input
+                    id="create-supervisor-password"
+                    type="password"
+                    value={createPassword}
+                    onChange={(e) => setCreatePassword(e.target.value)}
+                    autoComplete="new-password"
+                    disabled={loading}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
+              )}
               <div className="flex gap-3 pt-1">
                 <Button
                   type="button"
@@ -497,6 +602,106 @@ export default function CreateSupervisor() {
                     <>
                       <FiEdit2 className="h-5 w-5" />
                       Save changes
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Set password modal */}
+      {passwordTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="password-modal-title"
+        >
+          <div
+            className="absolute inset-0 bg-slate-800/40 backdrop-blur-sm"
+            onClick={closePasswordModal}
+          />
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200/80 bg-white/90 backdrop-blur-md shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <h2
+                id="password-modal-title"
+                className="text-lg font-semibold text-slate-800"
+              >
+                Set password
+              </h2>
+              <button
+                type="button"
+                onClick={closePasswordModal}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                aria-label="Close"
+              >
+                <FiX className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handlePasswordSubmit} className="space-y-5 p-5">
+              <p className="text-sm text-slate-500">
+                Set a new login password for{" "}
+                <strong className="text-slate-700">{passwordTarget.email}</strong>
+                . They can sign in with this password immediately. Minimum 6
+                characters.
+              </p>
+              <div>
+                <label
+                  htmlFor="supervisor-new-password"
+                  className="mb-1 block text-sm font-medium text-slate-600"
+                >
+                  New password
+                </label>
+                <input
+                  id="supervisor-new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                  disabled={passwordSaving}
+                  className="w-full rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="supervisor-confirm-password"
+                  className="mb-1 block text-sm font-medium text-slate-600"
+                >
+                  Confirm password
+                </label>
+                <input
+                  id="supervisor-confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                  disabled={passwordSaving}
+                  className="w-full rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+              </div>
+              <div className="flex gap-3 pt-1">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={closePasswordModal}
+                  className="flex-1"
+                  disabled={passwordSaving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={passwordSaving}
+                  className="flex-1 inline-flex items-center justify-center gap-2"
+                >
+                  {passwordSaving ? (
+                    <>{spinner} Updating…</>
+                  ) : (
+                    <>
+                      <FiKey className="h-5 w-5" />
+                      Update password
                     </>
                   )}
                 </Button>

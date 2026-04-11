@@ -3,7 +3,7 @@
  * Usage: node scripts/createAdmin.js
  *
  * Admin credentials:
- *   Email: admin@connectteam.com
+ *   Email: admin@connecteam.com (see ADMIN_EMAIL below)
  *   Password: admin@123
  */
 

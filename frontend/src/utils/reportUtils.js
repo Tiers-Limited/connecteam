@@ -140,25 +140,17 @@ const SLATE_500 = [100, 116, 139];
 const SLATE_200 = [226, 232, 240];
 const SLATE_50 = [248, 250, 252];
 
-/** Build 4-column body: two label/value pairs per row (neat vertical scan). */
-function buildTwoColumnDetailBody(headers, rowVals) {
-  const pairs = headers.map((label, j) => [
+/** Build 2-column body: one Item / Detail pair per row. */
+function buildEmployeeReportDetailBody(headers, rowVals) {
+  return headers.map((label, j) => [
     String(label),
     String(rowVals[j] ?? ''),
   ]);
-  const body = [];
-  for (let i = 0; i < pairs.length; i += 2) {
-    const a = pairs[i];
-    const b = pairs[i + 1];
-    if (b) body.push([a[0], a[1], b[0], b[1]]);
-    else body.push([a[0], a[1], '', '']);
-  }
-  return body;
 }
 
 /**
  * Portrait PDF for “one employee” exports: branded header, employee title,
- * data as two columns of label/value pairs (four table columns), footer.
+ * data as one Item column and one Detail column, footer.
  * @param {object} p
  * @param {string[]} p.headers
  * @param {string[][]} p.rows
@@ -184,8 +176,8 @@ export function exportSingleEmployeeWeeklyPayoutPDF(p) {
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 16;
   const tableW = pageW - margin * 2;
-  const colLabel = tableW * 0.26;
-  const colVal = tableW * 0.24;
+  const colItem = tableW * 0.3;
+  const colDetail = tableW - colItem;
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
@@ -241,7 +233,7 @@ export function exportSingleEmployeeWeeklyPayoutPDF(p) {
 
   const drawDetailTable = (startY, body) => {
     autoTable(doc, {
-      head: [['Item', 'Details', 'Item', 'Details']],
+      head: [['Item', 'Detail']],
       body,
       startY,
       tableWidth: tableW,
@@ -263,16 +255,10 @@ export function exportSingleEmployeeWeeklyPayoutPDF(p) {
       columnStyles: {
         0: {
           fontStyle: 'bold',
-          cellWidth: colLabel,
+          cellWidth: colItem,
           fillColor: [SLATE_50[0], SLATE_50[1], SLATE_50[2]],
         },
-        1: { cellWidth: colVal, halign: 'left' },
-        2: {
-          fontStyle: 'bold',
-          cellWidth: colLabel,
-          fillColor: [SLATE_50[0], SLATE_50[1], SLATE_50[2]],
-        },
-        3: { cellWidth: colVal, halign: 'left' },
+        1: { cellWidth: colDetail, halign: 'left' },
       },
       margin: { left: margin, right: margin },
       didDrawPage: (data) => {
@@ -293,7 +279,7 @@ export function exportSingleEmployeeWeeklyPayoutPDF(p) {
   }
 
   if (rows.length === 1) {
-    const body = buildTwoColumnDetailBody(headers, rows[0]);
+    const body = buildEmployeeReportDetailBody(headers, rows[0]);
     drawDetailTable(y, body);
   } else {
     let cursorY = y;
@@ -311,7 +297,7 @@ export function exportSingleEmployeeWeeklyPayoutPDF(p) {
       doc.text(String(loc), margin, cursorY);
       cursorY += 5;
       doc.setTextColor(SLATE_800[0], SLATE_800[1], SLATE_800[2]);
-      const body = buildTwoColumnDetailBody(headers, rowVals);
+      const body = buildEmployeeReportDetailBody(headers, rowVals);
       drawDetailTable(cursorY, body);
     });
   }

@@ -27,7 +27,7 @@ function getSupervisorCredentialsHtml(username, password) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Your Supervisor Account - ConnectTeam</title>
+  <title>Your Supervisor Account - Corvia Tips</title>
 </head>
 <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f1f5f9;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9; padding: 40px 20px;">
@@ -36,7 +36,7 @@ function getSupervisorCredentialsHtml(username, password) {
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 480px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%); padding: 32px 32px 24px; text-align: center;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600; letter-spacing: -0.025em;">ConnectTeam</h1>
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600; letter-spacing: -0.025em;">Corvia Tips</h1>
               <p style="margin: 8px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">Your supervisor account</p>
             </td>
           </tr>
@@ -59,12 +59,12 @@ function getSupervisorCredentialsHtml(username, password) {
                   </tr>
                 </table>
               </div>
-              <p style="margin: 0; color: #64748b; font-size: 13px; line-height: 1.5;">Sign in at the ConnectTeam login page. We recommend changing your password after your first login.</p>
+              <p style="margin: 0; color: #64748b; font-size: 13px; line-height: 1.5;">Sign in at the Corvia Tips login page. We recommend changing your password after your first login.</p>
             </td>
           </tr>
           <tr>
             <td style="padding: 16px 32px 24px; border-top: 1px solid #e2e8f0;">
-              <p style="margin: 0; color: #94a3b8; font-size: 12px; text-align: center;">© ConnectTeam. This is an automated message. Keep your credentials secure.</p>
+              <p style="margin: 0; color: #94a3b8; font-size: 12px; text-align: center;">© Corvia Tips. This is an automated message. Keep your credentials secure.</p>
             </td>
           </tr>
         </table>
@@ -80,10 +80,10 @@ async function sendSupervisorCredentials(toEmail, username, password) {
   const from = emailFrom || emailUser;
   const transporter = getTransporter();
   await transporter.sendMail({
-    from: `ConnectTeam <${from}>`,
+    from: `Corvia Tips <${from}>`,
     to: toEmail,
-    subject: 'Your ConnectTeam Supervisor Account',
-    text: `Your supervisor account has been created.\n\nUsername: ${username}\nPassword: ${password}\n\nSign in at the ConnectTeam login page. We recommend changing your password after your first login.`,
+    subject: 'Your Corvia Tips Supervisor Account',
+    text: `Your supervisor account has been created.\n\nUsername: ${username}\nPassword: ${password}\n\nSign in at the Corvia Tips login page. We recommend changing your password after your first login.`,
     html: getSupervisorCredentialsHtml(username, password),
   });
 }
@@ -97,7 +97,7 @@ function getResetPinHtml(pin) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Password Reset - ConnectTeam</title>
+  <title>Password Reset - Corvia Tips</title>
 </head>
 <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f1f5f9;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9; padding: 40px 20px;">
@@ -106,7 +106,7 @@ function getResetPinHtml(pin) {
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 480px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1); overflow: hidden;">
           <tr>
             <td style="background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%); padding: 32px 32px 24px; text-align: center;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600; letter-spacing: -0.025em;">ConnectTeam</h1>
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600; letter-spacing: -0.025em;">Corvia Tips</h1>
               <p style="margin: 8px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">Password reset</p>
             </td>
           </tr>
@@ -122,7 +122,7 @@ function getResetPinHtml(pin) {
           </tr>
           <tr>
             <td style="padding: 16px 32px 24px; border-top: 1px solid #e2e8f0;">
-              <p style="margin: 0; color: #94a3b8; font-size: 12px; text-align: center;">© ConnectTeam. This is an automated message.</p>
+              <p style="margin: 0; color: #94a3b8; font-size: 12px; text-align: center;">© Corvia Tips. This is an automated message.</p>
             </td>
           </tr>
         </table>
@@ -138,9 +138,9 @@ async function sendResetPinEmail(toEmail, pin) {
   const from = emailFrom || emailUser;
   const transporter = getTransporter();
   await transporter.sendMail({
-    from: `ConnectTeam <${from}>`,
+    from: `Corvia Tips <${from}>`,
     to: toEmail,
-    subject: 'Your password reset PIN - ConnectTeam',
+    subject: 'Your password reset PIN - Corvia Tips',
     text: `Your password reset PIN is: ${pin}\n\nThis PIN expires in ${PIN_EXPIRY_MINUTES} minutes. Enter it on the reset password page to set a new password.\n\nIf you didn't request this, you can ignore this email.`,
     html: getResetPinHtml(pin),
   });

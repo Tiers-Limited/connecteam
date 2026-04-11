@@ -1,8 +1,8 @@
-# ConnectTeam
+# Corvia Tips
 
-## ConnectTeam API – How It Is Called and What Data Is Used
+## Connecteam integration – how it is called and what data is used
 
-All ConnectTeam API calls use the same base URL (`CONNECTEAMS_BASE`, default `https://api.connecteam.com`) and header `X-API-KEY: <CONNECTEAMS_API_KEY>`. The backend calls the APIs in a fixed order when fetching time entries (used by Weekly Tardiness, Time Entries sync, Daily Tips, and clock-in times).
+All Connecteam API calls use the same base URL (`CONNECTEAMS_BASE`, default `https://api.connecteam.com`) and header `X-API-KEY: <CONNECTEAMS_API_KEY>`. The Corvia Tips backend calls these APIs in a fixed order when fetching time entries (used by Weekly Tardiness, Time Entries sync, Daily Tips, and clock-in times).
 
 ### Call order and parameters
 

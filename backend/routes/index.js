@@ -14,7 +14,7 @@ const { authMiddleware } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
 
-router.get('/', (req, res) => res.json({ ok: true, message: 'ConnectTeam API' }));
+router.get('/', (req, res) => res.json({ ok: true, message: 'Corvia Tips API' }));
 router.use('/auth', authRoutes);
 
 router.use(authMiddleware);
