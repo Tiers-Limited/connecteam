@@ -90,6 +90,18 @@ function netTipsAfterDeductions(allocation) {
   return Math.max(0, Math.round((fin - share) * 100) / 100);
 }
 
+function displayedAmTips(allocation) {
+  const am = Number(allocation?.amTips) || 0;
+  const manualAm = Number(allocation?.manualAmTips) || 0;
+  return Math.round((am + manualAm) * 100) / 100;
+}
+
+function displayedPmTips(allocation) {
+  const pm = Number(allocation?.pmTips) || 0;
+  const manualPm = Number(allocation?.manualPmTips) || 0;
+  return Math.round((pm + manualPm) * 100) / 100;
+}
+
 function dailyRedistributionCellTitle(allocation, redistributionPool) {
   const redIn = Number(allocation?.redistributeDeduction) || 0;
   const share = Number(allocation?.redistributionShare) || 0;
@@ -103,7 +115,7 @@ function dailyRedistributionCellTitle(allocation, redistributionPool) {
   if (pool > 0) {
     return "No share for this row; pool is split only among eligible staff";
   }
-  return "Tips received from redistribution pool (aligned with Weekly Payout tardiness redistribution)";
+  return "Tips received from redistribution pool (aligned with Weekly Payout manual redistribution)";
 }
 
 export default function DailyTips() {
@@ -625,8 +637,8 @@ export default function DailyTips() {
           (acc, a) => ({
             amWorkedHours: acc.amWorkedHours + (Number(a.amWorkedHours) || 0),
             pmWorkedHours: acc.pmWorkedHours + (Number(a.pmWorkedHours) || 0),
-            amTips: acc.amTips + (Number(a.amTips) || 0),
-            pmTips: acc.pmTips + (Number(a.pmTips) || 0),
+            amTips: acc.amTips + displayedAmTips(a),
+            pmTips: acc.pmTips + displayedPmTips(a),
             netTips: acc.netTips + netTipsAfterDeductions(a),
             redistributionShare:
               acc.redistributionShare +
@@ -1583,7 +1595,7 @@ export default function DailyTips() {
                             "AM tips",
                             "PM tips",
                             "Net tips",
-                            "Tardiness Redistribution",
+                            "Manual Redistribution",
                             "Total",
                           ]
                         : [
@@ -1593,7 +1605,7 @@ export default function DailyTips() {
                             "Hours",
                             "Tips",
                             "Net tips",
-                            "Tardiness Redistribution",
+                            "Manual Redistribution",
                             "Total",
                           ];
                       const tail = (a) => [
@@ -1611,12 +1623,8 @@ export default function DailyTips() {
                               a.clockOut ?? "–",
                               a.amWorkedHours?.toFixed(2) ?? "",
                               a.pmWorkedHours?.toFixed(2) ?? "",
-                              a.amTips != null
-                                ? `$${Number(a.amTips).toFixed(2)}`
-                                : "",
-                              a.pmTips != null
-                                ? `$${Number(a.pmTips).toFixed(2)}`
-                                : "",
+                              `$${displayedAmTips(a).toFixed(2)}`,
+                              `$${displayedPmTips(a).toFixed(2)}`,
                               ...tail(a),
                             ]
                           : [
@@ -1624,9 +1632,7 @@ export default function DailyTips() {
                               a.clockIn ?? "–",
                               a.clockOut ?? "–",
                               a.amWorkedHours?.toFixed(2) ?? "",
-                              a.amTips != null
-                                ? `$${Number(a.amTips).toFixed(2)}`
-                                : "",
+                              `$${displayedAmTips(a).toFixed(2)}`,
                               ...tail(a),
                             ],
                       );
@@ -1680,7 +1686,7 @@ export default function DailyTips() {
                             "AM tips",
                             "PM tips",
                             "Net tips",
-                            "Tardiness Redistribution",
+                            "Manual Redistribution",
                             "Total",
                           ]
                         : [
@@ -1690,7 +1696,7 @@ export default function DailyTips() {
                             "Hours",
                             "Tips",
                             "Net tips",
-                            "Tardiness Redistribution",
+                            "Manual Redistribution",
                             "Total",
                           ];
                       const tail = (a) => [
@@ -1708,12 +1714,8 @@ export default function DailyTips() {
                               a.clockOut ?? "–",
                               a.amWorkedHours?.toFixed(2) ?? "",
                               a.pmWorkedHours?.toFixed(2) ?? "",
-                              a.amTips != null
-                                ? `$${Number(a.amTips).toFixed(2)}`
-                                : "",
-                              a.pmTips != null
-                                ? `$${Number(a.pmTips).toFixed(2)}`
-                                : "",
+                              `$${displayedAmTips(a).toFixed(2)}`,
+                              `$${displayedPmTips(a).toFixed(2)}`,
                               ...tail(a),
                             ]
                           : [
@@ -1721,9 +1723,7 @@ export default function DailyTips() {
                               a.clockIn ?? "–",
                               a.clockOut ?? "–",
                               a.amWorkedHours?.toFixed(2) ?? "",
-                              a.amTips != null
-                                ? `$${Number(a.amTips).toFixed(2)}`
-                                : "",
+                              `$${displayedAmTips(a).toFixed(2)}`,
                               ...tail(a),
                             ],
                       );
@@ -1814,7 +1814,7 @@ export default function DailyTips() {
                     className="pb-2 text-right font-medium text-slate-700"
                     title="Equal share of Deduct & Redistribute pool (same role as Weekly Payout)"
                   >
-                    Tardiness Redistribution
+                    Manual Redistribution
                   </th>
                   <th className="pb-2 text-right font-medium text-slate-700">
                     Total
@@ -1848,10 +1848,10 @@ export default function DailyTips() {
                           {a.pmWorkedHours?.toFixed(2)}
                         </td>
                         <td className="py-2 text-right tabular-nums text-slate-600">
-                          ${a.amTips?.toFixed(2)}
+                          ${displayedAmTips(a).toFixed(2)}
                         </td>
                         <td className="py-2 text-right tabular-nums text-slate-600">
-                          ${a.pmTips?.toFixed(2)}
+                          ${displayedPmTips(a).toFixed(2)}
                         </td>
                       </>
                     ) : (
@@ -1860,7 +1860,7 @@ export default function DailyTips() {
                           {a.amWorkedHours?.toFixed(2)}
                         </td>
                         <td className="py-2 text-right tabular-nums text-slate-600">
-                          ${a.amTips?.toFixed(2)}
+                          ${displayedAmTips(a).toFixed(2)}
                         </td>
                       </>
                     )}
@@ -1994,7 +1994,7 @@ export default function DailyTips() {
                   </strong>
                 </span>
                 <span>
-                  Tardiness redistribution:{" "}
+                  Manual redistribution:{" "}
                   <strong className="text-emerald-700">
                     ${totals.redistributionShare.toFixed(2)}
                   </strong>
