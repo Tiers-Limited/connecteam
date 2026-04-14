@@ -107,10 +107,10 @@ function dailyRedistributionCellTitle(allocation, redistributionPool) {
   const share = Number(allocation?.redistributionShare) || 0;
   const pool = Number(redistributionPool) || 0;
   if (redIn > 0) {
-    return "Amount withheld for Deduct & Redistribute; split equally among other eligible employees";
+    return "Amount withheld for Deduct & Redistribute; redistributed to other eligible employees by worked hours";
   }
   if (share > 0) {
-    return "Tips received from redistribution pool (equal split among employees not subject to Deduct & Redistribute)";
+    return "Tips received from redistribution pool (distributed by worked hours among employees not subject to Deduct & Redistribute)";
   }
   if (pool > 0) {
     return "No share for this row; pool is split only among eligible staff";
@@ -639,24 +639,47 @@ export default function DailyTips() {
             pmWorkedHours: acc.pmWorkedHours + (Number(a.pmWorkedHours) || 0),
             amTips: acc.amTips + displayedAmTips(a),
             pmTips: acc.pmTips + displayedPmTips(a),
-            netTips: acc.netTips + netTipsAfterDeductions(a),
+            deductions:
+              acc.deductions +
+              (Number(a.cashAdvanceDeduction) || 0) +
+              (Number(a.redistributeDeduction) || 0),
             redistributionShare:
               acc.redistributionShare +
               (Number(a.redistributionShare) || 0),
-            totalTips:
-              acc.totalTips + (Number(a.finalTips ?? a.totalTips) || 0),
+            totalTips: acc.totalTips + (Number(a.finalTips ?? a.totalTips) || 0),
           }),
           {
             amWorkedHours: 0,
             pmWorkedHours: 0,
             amTips: 0,
             pmTips: 0,
-            netTips: 0,
+            deductions: 0,
             redistributionShare: 0,
             totalTips: 0,
           },
         )
       : null;
+
+  const normalizedTotals = totals
+    ? (() => {
+        const amTips = Math.round(totals.amTips * 100) / 100;
+        const pmTips = Math.round(totals.pmTips * 100) / 100;
+        const deductions = Math.round(totals.deductions * 100) / 100;
+        const redistributionShare =
+          Math.round(totals.redistributionShare * 100) / 100;
+        const netTips = Math.round((amTips + pmTips - deductions) * 100) / 100;
+        const totalTips = Math.round((netTips + redistributionShare) * 100) / 100;
+        return {
+          ...totals,
+          amTips,
+          pmTips,
+          deductions,
+          redistributionShare,
+          netTips,
+          totalTips,
+        };
+      })()
+    : null;
 
   const openAdjustModal = useCallback(
     (row) => {
@@ -1514,7 +1537,7 @@ export default function DailyTips() {
               <strong className="text-indigo-900">
                 ${Number(calculation.inputs.redistributionPool).toFixed(2)}
               </strong>{" "}
-              (deducted from selected employee(s) and redistributed equally to others)
+              (deducted from selected employee(s) and redistributed to others by worked hours)
             </div>
           )}
 
@@ -1636,30 +1659,30 @@ export default function DailyTips() {
                               ...tail(a),
                             ],
                       );
-                      if (totals) {
+                      if (normalizedTotals) {
                         rows.push(
                           showShiftSplit
                             ? [
                                 "Total",
                                 "",
                                 "",
-                                totals.amWorkedHours.toFixed(2),
-                                totals.pmWorkedHours.toFixed(2),
-                                `$${totals.amTips.toFixed(2)}`,
-                                `$${totals.pmTips.toFixed(2)}`,
-                                `$${totals.netTips.toFixed(2)}`,
-                                `$${totals.redistributionShare.toFixed(2)}`,
-                                `$${totals.totalTips.toFixed(2)}`,
+                                normalizedTotals.amWorkedHours.toFixed(2),
+                                normalizedTotals.pmWorkedHours.toFixed(2),
+                                `$${normalizedTotals.amTips.toFixed(2)}`,
+                                `$${normalizedTotals.pmTips.toFixed(2)}`,
+                                `$${normalizedTotals.netTips.toFixed(2)}`,
+                                `$${normalizedTotals.redistributionShare.toFixed(2)}`,
+                                `$${normalizedTotals.totalTips.toFixed(2)}`,
                               ]
                             : [
                                 "Total",
                                 "",
                                 "",
-                                totals.amWorkedHours.toFixed(2),
-                                `$${totals.amTips.toFixed(2)}`,
-                                `$${totals.netTips.toFixed(2)}`,
-                                `$${totals.redistributionShare.toFixed(2)}`,
-                                `$${totals.totalTips.toFixed(2)}`,
+                                normalizedTotals.amWorkedHours.toFixed(2),
+                                `$${normalizedTotals.amTips.toFixed(2)}`,
+                                `$${normalizedTotals.netTips.toFixed(2)}`,
+                                `$${normalizedTotals.redistributionShare.toFixed(2)}`,
+                                `$${normalizedTotals.totalTips.toFixed(2)}`,
                               ],
                         );
                       }
@@ -1727,30 +1750,30 @@ export default function DailyTips() {
                               ...tail(a),
                             ],
                       );
-                      if (totals) {
+                      if (normalizedTotals) {
                         rows.push(
                           showShiftSplit
                             ? [
                                 "Total",
                                 "",
                                 "",
-                                totals.amWorkedHours.toFixed(2),
-                                totals.pmWorkedHours.toFixed(2),
-                                `$${totals.amTips.toFixed(2)}`,
-                                `$${totals.pmTips.toFixed(2)}`,
-                                `$${totals.netTips.toFixed(2)}`,
-                                `$${totals.redistributionShare.toFixed(2)}`,
-                                `$${totals.totalTips.toFixed(2)}`,
+                                normalizedTotals.amWorkedHours.toFixed(2),
+                                normalizedTotals.pmWorkedHours.toFixed(2),
+                                `$${normalizedTotals.amTips.toFixed(2)}`,
+                                `$${normalizedTotals.pmTips.toFixed(2)}`,
+                                `$${normalizedTotals.netTips.toFixed(2)}`,
+                                `$${normalizedTotals.redistributionShare.toFixed(2)}`,
+                                `$${normalizedTotals.totalTips.toFixed(2)}`,
                               ]
                             : [
                                 "Total",
                                 "",
                                 "",
-                                totals.amWorkedHours.toFixed(2),
-                                `$${totals.amTips.toFixed(2)}`,
-                                `$${totals.netTips.toFixed(2)}`,
-                                `$${totals.redistributionShare.toFixed(2)}`,
-                                `$${totals.totalTips.toFixed(2)}`,
+                                normalizedTotals.amWorkedHours.toFixed(2),
+                                `$${normalizedTotals.amTips.toFixed(2)}`,
+                                `$${normalizedTotals.netTips.toFixed(2)}`,
+                                `$${normalizedTotals.redistributionShare.toFixed(2)}`,
+                                `$${normalizedTotals.totalTips.toFixed(2)}`,
                               ],
                         );
                       }
@@ -1892,7 +1915,7 @@ export default function DailyTips() {
                   </tr>
                 ))}
               </tbody>
-              {totals && (
+              {normalizedTotals && (
                 <tfoot className="border-t-2 border-slate-300">
                   <tr className="bg-slate-100 font-semibold">
                     <td className="py-3 pl-2 text-slate-800">Total</td>
@@ -1900,36 +1923,36 @@ export default function DailyTips() {
                     {showShiftSplit ? (
                       <>
                         <td className="py-3 text-right tabular-nums text-slate-800">
-                          {totals.amWorkedHours.toFixed(2)}
+                          {normalizedTotals.amWorkedHours.toFixed(2)}
                         </td>
                         <td className="py-3 text-right tabular-nums text-slate-800">
-                          {totals.pmWorkedHours.toFixed(2)}
+                          {normalizedTotals.pmWorkedHours.toFixed(2)}
                         </td>
                         <td className="py-3 text-right tabular-nums text-slate-800">
-                          ${totals.amTips.toFixed(2)}
+                          ${normalizedTotals.amTips.toFixed(2)}
                         </td>
                         <td className="py-3 text-right tabular-nums text-slate-800">
-                          ${totals.pmTips.toFixed(2)}
+                          ${normalizedTotals.pmTips.toFixed(2)}
                         </td>
                       </>
                     ) : (
                       <>
                         <td className="py-3 text-right tabular-nums text-slate-800">
-                          {totals.amWorkedHours.toFixed(2)}
+                          {normalizedTotals.amWorkedHours.toFixed(2)}
                         </td>
                         <td className="py-3 text-right tabular-nums text-slate-800">
-                          ${totals.amTips.toFixed(2)}
+                          ${normalizedTotals.amTips.toFixed(2)}
                         </td>
                       </>
                     )}
                     <td className="py-3 text-right tabular-nums text-slate-800">
-                      ${totals.netTips.toFixed(2)}
+                      ${normalizedTotals.netTips.toFixed(2)}
                     </td>
                     <td className="py-3 text-right tabular-nums text-emerald-700">
-                      ${totals.redistributionShare.toFixed(2)}
+                      ${normalizedTotals.redistributionShare.toFixed(2)}
                     </td>
                     <td className="py-3 text-right tabular-nums text-slate-800">
-                      ${totals.totalTips.toFixed(2)}
+                      ${normalizedTotals.totalTips.toFixed(2)}
                     </td>
                     <td className="py-3" />
                   </tr>
@@ -1938,7 +1961,7 @@ export default function DailyTips() {
             </table>
           </div>
 
-          {totals && (
+          {normalizedTotals && (
             <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-3">
               <p className="mb-2 text-sm font-semibold text-slate-700">
                 Totals
@@ -1949,25 +1972,25 @@ export default function DailyTips() {
                     <span>
                       AM hours:{" "}
                       <strong className="text-slate-800">
-                        {totals.amWorkedHours.toFixed(2)}
+                        {normalizedTotals.amWorkedHours.toFixed(2)}
                       </strong>
                     </span>
                     <span>
                       PM hours:{" "}
                       <strong className="text-slate-800">
-                        {totals.pmWorkedHours.toFixed(2)}
+                        {normalizedTotals.pmWorkedHours.toFixed(2)}
                       </strong>
                     </span>
                     <span>
                       AM tips:{" "}
                       <strong className="text-slate-800">
-                        ${totals.amTips.toFixed(2)}
+                        ${normalizedTotals.amTips.toFixed(2)}
                       </strong>
                     </span>
                     <span>
                       PM tips:{" "}
                       <strong className="text-slate-800">
-                        ${totals.pmTips.toFixed(2)}
+                        ${normalizedTotals.pmTips.toFixed(2)}
                       </strong>
                     </span>
                   </>
@@ -1976,13 +1999,13 @@ export default function DailyTips() {
                     <span>
                       Hours:{" "}
                       <strong className="text-slate-800">
-                        {totals.amWorkedHours.toFixed(2)}
+                        {normalizedTotals.amWorkedHours.toFixed(2)}
                       </strong>
                     </span>
                     <span>
                       Tips:{" "}
                       <strong className="text-slate-800">
-                        ${totals.amTips.toFixed(2)}
+                        ${normalizedTotals.amTips.toFixed(2)}
                       </strong>
                     </span>
                   </>
@@ -1990,19 +2013,19 @@ export default function DailyTips() {
                 <span>
                   Net tips (after deductions):{" "}
                   <strong className="text-slate-800">
-                    ${totals.netTips.toFixed(2)}
+                    ${normalizedTotals.netTips.toFixed(2)}
                   </strong>
                 </span>
                 <span>
                   Manual redistribution:{" "}
                   <strong className="text-emerald-700">
-                    ${totals.redistributionShare.toFixed(2)}
+                    ${normalizedTotals.redistributionShare.toFixed(2)}
                   </strong>
                 </span>
                 <span>
                   Total (final):{" "}
                   <strong className="text-slate-800">
-                    ${totals.totalTips.toFixed(2)}
+                    ${normalizedTotals.totalTips.toFixed(2)}
                   </strong>
                 </span>
               </div>
@@ -2126,7 +2149,7 @@ export default function DailyTips() {
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">
                   Cash Advance is deducted only from this employee. Deduct &amp; Redistribute is deducted
-                  from this employee then split equally across the other employees.
+                  from this employee then redistributed across other employees based on worked hours.
                 </p>
               </div>
               <button
@@ -2155,7 +2178,7 @@ export default function DailyTips() {
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-500">
-                  Deduct &amp; Redistribute equally ($)
+                  Deduct &amp; Redistribute ($)
                 </label>
                 <input
                   type="number"

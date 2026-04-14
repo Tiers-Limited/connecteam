@@ -82,6 +82,89 @@ function roundMoney4(value) {
   return Math.round(value * 10000) / 10000;
 }
 
+function employeeWorkedHoursForRedistribution(row) {
+  const am = Number(row?.amWorkedHours ?? row?.amHours) || 0;
+  const pm = Number(row?.pmWorkedHours ?? row?.pmHours) || 0;
+  return Math.max(0, am + pm);
+}
+
+function computeHourWeightedRedistributionShares(employeeAllocations, redistributionExcluded, redistributionPool) {
+  const recipients = (employeeAllocations || []).filter(
+    (r) => r.employeeId && !redistributionExcluded.has(r.employeeId.toString()),
+  );
+
+  if (recipients.length === 0 || redistributionPool <= 0) {
+    return {
+      recipients,
+      sharesByEmployeeId: new Map(),
+    };
+  }
+
+  const poolCents = Math.max(0, Math.round(redistributionPool * 100));
+  if (poolCents === 0) {
+    return {
+      recipients,
+      sharesByEmployeeId: new Map(),
+    };
+  }
+
+  const recipientRows = recipients.map((row) => ({
+    row,
+    key: row.employeeId.toString(),
+    hours: employeeWorkedHoursForRedistribution(row),
+  }));
+
+  const totalRecipientHours = recipients.reduce(
+    (sum, row) => sum + employeeWorkedHoursForRedistribution(row),
+    0,
+  );
+
+  // Fallback to equal split only when recipient hours are all zero.
+  if (totalRecipientHours <= 0) {
+    const baseCents = Math.floor(poolCents / recipientRows.length);
+    let remainder = poolCents - baseCents * recipientRows.length;
+    const sorted = recipientRows.slice().sort((a, b) => a.key.localeCompare(b.key));
+    const sharesByEmployeeId = new Map();
+    for (const item of sorted) {
+      const extra = remainder > 0 ? 1 : 0;
+      if (remainder > 0) remainder -= 1;
+      sharesByEmployeeId.set(item.key, (baseCents + extra) / 100);
+    }
+    return { recipients, sharesByEmployeeId };
+  }
+
+  const weighted = recipientRows.map((item) => {
+    const exactCents = (item.hours / totalRecipientHours) * poolCents;
+    const floorCents = Math.floor(exactCents);
+    return {
+      ...item,
+      exactCents,
+      floorCents,
+      fraction: exactCents - floorCents,
+    };
+  });
+
+  const floorTotal = weighted.reduce((sum, item) => sum + item.floorCents, 0);
+  let remainder = poolCents - floorTotal;
+  const distributionOrder = weighted
+    .slice()
+    .sort((a, b) => {
+      if (b.fraction !== a.fraction) return b.fraction - a.fraction;
+      return a.key.localeCompare(b.key);
+    });
+  for (let i = 0; i < distributionOrder.length && remainder > 0; i += 1) {
+    distributionOrder[i].floorCents += 1;
+    remainder -= 1;
+  }
+
+  const sharesByEmployeeId = new Map();
+  for (const item of weighted) {
+    sharesByEmployeeId.set(item.key, item.floorCents / 100);
+  }
+
+  return { recipients, sharesByEmployeeId };
+}
+
 /**
  * 4% production pool is taken from total gross (AM + PM). Each shift’s share of the pool
  * is proportional to that shift’s gross, so:
@@ -468,16 +551,14 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     redistributionExcluded.add(empKey);
   }
 
-  const eligibleRecipients = employeeAllocations.filter(
-    (r) => r.employeeId && !redistributionExcluded.has(r.employeeId.toString())
-  );
-  const equalShare = eligibleRecipients.length > 0 ? redistributionPool / eligibleRecipients.length : 0;
+  const { sharesByEmployeeId } =
+    computeHourWeightedRedistributionShares(employeeAllocations, redistributionExcluded, redistributionPool);
 
   for (const r of employeeAllocations) {
     const empKey = r.employeeId?.toString?.() || '';
     const cashAdvance = cashAdvanceByEmp.get(empKey) || 0;
     const redistributeDeduction = redistributeByEmp.get(empKey) || 0;
-    const redistributionShare = eligibleRecipients.length > 0 && empKey && !redistributionExcluded.has(empKey) ? equalShare : 0;
+    const redistributionShare = sharesByEmployeeId.get(empKey) || 0;
 
     const finalTipsRaw = (Number(r.totalTips) || 0) - cashAdvance - redistributeDeduction + redistributionShare;
     const finalTips = Math.max(0, finalTipsRaw);
@@ -790,17 +871,14 @@ async function getDailyTipCalculationSnapshot(locationId, date) {
     };
   });
 
-  const eligibleRecipients = employeeAllocations.filter(
-    (r) => r.employeeId && !redistributionExcluded.has(r.employeeId.toString()),
-  );
-  const equalShare = eligibleRecipients.length > 0 ? redistributionPool / eligibleRecipients.length : 0;
+  const { sharesByEmployeeId } =
+    computeHourWeightedRedistributionShares(employeeAllocations, redistributionExcluded, redistributionPool);
 
   for (const r of employeeAllocations) {
     const empKey = r.employeeId?.toString?.() || '';
     const cashAdvance = cashAdvanceByEmp.get(empKey) || 0;
     const redistributeDeduction = redistributeByEmp.get(empKey) || 0;
-    const redistributionShare =
-      eligibleRecipients.length > 0 && empKey && !redistributionExcluded.has(empKey) ? equalShare : 0;
+    const redistributionShare = sharesByEmployeeId.get(empKey) || 0;
     const finalTipsRaw =
       (Number(r.totalTips) || 0) - cashAdvance - redistributeDeduction + redistributionShare;
     r.cashAdvanceDeduction = roundMoney(cashAdvance);
