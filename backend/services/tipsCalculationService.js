@@ -88,6 +88,75 @@ function employeeWorkedHoursForRedistribution(row) {
   return Math.max(0, am + pm);
 }
 
+function weightedHoursForTipRate(employeeHoursMap) {
+  let totalWeightedAMHours = 0;
+  let totalWeightedPMHours = 0;
+  const multiplierByKey = new Map();
+
+  for (const [key, row] of employeeHoursMap.entries()) {
+    const jobMultiplier = getJobTipMultiplier(row.jobTitle);
+    multiplierByKey.set(key, jobMultiplier);
+    totalWeightedAMHours += (Number(row.amHours) || 0) * jobMultiplier;
+    totalWeightedPMHours += (Number(row.pmHours) || 0) * jobMultiplier;
+  }
+
+  return {
+    totalWeightedAMHours,
+    totalWeightedPMHours,
+    multiplierByKey,
+  };
+}
+
+function allocateRoundedByLargestRemainder(rawRows, targetTotal) {
+  const targetCents = Math.max(0, Math.round((Number(targetTotal) || 0) * 100));
+  if (!Array.isArray(rawRows) || rawRows.length === 0) {
+    return [];
+  }
+
+  const seeded = rawRows.map((value, index) => {
+    const safeValue = Math.max(0, Number(value) || 0);
+    const exactCents = safeValue * 100;
+    const floorCents = Math.floor(exactCents);
+    return {
+      index,
+      floorCents,
+      fraction: exactCents - floorCents,
+    };
+  });
+
+  const floorTotal = seeded.reduce((sum, row) => sum + row.floorCents, 0);
+  let remainder = targetCents - floorTotal;
+
+  const ordered = seeded
+    .slice()
+    .sort((a, b) => {
+      if (b.fraction !== a.fraction) return b.fraction - a.fraction;
+      return a.index - b.index;
+    });
+
+  for (let i = 0; i < ordered.length && remainder > 0; i += 1) {
+    ordered[i].floorCents += 1;
+    remainder -= 1;
+  }
+
+  // Safety for over-allocation edge cases caused by floating noise.
+  if (remainder < 0) {
+    const reverse = ordered.slice().reverse();
+    for (let i = 0; i < reverse.length && remainder < 0; i += 1) {
+      if (reverse[i].floorCents > 0) {
+        reverse[i].floorCents -= 1;
+        remainder += 1;
+      }
+    }
+  }
+
+  const out = new Array(rawRows.length).fill(0);
+  for (const row of ordered) {
+    out[row.index] = row.floorCents / 100;
+  }
+  return out;
+}
+
 function computeHourWeightedRedistributionShares(employeeAllocations, redistributionExcluded, redistributionPool) {
   const recipients = (employeeAllocations || []).filter(
     (r) => r.employeeId && !redistributionExcluded.has(r.employeeId.toString()),
@@ -493,41 +562,75 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   const adjustedDistributableAM = isTheCove ? Math.max(0, distributableAM - combinedManualTips) : Math.max(0, distributableAM - manualAMTipsTotal);
   const adjustedDistributablePM = isTheCove ? 0 : Math.max(0, distributablePM - manualPMTipsTotal);
 
-  // Step 8: Tip rate (guardrail: 0 if no hours; no rounding here)
-  const amTipRate = totalAMHours > 0 ? adjustedDistributableAM / totalAMHours : 0;
-  const pmTipRate = isTheCove ? 0 : (totalPMHours > 0 ? adjustedDistributablePM / totalPMHours : 0);
+  // Step 8: Tip rate (guardrail: 0 if no weighted hours; no rounding here)
+  // Use multiplier-weighted hours so the allocated AM/PM totals match distributables.
+  const {
+    totalWeightedAMHours,
+    totalWeightedPMHours,
+    multiplierByKey,
+  } = weightedHoursForTipRate(employeeHours);
+  const amTipRate =
+    totalWeightedAMHours > 0 ? adjustedDistributableAM / totalWeightedAMHours : 0;
+  const pmTipRate = isTheCove
+    ? 0
+    : totalWeightedPMHours > 0
+      ? adjustedDistributablePM / totalWeightedPMHours
+      : 0;
 
   // Step 9: Employee tip allocation; round only at output (2 decimals)
   // Apply job-based multiplier to tips
-  const employeeAllocations = [];
-  for (const row of employeeHours.values()) {
-    const amTips = row.amHours * amTipRate;
-    const pmTips = row.pmHours * pmTipRate;
-    const totalCalculated = amTips + pmTips;
-    
-    // Apply job-based multiplier
-    const jobMultiplier = getJobTipMultiplier(row.jobTitle);
-    const multipliedAmTips = amTips * jobMultiplier;
-    const multipliedPmTips = pmTips * jobMultiplier;
-    const multipliedTotalCalculated = multipliedAmTips + multipliedPmTips;
-    
-    const totalTips = multipliedTotalCalculated + (row.manualAmTips || 0) + (row.manualPmTips || 0);
-    employeeAllocations.push({
+  const allocationDrafts = [];
+  for (const [mapKey, row] of employeeHours.entries()) {
+    const jobMultiplier = multiplierByKey.get(mapKey) ?? getJobTipMultiplier(row.jobTitle);
+    const amTipsRaw = row.amHours * amTipRate * jobMultiplier;
+    const pmTipsRaw = row.pmHours * pmTipRate * jobMultiplier;
+    allocationDrafts.push({
       employeeId: row.employeeId,
       employeeName: row.employeeName,
       jobTitle: row.jobTitle || null,
       jobTipMultiplier: jobMultiplier,
       clockIn: row.clockIn || null,
       clockOut: row.clockOut || null,
-      amWorkedHours: roundMoney(row.amHours),
-      pmWorkedHours: roundMoney(row.pmHours),
-      amTips: roundMoney(multipliedAmTips),
-      pmTips: roundMoney(multipliedPmTips),
-      manualAmTips: roundMoney(row.manualAmTips || 0),
-      manualPmTips: roundMoney(row.manualPmTips || 0),
-      totalTips: roundMoney(totalTips),
+      amWorkedHours: row.amHours,
+      pmWorkedHours: row.pmHours,
+      amTipsRaw,
+      pmTipsRaw,
+      manualAmTipsRaw: row.manualAmTips || 0,
+      manualPmTipsRaw: row.manualPmTips || 0,
     });
   }
+
+  const roundedAmTips = allocateRoundedByLargestRemainder(
+    allocationDrafts.map((r) => r.amTipsRaw),
+    adjustedDistributableAM,
+  );
+  const roundedPmTips = allocateRoundedByLargestRemainder(
+    allocationDrafts.map((r) => r.pmTipsRaw),
+    adjustedDistributablePM,
+  );
+
+  const employeeAllocations = allocationDrafts.map((draft, idx) => {
+    const amTips = roundedAmTips[idx] ?? 0;
+    const pmTips = roundedPmTips[idx] ?? 0;
+    const manualAmTips = roundMoney(draft.manualAmTipsRaw);
+    const manualPmTips = roundMoney(draft.manualPmTipsRaw);
+    const totalTips = amTips + pmTips + manualAmTips + manualPmTips;
+    return {
+      employeeId: draft.employeeId,
+      employeeName: draft.employeeName,
+      jobTitle: draft.jobTitle,
+      jobTipMultiplier: draft.jobTipMultiplier,
+      clockIn: draft.clockIn,
+      clockOut: draft.clockOut,
+      amWorkedHours: roundMoney(draft.amWorkedHours),
+      pmWorkedHours: roundMoney(draft.pmWorkedHours),
+      amTips: roundMoney(amTips),
+      pmTips: roundMoney(pmTips),
+      manualAmTips,
+      manualPmTips,
+      totalTips: roundMoney(totalTips),
+    };
+  });
 
   // Step 9b: Daily adjustments
   const adjustments = await DailyTipAdjustment.find({
@@ -783,8 +886,30 @@ async function getDailyTipCalculationSnapshot(locationId, date) {
 
   const totalAMHours = Number(derived.totalAMHours) || 0;
   const totalPMHours = Number(derived.totalPMHours) || 0;
-  const amTipRate = totalAMHours > 0 ? adjustedDistributableAM / totalAMHours : 0;
-  const pmTipRate = isTheCove ? 0 : (totalPMHours > 0 ? adjustedDistributablePM / totalPMHours : 0);
+  const weightedHoursRows = Array.isArray(derived.employeeHours) ? derived.employeeHours : [];
+  const totalWeightedAMHours = weightedHoursRows.reduce((sum, h) => {
+    const amHours = Number(h?.amHours) || 0;
+    const multiplier =
+      h?.jobTipMultiplier != null
+        ? Number(h.jobTipMultiplier) || 0
+        : getJobTipMultiplier(h?.jobTitle);
+    return sum + amHours * multiplier;
+  }, 0);
+  const totalWeightedPMHours = weightedHoursRows.reduce((sum, h) => {
+    const pmHours = Number(h?.pmHours) || 0;
+    const multiplier =
+      h?.jobTipMultiplier != null
+        ? Number(h.jobTipMultiplier) || 0
+        : getJobTipMultiplier(h?.jobTitle);
+    return sum + pmHours * multiplier;
+  }, 0);
+  const amTipRate =
+    totalWeightedAMHours > 0 ? adjustedDistributableAM / totalWeightedAMHours : 0;
+  const pmTipRate = isTheCove
+    ? 0
+    : totalWeightedPMHours > 0
+      ? adjustedDistributablePM / totalWeightedPMHours
+      : 0;
 
   const hoursByEmpId = new Map();
   for (const h of derived.employeeHours || []) {

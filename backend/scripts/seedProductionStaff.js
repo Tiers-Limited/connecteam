@@ -16,10 +16,15 @@ async function seedProductionStaff() {
     await ProductionStaff.findOneAndUpdate(
       { name: row.name },
       {
-        name: row.name,
-        allocationPercent: row.allocationPercent,
-        subjectToTardiness: row.subjectToTardiness,
-        isActive: true,
+        $setOnInsert: {
+          name: row.name,
+          allocationPercent: row.allocationPercent,
+          subjectToTardiness: row.subjectToTardiness,
+        },
+        $set: {
+          // Keep custom allocation/tardiness edits; only ensure staff is active.
+          isActive: true,
+        },
       },
       { upsert: true, new: true }
     );

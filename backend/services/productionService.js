@@ -12,6 +12,63 @@ function roundMoney(value) {
   return Math.round(value * 100) / 100;
 }
 
+function allocateCentsProportionally(items, poolAmount, weightSelector, keySelector) {
+  const candidates = (items || []).filter((item) => item && keySelector(item));
+  const result = new Map();
+  if (candidates.length === 0) return result;
+
+  const poolCents = Math.max(0, Math.round((Number(poolAmount) || 0) * 100));
+  if (poolCents === 0) return result;
+
+  const weighted = candidates.map((item) => {
+    const key = String(keySelector(item));
+    const weight = Math.max(0, Number(weightSelector(item)) || 0);
+    return { item, key, weight };
+  });
+  const totalWeight = weighted.reduce((sum, x) => sum + x.weight, 0);
+
+  // If all weights are zero, split equally in cents.
+  if (totalWeight <= 0) {
+    const base = Math.floor(poolCents / weighted.length);
+    let remainder = poolCents - base * weighted.length;
+    const ordered = weighted.slice().sort((a, b) => a.key.localeCompare(b.key));
+    for (const entry of ordered) {
+      const extra = remainder > 0 ? 1 : 0;
+      if (remainder > 0) remainder -= 1;
+      result.set(entry.key, (base + extra) / 100);
+    }
+    return result;
+  }
+
+  const prepared = weighted.map((entry) => {
+    const exactCents = (entry.weight / totalWeight) * poolCents;
+    const floorCents = Math.floor(exactCents);
+    return {
+      ...entry,
+      floorCents,
+      fraction: exactCents - floorCents,
+    };
+  });
+
+  const floorSum = prepared.reduce((sum, entry) => sum + entry.floorCents, 0);
+  let remainder = poolCents - floorSum;
+  const ranking = prepared
+    .slice()
+    .sort((a, b) => {
+      if (b.fraction !== a.fraction) return b.fraction - a.fraction;
+      return a.key.localeCompare(b.key);
+    });
+  for (let i = 0; i < ranking.length && remainder > 0; i += 1) {
+    ranking[i].floorCents += 1;
+    remainder -= 1;
+  }
+
+  for (const entry of prepared) {
+    result.set(entry.key, entry.floorCents / 100);
+  }
+  return result;
+}
+
 function getTardinessDeductionPercent(minutes) {
   if (minutes <= 5) return 0;
   if (minutes <= 10) return 0.15;
@@ -80,7 +137,7 @@ async function getLocationWiseProductionPool(weekStartStr, options = {}) {
     }
     const rec = byLocation.get(locId);
     const dayIndex = dateStarts.indexOf(dateStr);
-    if (dayIndex >= 0) rec.dailyByDay[dayIndex] = dayPool;
+    if (dayIndex >= 0) rec.dailyByDay[dayIndex] += dayPool;
   }
   for (const rec of byLocation.values()) {
     rec.weeklyPool = roundMoney(rec.dailyByDay.reduce((s, v) => s + v, 0));
@@ -181,10 +238,19 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
   }
   const numDays = dateStrs.length;
 
-  const dailyPoolByDate = new Map();
-  for (const dateStr of dateStrs) {
-    dailyPoolByDate.set(dateStr, await getDailyProductionPool(dateStr));
-  }
+  // Use the same source as "Location-wise tip pool" so both tables always match.
+  const locationWise = await getLocationWiseProductionPool(weekStartStr, options);
+  const dailyPoolByDate = new Map(
+    dateStrs.map((d, idx) => [
+      d,
+      roundMoney(
+        locationWise.reduce(
+          (sum, row) => sum + (Number((row.dailyByDay || [])[idx]) || 0),
+          0,
+        ),
+      ),
+    ]),
+  );
 
   const staffNames = staff.map((s) => s.name.trim());
   let tardinessMap;
@@ -207,20 +273,42 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
     if (id) manualMap.set(id, { amount: m.amount, reason: m.reason || '' });
   });
 
+  const dailyGrossByStaffId = new Map();
+  for (const s of staff) {
+    dailyGrossByStaffId.set(s._id.toString(), Array(numDays).fill(0));
+  }
+
+  for (let i = 0; i < numDays; i += 1) {
+    const dateStr = dateStrs[i];
+    const pool = dailyPoolByDate.get(dateStr) || 0;
+    const byStaffId = allocateCentsProportionally(
+      staff,
+      pool,
+      (member) => Number(member.allocationPercent) || 0,
+      (member) => member?._id?.toString?.() || '',
+    );
+    for (const s of staff) {
+      const id = s._id.toString();
+      const arr = dailyGrossByStaffId.get(id);
+      arr[i] = byStaffId.get(id) || 0;
+    }
+  }
+
+  const totalWeeklyPool = roundMoney(
+    dateStrs.reduce((sum, d) => sum + (dailyPoolByDate.get(d) || 0), 0),
+  );
+  const weeklyGrossByStaffId = allocateCentsProportionally(
+    staff,
+    totalWeeklyPool,
+    (member) => Number(member.allocationPercent) || 0,
+    (member) => member?._id?.toString?.() || '',
+  );
+
   const rows = [];
   for (const s of staff) {
     const id = s._id.toString();
-    let weeklyGross = 0;
-    const dailyByDay = Array(numDays).fill(0);
-    for (let i = 0; i < numDays; i++) {
-      const dateStr = dateStrs[i];
-      const pool = dailyPoolByDate.get(dateStr) || 0;
-      const alloc = (s.allocationPercent || 0) / 100;
-      const dayTips = roundMoney(pool * alloc);
-      weeklyGross += dayTips;
-      dailyByDay[i] = dayTips;
-    }
-    weeklyGross = roundMoney(weeklyGross);
+    const dailyByDay = dailyGrossByStaffId.get(id) || Array(numDays).fill(0);
+    const weeklyGross = roundMoney(weeklyGrossByStaffId.get(id) || 0);
     const tardinessMinutes = s.subjectToTardiness ? (tardinessMap.get(s.name.trim()) ?? 0) : 0;
     const deductionPercent = s.subjectToTardiness ? getTardinessDeductionPercent(tardinessMinutes) : 0;
     const tardinessDeductionAmount = roundMoney(weeklyGross * deductionPercent);
@@ -247,26 +335,17 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
 
   const totalRedistributionPool = rows.reduce((sum, r) => sum + r.tardinessDeduction, 0);
   const eligible = rows.filter((r) => r.eligibleForRedistribution);
-  const eligibleTotalPercent = eligible.reduce((sum, r) => sum + (r.allocationPercent || 0), 0);
+  const redistributionByStaffId = allocateCentsProportionally(
+    eligible,
+    totalRedistributionPool,
+    (r) => r.allocationPercent || 0,
+    (r) => r.productionStaffId?.toString?.() || '',
+  );
 
   for (const row of rows) {
-    let redistributed = 0;
-    if (totalRedistributionPool > 0 && eligibleTotalPercent > 0 && row.eligibleForRedistribution) {
-      redistributed = (row.allocationPercent / eligibleTotalPercent) * totalRedistributionPool;
-    }
-    row.tardinessRedistribution = roundMoney(redistributed);
+    const id = row.productionStaffId?.toString?.() || '';
+    row.tardinessRedistribution = redistributionByStaffId.get(id) || 0;
     row.finalWeeklyProductionPayout = roundMoney(row.netWeeklyProductionTips + row.tardinessRedistribution);
-  }
-
-  const sumRedistributed = rows.reduce((s, r) => s + r.tardinessRedistribution, 0);
-  const roundingDiff = totalRedistributionPool - sumRedistributed;
-  if (Math.abs(roundingDiff) > 1e-9 && eligible.length > 0) {
-    const first = eligible[0];
-    const r = rows.find((x) => x.productionStaffId.toString() === first.productionStaffId.toString());
-    if (r) {
-      r.tardinessRedistribution += roundingDiff;
-      r.finalWeeklyProductionPayout = roundMoney(r.netWeeklyProductionTips + r.tardinessRedistribution);
-    }
   }
 
   return {
