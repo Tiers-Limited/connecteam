@@ -411,7 +411,10 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
 
   // 5. Get unique jobIds from shifts, then fetch each job -> job.title = location
   const uniqueJobIds = [...new Set(allShiftsWithUser.map(({ shift }) => shift.jobId).filter(Boolean))];
+  /** Active LOCATIONS only — used for tips/tardiness attribution. */
   const jobIdToLocationKey = {};
+  /** Normalized site from job title for every fetched job (includes inactive sites like Drive Thru). */
+  const jobIdToResolvedKey = {};
   const firstUserJobIdSet = firstUserFlow.jobIds ? new Set(firstUserFlow.jobIds) : null;
   for (const jobId of uniqueJobIds) {
     try {
@@ -422,11 +425,10 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
       const jobData = jobRes.data != null ? jobRes.data : jobRes;
       const job = jobData.job || jobData;
       const title = (job && (job.title || job.name)) ? String(job.title || job.name).trim() : '';
-      if (title) {
-        const locKey = normalizeLocationKey(title);
-        if (locKey && locationKeys.includes(locKey)) {
-          jobIdToLocationKey[jobId] = locKey;
-        }
+      const locKey = title ? normalizeLocationKey(title) : null;
+      jobIdToResolvedKey[jobId] = locKey;
+      if (locKey && locationKeys.includes(locKey)) {
+        jobIdToLocationKey[jobId] = locKey;
       }
     } catch (_) {
       // job not found or API error
@@ -455,6 +457,14 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
 
     const jobId = shift.jobId;
     let locationKey = jobId && jobIdToLocationKey[jobId] ? jobIdToLocationKey[jobId] : null;
+    // If the punch has a jobId but the job maps to a site outside active LOCATIONS (e.g. Drive Thru),
+    // do not fall back to the employee's other assigned sites — that wrongly attributes hours to Casa del Mar, etc.
+    if (!locationKey && jobId != null && Object.prototype.hasOwnProperty.call(jobIdToResolvedKey, jobId)) {
+      const resolved = jobIdToResolvedKey[jobId];
+      if (resolved != null && resolved !== '' && !locationKeys.includes(resolved)) {
+        continue;
+      }
+    }
     if (!locationKey) {
       const sched = (scheduleMap[ukey] || {})[shiftDate];
       const locationKeysForPunch = getLocationKeysForPunch(userInfo, sched && sched.locationKey, locationKeys);

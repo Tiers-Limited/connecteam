@@ -87,19 +87,19 @@ function getAdjustmentReasonForEmployee(adjustments, employeeId, type) {
 function netTipsAfterDeductions(allocation) {
   const fin = Number(allocation?.finalTips ?? allocation?.totalTips) || 0;
   const share = Number(allocation?.redistributionShare) || 0;
-  return Math.max(0, Math.round((fin - share) * 100) / 100);
+  return Math.max(0, fin - share);
 }
 
 function displayedAmTips(allocation) {
   const am = Number(allocation?.amTips) || 0;
   const manualAm = Number(allocation?.manualAmTips) || 0;
-  return Math.round((am + manualAm) * 100) / 100;
+  return am + manualAm;
 }
 
 function displayedPmTips(allocation) {
   const pm = Number(allocation?.pmTips) || 0;
   const manualPm = Number(allocation?.manualPmTips) || 0;
-  return Math.round((pm + manualPm) * 100) / 100;
+  return pm + manualPm;
 }
 
 function dailyRedistributionCellTitle(allocation, redistributionPool) {
@@ -825,7 +825,7 @@ export default function DailyTips() {
           <span className="text-slate-800">
             {" "}
             Estimated 4% from amounts in the form:{" "}
-            <strong>${productionDeductionDollars.toFixed(2)}</strong>.
+            <strong>${productionDeductionDollars.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}</strong>.
           </span>
         )}
       </p>
@@ -1037,17 +1037,17 @@ export default function DailyTips() {
                               </div>
                             </td>
                             <td className="py-2.5 text-right tabular-nums text-slate-800">
-                              {Number(row.amGrossTips).toFixed(2)}
+                              {Number(row.amGrossTips).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                             </td>
                             <td className="py-2.5 text-right tabular-nums text-slate-600">
-                              {rowCove ? "—" : Number(row.pmGrossTips).toFixed(2)}
+                              {rowCove ? "—" : Number(row.pmGrossTips).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                             </td>
                             <td className="py-2.5 text-right tabular-nums text-slate-800">
                               $
                               {productionPoolAmount(
                                 row.amGrossTips,
                                 row.pmGrossTips,
-                              ).toFixed(2)}
+                              ).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                             </td>
                             <td className="py-2.5 text-right">
                               <Button
@@ -1208,7 +1208,7 @@ export default function DailyTips() {
                           $
                           {Number(
                             breakdownSavedTips.amGrossTips,
-                          ).toFixed(2)}
+                          ).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </strong>
                       </span>
                     ) : (
@@ -1219,7 +1219,7 @@ export default function DailyTips() {
                             $
                             {Number(
                               breakdownSavedTips.amGrossTips,
-                            ).toFixed(2)}
+                            ).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                           </strong>
                         </span>
                         <span className="tabular-nums">
@@ -1228,7 +1228,7 @@ export default function DailyTips() {
                             $
                             {Number(
                               breakdownSavedTips.pmGrossTips,
-                            ).toFixed(2)}
+                            ).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                           </strong>
                         </span>
                       </>
@@ -1408,7 +1408,7 @@ export default function DailyTips() {
                       <>
                         Calculated hours:{" "}
                         <strong className="tabular-nums">
-                          {(amHours + pmHours).toFixed(2)} h
+                          {(amHours + pmHours).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })} h
                         </strong>{" "}
                         (single shift)
                       </>
@@ -1416,11 +1416,11 @@ export default function DailyTips() {
                       <>
                         Calculated split: AM{" "}
                         <strong className="tabular-nums">
-                          {amHours.toFixed(2)} h
+                          {amHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })} h
                         </strong>
                         , PM{" "}
                         <strong className="tabular-nums">
-                          {pmHours.toFixed(2)} h
+                          {pmHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })} h
                         </strong>
                       </>
                     );
@@ -1484,15 +1484,15 @@ export default function DailyTips() {
                       </td>
                       {isBreakdownTheCove ? (
                         <td className="py-2 text-right tabular-nums text-slate-600">
-                          {(am + pm).toFixed(2)}
+                          {(am + pm).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                       ) : (
                         <>
                           <td className="py-2 text-right tabular-nums text-slate-600">
-                            {am.toFixed(2)}
+                            {am.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                           </td>
                           <td className="py-2 text-right tabular-nums text-slate-600">
-                            {pm.toFixed(2)}
+                            {pm.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                           </td>
                         </>
                       )}
@@ -1535,7 +1535,7 @@ export default function DailyTips() {
             <div className="mb-3 rounded-lg border border-indigo-200 bg-indigo-50/50 px-4 py-3 text-sm text-indigo-700">
               Redistribution pool:{" "}
               <strong className="text-indigo-900">
-                ${Number(calculation.inputs.redistributionPool).toFixed(2)}
+                ${Number(calculation.inputs.redistributionPool).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
               </strong>{" "}
               (deducted from selected employee(s) and redistributed to others by worked hours)
             </div>
@@ -1546,34 +1546,34 @@ export default function DailyTips() {
               <span>
                 4% production pool:{" "}
                 <strong className="text-slate-800">
-                  ${productionDeductionDollars?.toFixed(2) ?? "0.00"}
+                  ${productionDeductionDollars?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "0.00"}
                 </strong>
               </span>
               {isBreakdownTheCove ? (
                 <>
                   <span>
                     Distributable: $
-                    {calculation.inputs?.distributableAM?.toFixed(2)}
+                    {calculation.inputs?.distributableAM?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                   </span>
                   <span>
-                    Tip rate: ${calculation.totals?.amTipRate?.toFixed(2)}/hr
+                    Tip rate: ${calculation.totals?.amTipRate?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}/hr
                   </span>
                 </>
               ) : (
                 <>
                   <span>
                     AM distributable: $
-                    {calculation.inputs?.distributableAM?.toFixed(2)}
+                    {calculation.inputs?.distributableAM?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                   </span>
                   <span>
                     PM distributable: $
-                    {calculation.inputs?.distributablePM?.toFixed(2)}
+                    {calculation.inputs?.distributablePM?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                   </span>
                   <span>
-                    AM tip rate: ${calculation.totals?.amTipRate?.toFixed(2)}/hr
+                    AM tip rate: ${calculation.totals?.amTipRate?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}/hr
                   </span>
                   <span>
-                    PM tip rate: ${calculation.totals?.pmTipRate?.toFixed(2)}/hr
+                    PM tip rate: ${calculation.totals?.pmTipRate?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}/hr
                   </span>
                 </>
               )}
@@ -1632,10 +1632,10 @@ export default function DailyTips() {
                             "Total",
                           ];
                       const tail = (a) => [
-                        `$${netTipsAfterDeductions(a).toFixed(2)}`,
-                        `$${Number(a.redistributionShare ?? 0).toFixed(2)}`,
+                        `$${netTipsAfterDeductions(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                        `$${Number(a.redistributionShare ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
                         (a.finalTips ?? a.totalTips) != null
-                          ? `$${Number(a.finalTips ?? a.totalTips).toFixed(2)}`
+                          ? `$${Number(a.finalTips ?? a.totalTips).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`
                           : "",
                       ];
                       const rows = allocations.map((a) =>
@@ -1644,18 +1644,18 @@ export default function DailyTips() {
                               a.employeeName ?? "",
                               a.clockIn ?? "–",
                               a.clockOut ?? "–",
-                              a.amWorkedHours?.toFixed(2) ?? "",
-                              a.pmWorkedHours?.toFixed(2) ?? "",
-                              `$${displayedAmTips(a).toFixed(2)}`,
-                              `$${displayedPmTips(a).toFixed(2)}`,
+                              a.amWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "",
+                              a.pmWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "",
+                              `$${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                              `$${displayedPmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
                               ...tail(a),
                             ]
                           : [
                               a.employeeName ?? "",
                               a.clockIn ?? "–",
                               a.clockOut ?? "–",
-                              a.amWorkedHours?.toFixed(2) ?? "",
-                              `$${displayedAmTips(a).toFixed(2)}`,
+                              a.amWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "",
+                              `$${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
                               ...tail(a),
                             ],
                       );
@@ -1666,23 +1666,23 @@ export default function DailyTips() {
                                 "Total",
                                 "",
                                 "",
-                                normalizedTotals.amWorkedHours.toFixed(2),
-                                normalizedTotals.pmWorkedHours.toFixed(2),
-                                `$${normalizedTotals.amTips.toFixed(2)}`,
-                                `$${normalizedTotals.pmTips.toFixed(2)}`,
-                                `$${normalizedTotals.netTips.toFixed(2)}`,
-                                `$${normalizedTotals.redistributionShare.toFixed(2)}`,
-                                `$${normalizedTotals.totalTips.toFixed(2)}`,
+                                normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
+                                normalizedTotals.pmWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
+                                `$${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                `$${normalizedTotals.pmTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                `$${normalizedTotals.netTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                `$${normalizedTotals.redistributionShare.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                `$${normalizedTotals.totalTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
                               ]
                             : [
                                 "Total",
                                 "",
                                 "",
-                                normalizedTotals.amWorkedHours.toFixed(2),
-                                `$${normalizedTotals.amTips.toFixed(2)}`,
-                                `$${normalizedTotals.netTips.toFixed(2)}`,
-                                `$${normalizedTotals.redistributionShare.toFixed(2)}`,
-                                `$${normalizedTotals.totalTips.toFixed(2)}`,
+                                normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
+                                `$${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                `$${normalizedTotals.netTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                `$${normalizedTotals.redistributionShare.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                `$${normalizedTotals.totalTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
                               ],
                         );
                       }
@@ -1723,10 +1723,10 @@ export default function DailyTips() {
                             "Total",
                           ];
                       const tail = (a) => [
-                        `$${netTipsAfterDeductions(a).toFixed(2)}`,
-                        `$${Number(a.redistributionShare ?? 0).toFixed(2)}`,
+                        `$${netTipsAfterDeductions(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                        `$${Number(a.redistributionShare ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
                         (a.finalTips ?? a.totalTips) != null
-                          ? `$${Number(a.finalTips ?? a.totalTips).toFixed(2)}`
+                          ? `$${Number(a.finalTips ?? a.totalTips).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`
                           : "",
                       ];
                       const rows = allocations.map((a) =>
@@ -1735,18 +1735,18 @@ export default function DailyTips() {
                               a.employeeName ?? "",
                               a.clockIn ?? "–",
                               a.clockOut ?? "–",
-                              a.amWorkedHours?.toFixed(2) ?? "",
-                              a.pmWorkedHours?.toFixed(2) ?? "",
-                              `$${displayedAmTips(a).toFixed(2)}`,
-                              `$${displayedPmTips(a).toFixed(2)}`,
+                              a.amWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "",
+                              a.pmWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "",
+                              `$${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                              `$${displayedPmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
                               ...tail(a),
                             ]
                           : [
                               a.employeeName ?? "",
                               a.clockIn ?? "–",
                               a.clockOut ?? "–",
-                              a.amWorkedHours?.toFixed(2) ?? "",
-                              `$${displayedAmTips(a).toFixed(2)}`,
+                              a.amWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "",
+                              `$${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
                               ...tail(a),
                             ],
                       );
@@ -1757,23 +1757,23 @@ export default function DailyTips() {
                                 "Total",
                                 "",
                                 "",
-                                normalizedTotals.amWorkedHours.toFixed(2),
-                                normalizedTotals.pmWorkedHours.toFixed(2),
-                                `$${normalizedTotals.amTips.toFixed(2)}`,
-                                `$${normalizedTotals.pmTips.toFixed(2)}`,
-                                `$${normalizedTotals.netTips.toFixed(2)}`,
-                                `$${normalizedTotals.redistributionShare.toFixed(2)}`,
-                                `$${normalizedTotals.totalTips.toFixed(2)}`,
+                                normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
+                                normalizedTotals.pmWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
+                                `$${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                `$${normalizedTotals.pmTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                `$${normalizedTotals.netTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                `$${normalizedTotals.redistributionShare.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                `$${normalizedTotals.totalTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
                               ]
                             : [
                                 "Total",
                                 "",
                                 "",
-                                normalizedTotals.amWorkedHours.toFixed(2),
-                                `$${normalizedTotals.amTips.toFixed(2)}`,
-                                `$${normalizedTotals.netTips.toFixed(2)}`,
-                                `$${normalizedTotals.redistributionShare.toFixed(2)}`,
-                                `$${normalizedTotals.totalTips.toFixed(2)}`,
+                                normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
+                                `$${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                `$${normalizedTotals.netTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                `$${normalizedTotals.redistributionShare.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                `$${normalizedTotals.totalTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
                               ],
                         );
                       }
@@ -1865,30 +1865,30 @@ export default function DailyTips() {
                     {showShiftSplit ? (
                       <>
                         <td className="py-2 text-right tabular-nums text-slate-600">
-                          {a.amWorkedHours?.toFixed(2)}
+                          {a.amWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                         <td className="py-2 text-right tabular-nums text-slate-600">
-                          {a.pmWorkedHours?.toFixed(2)}
+                          {a.pmWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                         <td className="py-2 text-right tabular-nums text-slate-600">
-                          ${displayedAmTips(a).toFixed(2)}
+                          ${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                         <td className="py-2 text-right tabular-nums text-slate-600">
-                          ${displayedPmTips(a).toFixed(2)}
+                          ${displayedPmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                       </>
                     ) : (
                       <>
                         <td className="py-2 text-right tabular-nums text-slate-600">
-                          {a.amWorkedHours?.toFixed(2)}
+                          {a.amWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                         <td className="py-2 text-right tabular-nums text-slate-600">
-                          ${displayedAmTips(a).toFixed(2)}
+                          ${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                       </>
                     )}
                     <td className="py-2 text-right tabular-nums font-medium text-slate-700">
-                      ${netTipsAfterDeductions(a).toFixed(2)}
+                      ${netTipsAfterDeductions(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                     </td>
                     <td
                       className="py-2 text-right tabular-nums text-emerald-500"
@@ -1897,10 +1897,10 @@ export default function DailyTips() {
                         calculation?.inputs?.redistributionPool,
                       )}
                     >
-                      ${Number(a.redistributionShare ?? 0).toFixed(2)}
+                      ${Number(a.redistributionShare ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                     </td>
                     <td className="py-2 text-right font-medium tabular-nums text-slate-800">
-                      ${(a.finalTips ?? a.totalTips)?.toFixed(2)}
+                      ${(a.finalTips ?? a.totalTips)?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                     </td>
                     <td className="py-2 text-right">
                       <button
@@ -1923,36 +1923,36 @@ export default function DailyTips() {
                     {showShiftSplit ? (
                       <>
                         <td className="py-3 text-right tabular-nums text-slate-800">
-                          {normalizedTotals.amWorkedHours.toFixed(2)}
+                          {normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                         <td className="py-3 text-right tabular-nums text-slate-800">
-                          {normalizedTotals.pmWorkedHours.toFixed(2)}
+                          {normalizedTotals.pmWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                         <td className="py-3 text-right tabular-nums text-slate-800">
-                          ${normalizedTotals.amTips.toFixed(2)}
+                          ${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                         <td className="py-3 text-right tabular-nums text-slate-800">
-                          ${normalizedTotals.pmTips.toFixed(2)}
+                          ${normalizedTotals.pmTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                       </>
                     ) : (
                       <>
                         <td className="py-3 text-right tabular-nums text-slate-800">
-                          {normalizedTotals.amWorkedHours.toFixed(2)}
+                          {normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                         <td className="py-3 text-right tabular-nums text-slate-800">
-                          ${normalizedTotals.amTips.toFixed(2)}
+                          ${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                       </>
                     )}
                     <td className="py-3 text-right tabular-nums text-slate-800">
-                      ${normalizedTotals.netTips.toFixed(2)}
+                      ${normalizedTotals.netTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                     </td>
                     <td className="py-3 text-right tabular-nums text-emerald-700">
-                      ${normalizedTotals.redistributionShare.toFixed(2)}
+                      ${normalizedTotals.redistributionShare.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                     </td>
                     <td className="py-3 text-right tabular-nums text-slate-800">
-                      ${normalizedTotals.totalTips.toFixed(2)}
+                      ${normalizedTotals.totalTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                     </td>
                     <td className="py-3" />
                   </tr>
@@ -1972,25 +1972,25 @@ export default function DailyTips() {
                     <span>
                       AM hours:{" "}
                       <strong className="text-slate-800">
-                        {normalizedTotals.amWorkedHours.toFixed(2)}
+                        {normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
                     </span>
                     <span>
                       PM hours:{" "}
                       <strong className="text-slate-800">
-                        {normalizedTotals.pmWorkedHours.toFixed(2)}
+                        {normalizedTotals.pmWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
                     </span>
                     <span>
                       AM tips:{" "}
                       <strong className="text-slate-800">
-                        ${normalizedTotals.amTips.toFixed(2)}
+                        ${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
                     </span>
                     <span>
                       PM tips:{" "}
                       <strong className="text-slate-800">
-                        ${normalizedTotals.pmTips.toFixed(2)}
+                        ${normalizedTotals.pmTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
                     </span>
                   </>
@@ -1999,13 +1999,13 @@ export default function DailyTips() {
                     <span>
                       Hours:{" "}
                       <strong className="text-slate-800">
-                        {normalizedTotals.amWorkedHours.toFixed(2)}
+                        {normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
                     </span>
                     <span>
                       Tips:{" "}
                       <strong className="text-slate-800">
-                        ${normalizedTotals.amTips.toFixed(2)}
+                        ${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
                     </span>
                   </>
@@ -2013,19 +2013,19 @@ export default function DailyTips() {
                 <span>
                   Net tips (after deductions):{" "}
                   <strong className="text-slate-800">
-                    ${normalizedTotals.netTips.toFixed(2)}
+                    ${normalizedTotals.netTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                   </strong>
                 </span>
                 <span>
                   Manual redistribution:{" "}
                   <strong className="text-emerald-700">
-                    ${normalizedTotals.redistributionShare.toFixed(2)}
+                    ${normalizedTotals.redistributionShare.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                   </strong>
                 </span>
                 <span>
                   Total (final):{" "}
                   <strong className="text-slate-800">
-                    ${normalizedTotals.totalTips.toFixed(2)}
+                    ${normalizedTotals.totalTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                   </strong>
                 </span>
               </div>
@@ -2226,3 +2226,7 @@ export default function DailyTips() {
     </div>
   );
 }
+
+
+
+

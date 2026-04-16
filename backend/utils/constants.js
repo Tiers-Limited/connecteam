@@ -64,7 +64,7 @@ const TARDINESS_TIERS = [
   { maxMinutes: Infinity, deductionPercent: 0.2 },
 ];
 
-const ROUND_DECIMALS = 2;
+const ROUND_DECIMALS = 3;
 
 /**
  * Job title to tip multiplier mapping

@@ -71,10 +71,11 @@ function splitWorkedHours(clockIn, clockOut, opts = {}) {
 }
 
 /**
- * Round to 2 decimals (output stage only)
+ * Round to configured decimals (output stage only)
  */
 function roundMoney(value) {
-  return Math.round(value * 100) / 100;
+  const scale = 10 ** ROUND_DECIMALS;
+  return Math.round(value * scale) / scale;
 }
 
 /** Round to 4 decimals (for redistribution so small amounts are not lost) */
@@ -108,24 +109,25 @@ function weightedHoursForTipRate(employeeHoursMap) {
 }
 
 function allocateRoundedByLargestRemainder(rawRows, targetTotal) {
-  const targetCents = Math.max(0, Math.round((Number(targetTotal) || 0) * 100));
+  const scale = 10 ** ROUND_DECIMALS;
+  const targetUnits = Math.max(0, Math.round((Number(targetTotal) || 0) * scale));
   if (!Array.isArray(rawRows) || rawRows.length === 0) {
     return [];
   }
 
   const seeded = rawRows.map((value, index) => {
     const safeValue = Math.max(0, Number(value) || 0);
-    const exactCents = safeValue * 100;
-    const floorCents = Math.floor(exactCents);
+    const exactUnits = safeValue * scale;
+    const floorUnits = Math.floor(exactUnits);
     return {
       index,
-      floorCents,
-      fraction: exactCents - floorCents,
+      floorUnits,
+      fraction: exactUnits - floorUnits,
     };
   });
 
-  const floorTotal = seeded.reduce((sum, row) => sum + row.floorCents, 0);
-  let remainder = targetCents - floorTotal;
+  const floorTotal = seeded.reduce((sum, row) => sum + row.floorUnits, 0);
+  let remainder = targetUnits - floorTotal;
 
   const ordered = seeded
     .slice()
@@ -135,7 +137,7 @@ function allocateRoundedByLargestRemainder(rawRows, targetTotal) {
     });
 
   for (let i = 0; i < ordered.length && remainder > 0; i += 1) {
-    ordered[i].floorCents += 1;
+    ordered[i].floorUnits += 1;
     remainder -= 1;
   }
 
@@ -143,8 +145,8 @@ function allocateRoundedByLargestRemainder(rawRows, targetTotal) {
   if (remainder < 0) {
     const reverse = ordered.slice().reverse();
     for (let i = 0; i < reverse.length && remainder < 0; i += 1) {
-      if (reverse[i].floorCents > 0) {
-        reverse[i].floorCents -= 1;
+      if (reverse[i].floorUnits > 0) {
+        reverse[i].floorUnits -= 1;
         remainder += 1;
       }
     }
@@ -152,7 +154,7 @@ function allocateRoundedByLargestRemainder(rawRows, targetTotal) {
 
   const out = new Array(rawRows.length).fill(0);
   for (const row of ordered) {
-    out[row.index] = row.floorCents / 100;
+    out[row.index] = row.floorUnits / scale;
   }
   return out;
 }
@@ -169,8 +171,8 @@ function computeHourWeightedRedistributionShares(employeeAllocations, redistribu
     };
   }
 
-  const poolCents = Math.max(0, Math.round(redistributionPool * 100));
-  if (poolCents === 0) {
+  const poolAmount = Math.max(0, Number(redistributionPool) || 0);
+  if (poolAmount === 0) {
     return {
       recipients,
       sharesByEmployeeId: new Map(),
@@ -190,45 +192,18 @@ function computeHourWeightedRedistributionShares(employeeAllocations, redistribu
 
   // Fallback to equal split only when recipient hours are all zero.
   if (totalRecipientHours <= 0) {
-    const baseCents = Math.floor(poolCents / recipientRows.length);
-    let remainder = poolCents - baseCents * recipientRows.length;
-    const sorted = recipientRows.slice().sort((a, b) => a.key.localeCompare(b.key));
+    const equalShare = poolAmount / recipientRows.length;
     const sharesByEmployeeId = new Map();
-    for (const item of sorted) {
-      const extra = remainder > 0 ? 1 : 0;
-      if (remainder > 0) remainder -= 1;
-      sharesByEmployeeId.set(item.key, (baseCents + extra) / 100);
+    for (const item of recipientRows) {
+      sharesByEmployeeId.set(item.key, equalShare);
     }
     return { recipients, sharesByEmployeeId };
   }
 
-  const weighted = recipientRows.map((item) => {
-    const exactCents = (item.hours / totalRecipientHours) * poolCents;
-    const floorCents = Math.floor(exactCents);
-    return {
-      ...item,
-      exactCents,
-      floorCents,
-      fraction: exactCents - floorCents,
-    };
-  });
-
-  const floorTotal = weighted.reduce((sum, item) => sum + item.floorCents, 0);
-  let remainder = poolCents - floorTotal;
-  const distributionOrder = weighted
-    .slice()
-    .sort((a, b) => {
-      if (b.fraction !== a.fraction) return b.fraction - a.fraction;
-      return a.key.localeCompare(b.key);
-    });
-  for (let i = 0; i < distributionOrder.length && remainder > 0; i += 1) {
-    distributionOrder[i].floorCents += 1;
-    remainder -= 1;
-  }
-
   const sharesByEmployeeId = new Map();
-  for (const item of weighted) {
-    sharesByEmployeeId.set(item.key, item.floorCents / 100);
+  for (const item of recipientRows) {
+    const share = (item.hours / totalRecipientHours) * poolAmount;
+    sharesByEmployeeId.set(item.key, share);
   }
 
   return { recipients, sharesByEmployeeId };
@@ -600,20 +575,11 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     });
   }
 
-  const roundedAmTips = allocateRoundedByLargestRemainder(
-    allocationDrafts.map((r) => r.amTipsRaw),
-    adjustedDistributableAM,
-  );
-  const roundedPmTips = allocateRoundedByLargestRemainder(
-    allocationDrafts.map((r) => r.pmTipsRaw),
-    adjustedDistributablePM,
-  );
-
   const employeeAllocations = allocationDrafts.map((draft, idx) => {
-    const amTips = roundedAmTips[idx] ?? 0;
-    const pmTips = roundedPmTips[idx] ?? 0;
-    const manualAmTips = roundMoney(draft.manualAmTipsRaw);
-    const manualPmTips = roundMoney(draft.manualPmTipsRaw);
+    const amTips = draft.amTipsRaw ?? 0;
+    const pmTips = draft.pmTipsRaw ?? 0;
+    const manualAmTips = draft.manualAmTipsRaw ?? 0;
+    const manualPmTips = draft.manualPmTipsRaw ?? 0;
     const totalTips = amTips + pmTips + manualAmTips + manualPmTips;
     return {
       employeeId: draft.employeeId,
@@ -622,13 +588,13 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       jobTipMultiplier: draft.jobTipMultiplier,
       clockIn: draft.clockIn,
       clockOut: draft.clockOut,
-      amWorkedHours: roundMoney(draft.amWorkedHours),
-      pmWorkedHours: roundMoney(draft.pmWorkedHours),
-      amTips: roundMoney(amTips),
-      pmTips: roundMoney(pmTips),
+      amWorkedHours: draft.amWorkedHours,
+      pmWorkedHours: draft.pmWorkedHours,
+      amTips,
+      pmTips,
       manualAmTips,
       manualPmTips,
-      totalTips: roundMoney(totalTips),
+      totalTips,
     };
   });
 
@@ -666,10 +632,10 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     const finalTipsRaw = (Number(r.totalTips) || 0) - cashAdvance - redistributeDeduction + redistributionShare;
     const finalTips = Math.max(0, finalTipsRaw);
 
-    r.cashAdvanceDeduction = roundMoney(cashAdvance);
-    r.redistributeDeduction = roundMoney(redistributeDeduction);
-    r.redistributionShare = roundMoney(redistributionShare);
-    r.finalTips = roundMoney(finalTips);
+    r.cashAdvanceDeduction = cashAdvance;
+    r.redistributeDeduction = redistributeDeduction;
+    r.redistributionShare = redistributionShare;
+    r.finalTips = finalTips;
   }
 
   // Step 10: Audit snapshot (raw, derived, financial)
@@ -695,23 +661,23 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         employeeName: r.employeeName,
         jobTitle: r.jobTitle,
         jobTipMultiplier: getJobTipMultiplier(r.jobTitle),
-        amHours: roundMoney(r.amHours),
-        pmHours: roundMoney(r.pmHours),
+        amHours: r.amHours,
+        pmHours: r.pmHours,
         firstClockIn: r.clockIn ?? null,
         lastClockOut: r.clockOut ?? null,
       })),
-      totalAMHours: roundMoney(totalAMHours),
-      totalPMHours: roundMoney(totalPMHours),
+      totalAMHours,
+      totalPMHours,
     },
     financial: {
       amGrossTips: tipInput.amGrossTips,
       pmGrossTips: tipInput.pmGrossTips,
-      productionDeductionAM: roundMoney(productionDeductionAM),
-      productionDeductionPM: roundMoney(productionDeductionPM),
-      distributableAM: roundMoney(distributableAM),
-      distributablePM: roundMoney(distributablePM),
-      amTipRate: roundMoney(amTipRate),
-      pmTipRate: roundMoney(pmTipRate),
+      productionDeductionAM,
+      productionDeductionPM,
+      distributableAM,
+      distributablePM,
+      amTipRate,
+      pmTipRate,
       employeePayouts: employeeAllocations.map((a) => ({
         employeeId: a.employeeId,
         employeeName: a.employeeName,
@@ -741,29 +707,29 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     inputs: {
       amGrossTips: tipInput.amGrossTips,
       pmGrossTips: tipInput.pmGrossTips,
-      productionDeductionAM: roundMoney(productionDeductionAM),
-      productionDeductionPM: roundMoney(productionDeductionPM),
-      distributableAM: roundMoney(distributableAM),
-      distributablePM: roundMoney(distributablePM),
-      manualAmTipsTotal: roundMoney(manualAMTipsTotal),
-      manualPmTipsTotal: roundMoney(manualPMTipsTotal),
-      adjustedDistributableAM: roundMoney(adjustedDistributableAM),
-      adjustedDistributablePM: roundMoney(adjustedDistributablePM),
-      distributable: isTheCove ? roundMoney(adjustedDistributableAM) : null,
-      tipRate: isTheCove ? roundMoney(amTipRate) : null,
-      redistributionPool: roundMoney(redistributionPool),
+      productionDeductionAM,
+      productionDeductionPM,
+      distributableAM,
+      distributablePM,
+      manualAmTipsTotal: manualAMTipsTotal,
+      manualPmTipsTotal: manualPMTipsTotal,
+      adjustedDistributableAM,
+      adjustedDistributablePM,
+      distributable: isTheCove ? adjustedDistributableAM : null,
+      tipRate: isTheCove ? amTipRate : null,
+      redistributionPool,
     },
     totals: {
-      totalAMHours: roundMoney(totalAMHours),
-      totalPMHours: roundMoney(totalPMHours),
-      amTipRate: roundMoney(amTipRate),
-      pmTipRate: roundMoney(pmTipRate),
+      totalAMHours,
+      totalPMHours,
+      amTipRate,
+      pmTipRate,
     },
     employeeAllocations,
     adjustments: adjustments.map((a) => ({
       employeeId: a.employeeId,
       type: a.type,
-      amount: roundMoney(Number(a.amount) || 0),
+      amount: Number(a.amount) || 0,
       reason: a.reason || '',
     })),
     audit: auditPayload,
@@ -982,13 +948,13 @@ async function getDailyTipCalculationSnapshot(locationId, date) {
       jobTipMultiplier: h?.jobTipMultiplier != null ? h.jobTipMultiplier : getJobTipMultiplier(h?.jobTitle),
       clockIn,
       clockOut,
-      amWorkedHours: roundMoney(h?.amHours ?? 0),
-      pmWorkedHours: roundMoney(h?.pmHours ?? 0),
-      amTips: roundMoney(p.amTips ?? 0),
-      pmTips: roundMoney(p.pmTips ?? 0),
+      amWorkedHours: Number(h?.amHours ?? 0),
+      pmWorkedHours: Number(h?.pmHours ?? 0),
+      amTips: Number(p.amTips ?? 0),
+      pmTips: Number(p.pmTips ?? 0),
       manualAmTips: 0,
       manualPmTips: 0,
-      totalTips: roundMoney(p.totalTips ?? 0),
+      totalTips: Number(p.totalTips ?? 0),
       cashAdvanceDeduction: 0,
       redistributeDeduction: 0,
       redistributionShare: 0,
@@ -1006,33 +972,33 @@ async function getDailyTipCalculationSnapshot(locationId, date) {
     const redistributionShare = sharesByEmployeeId.get(empKey) || 0;
     const finalTipsRaw =
       (Number(r.totalTips) || 0) - cashAdvance - redistributeDeduction + redistributionShare;
-    r.cashAdvanceDeduction = roundMoney(cashAdvance);
-    r.redistributeDeduction = roundMoney(redistributeDeduction);
-    r.redistributionShare = roundMoney(redistributionShare);
-    r.finalTips = roundMoney(Math.max(0, finalTipsRaw));
+    r.cashAdvanceDeduction = cashAdvance;
+    r.redistributeDeduction = redistributeDeduction;
+    r.redistributionShare = redistributionShare;
+    r.finalTips = Math.max(0, finalTipsRaw);
   }
 
   const inputs = {
     amGrossTips: tipInput.amGrossTips,
     pmGrossTips: tipInput.pmGrossTips,
-    productionDeductionAM: roundMoney(productionDeductionAM),
-    productionDeductionPM: roundMoney(productionDeductionPM),
-    distributableAM: roundMoney(distributableAM),
-    distributablePM: roundMoney(distributablePM),
-    manualAmTipsTotal: roundMoney(manualAMTipsTotal),
-    manualPmTipsTotal: roundMoney(manualPMTipsTotal),
-    adjustedDistributableAM: roundMoney(adjustedDistributableAM),
-    adjustedDistributablePM: roundMoney(adjustedDistributablePM),
-    distributable: isTheCove ? roundMoney(adjustedDistributableAM) : null,
-    tipRate: isTheCove ? roundMoney(amTipRate) : null,
-    redistributionPool: roundMoney(redistributionPool),
+    productionDeductionAM,
+    productionDeductionPM,
+    distributableAM,
+    distributablePM,
+    manualAmTipsTotal,
+    manualPmTipsTotal,
+    adjustedDistributableAM,
+    adjustedDistributablePM,
+    distributable: isTheCove ? adjustedDistributableAM : null,
+    tipRate: isTheCove ? amTipRate : null,
+    redistributionPool,
   };
 
   const totals = {
-    totalAMHours: roundMoney(totalAMHours),
-    totalPMHours: roundMoney(totalPMHours),
-    amTipRate: roundMoney(amTipRate),
-    pmTipRate: roundMoney(pmTipRate),
+    totalAMHours,
+    totalPMHours,
+    amTipRate,
+    pmTipRate,
   };
 
   return {
@@ -1044,7 +1010,7 @@ async function getDailyTipCalculationSnapshot(locationId, date) {
     adjustments: adjustments.map((a) => ({
       employeeId: a.employeeId,
       type: a.type,
-      amount: roundMoney(Number(a.amount) || 0),
+      amount: Number(a.amount) || 0,
       reason: a.reason || '',
     })),
     audit,
