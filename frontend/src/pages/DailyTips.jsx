@@ -122,6 +122,7 @@ export default function DailyTips() {
   const {
     selectedLocationId,
     locations,
+    locationsLoading,
     dailyTipsCache,
     setDailyTipsCache,
   } = useApp();
@@ -772,12 +773,25 @@ export default function DailyTips() {
     </svg>
   );
 
-  if (!locations?.length) {
+  if (locationsLoading) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-slate-800">Daily Tips</h1>
         <div className="rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
           <p className="text-slate-600">Loading locations…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!locations?.length) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-slate-800">Daily Tips</h1>
+        <div className="rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
+          <p className="text-slate-600">
+            No locations found. Add a location in Settings to continue.
+          </p>
         </div>
       </div>
     );

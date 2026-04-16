@@ -9,7 +9,6 @@ const { seedLocations } = require('./scripts/seedLocations');
 
 const app = express();
 app.use(cors());
-// strict: false allows body "null" (e.g. axios post(url, null)) without throwing
 app.use(express.json({ strict: false }));
 app.use(express.urlencoded({ extended: true }));
 

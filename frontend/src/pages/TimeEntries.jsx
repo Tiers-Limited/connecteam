@@ -59,7 +59,14 @@ function timeToMinutes(str) {
 }
 
 export default function TimeEntries() {
-  const { selectedLocationId, setSelectedLocationId, locations, timeEntriesCache, setTimeEntriesCache } = useApp();
+  const {
+    selectedLocationId,
+    setSelectedLocationId,
+    locations,
+    locationsLoading,
+    timeEntriesCache,
+    setTimeEntriesCache,
+  } = useApp();
   const getDefaultDateRange = () => {
     const mon = getWeekStart(new Date());
     const sun = getWeekEnd(mon);
@@ -255,12 +262,36 @@ export default function TimeEntries() {
     );
   }, [groupedRows]);
 
-  if (!selectedLocationId) {
+  if (locationsLoading) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Time Entries</h1>
         <Card>
           <p className="text-slate-600 dark:text-slate-400">Loading locations…</p>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!locations?.length) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Time Entries</h1>
+        <Card>
+          <p className="text-slate-600 dark:text-slate-400">
+            No locations found. Add a location in Settings to continue.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!selectedLocationId) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Time Entries</h1>
+        <Card>
+          <p className="text-slate-600 dark:text-slate-400">Select a location to continue.</p>
         </Card>
       </div>
     );

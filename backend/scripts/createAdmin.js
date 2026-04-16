@@ -1,19 +1,13 @@
-/**
- * Run this script once to create the admin user.
- * Usage: node scripts/createAdmin.js
- *
- * Admin credentials:
- *   Email: admin@connecteam.com (see ADMIN_EMAIL below)
- *   Password: admin@123
- */
+const path = require('path');
+// Load env from backend/.env first, then repo-root .env (cwd may be repo root).
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
-require('dotenv').config();
-const mongoose = require('mongoose');
 const Admin = require('../models/Admin');
 const connectDB = require('../config/db');
 
-const ADMIN_EMAIL = 'admin@connecteam.com';
-const ADMIN_PASSWORD = 'admin.123';
+const ADMIN_EMAIL = 'admin@connectteam.com';
+const ADMIN_PASSWORD = 'admin123';
 
 async function createAdmin() {
   await connectDB();

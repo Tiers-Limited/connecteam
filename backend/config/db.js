@@ -25,6 +25,11 @@ const connectDB = async () => {
     console.log(`MongoDB connected: ${conn.connection.host}`);
   } catch (error) {
     console.error('MongoDB connection error:', error.message);
+    if (String(error.message || '').includes('ECONNREFUSED')) {
+      console.error(
+        'Hint: start MongoDB locally, or set MONGODB_URI in backend/.env (e.g. MongoDB Atlas connection string).',
+      );
+    }
     process.exit(1);
   }
 };
