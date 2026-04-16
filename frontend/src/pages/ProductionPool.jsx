@@ -18,12 +18,17 @@ import {
 import {
   exportMultiTableToCSV,
   exportMultiTableToPDF,
+  formatCsvNumeric,
 } from "../utils/reportUtils";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 
 function formatMoney(n) {
   return "$" + (Number(n) ?? 0).toFixed(2);
+}
+
+function formatMoneyCsv(n) {
+  return formatCsvNumeric(n, { maxFractionDigits: 2 });
 }
 
 function getDefaultDateRange() {
@@ -334,13 +339,13 @@ export default function ProductionPool() {
                       p.name +
                         (p.subjectToTardiness === false ? " (exempt)" : ""),
                       `${p.allocationPercent ?? 0}%`,
-                      formatMoney(p.weeklyGrossProductionTips),
+                      formatMoneyCsv(p.weeklyGrossProductionTips),
                       String(p.weeklyTardinessMinutes ?? 0),
                       `${p.tardinessPercent ?? 0}%`,
-                      formatMoney(p.tardinessDeduction),
-                      formatMoney(p.manualDeduction),
-                      formatMoney(p.tardinessRedistribution ?? 0),
-                      formatMoney(p.finalWeeklyProductionPayout ?? 0),
+                      formatMoneyCsv(p.tardinessDeduction),
+                      formatMoneyCsv(p.manualDeduction),
+                      formatMoneyCsv(p.tardinessRedistribution ?? 0),
+                      formatMoneyCsv(p.finalWeeklyProductionPayout ?? 0),
                     ]);
                     const dateCols = data?.dateRange
                       ? getDateRangeColumns(
@@ -356,15 +361,15 @@ export default function ProductionPool() {
                     const locationRows = locationWisePool.map((row) => [
                       row.locationName ?? "",
                       ...dateCols.map((_, i) =>
-                        formatMoney((row.dailyByDay || [])[i] ?? 0),
+                        formatMoneyCsv((row.dailyByDay || [])[i] ?? 0),
                       ),
-                      formatMoney(row.weeklyPool ?? 0),
+                      formatMoneyCsv(row.weeklyPool ?? 0),
                     ]);
                     if (locationWisePool.length > 0) {
                       locationRows.push([
                         "Total",
                         ...dateCols.map((_, i) =>
-                          formatMoney(
+                          formatMoneyCsv(
                             locationWisePool.reduce(
                               (s, row) =>
                                 s + (Number((row.dailyByDay || [])[i]) || 0),
@@ -372,7 +377,7 @@ export default function ProductionPool() {
                             ),
                           ),
                         ),
-                        formatMoney(totalPoolFromLocations),
+                        formatMoneyCsv(totalPoolFromLocations),
                       ]);
                     }
                     exportMultiTableToCSV(

@@ -19,6 +19,7 @@ import {
   exportSectionedTableToCSV,
   exportSectionedTableToPDF,
   buildWeeklyPayoutExportMeta,
+  formatCsvNumeric,
 } from "../utils/reportUtils";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
@@ -36,13 +37,29 @@ function formatMoney(n) {
   return "$" + (Number(n) ?? 0).toFixed(2);
 }
 
+/** Safe fragment for export filenames when scope is a single location. */
+function sanitizeExportSlug(name) {
+  const s = String(name ?? "").trim();
+  if (!s) return "location";
+  const slug = s
+    .replace(/[/\\?%*:|"<>]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 60)
+    .replace(/^-+|-+$/g, "");
+  return slug || "location";
+}
+
 function getDefaultDateRange() {
   const mon = getWeekStart(new Date());
   const sun = getWeekEnd(mon);
   return { start: toLocalDateString(mon), end: toLocalDateString(sun) };
 }
 
-function payoutToExportRow(p, locLabel, cols) {
+function payoutToExportRow(p, locLabel, cols, forCsv = false) {
+  const fmtMoney = forCsv
+    ? (n) => formatCsvNumeric(n, { maxFractionDigits: 2 })
+    : formatMoney;
   const wh = p.totalWorkingMinutes ?? 0;
   const whStr =
     wh <= 0
@@ -52,18 +69,18 @@ function payoutToExportRow(p, locLabel, cols) {
     p.employeeName ?? "",
     locLabel,
     ...cols.map((_, idx) =>
-      formatMoney((p.dailyTipsByDay || [])[idx] ?? 0),
+      fmtMoney((p.dailyTipsByDay || [])[idx] ?? 0),
     ),
-    formatMoney(p.weeklyGrossTips ?? p.dailyTipsMonToSun),
+    fmtMoney(p.weeklyGrossTips ?? p.dailyTipsMonToSun),
     whStr,
     String(p.weeklyTardinessMinutes ?? 0),
     `${p.tardinessPercent ?? 0}%`,
-    formatMoney(p.tardinessDeduction),
-    formatMoney(p.weeklyAfterTardiness),
-    formatMoney(p.manualDeduction),
-    formatMoney(p.netWeeklyTips),
-    formatMoney(p.tardinessRedistribution ?? 0),
-    formatMoney(p.finalWeeklyTipsPayable ?? 0),
+    fmtMoney(p.tardinessDeduction),
+    fmtMoney(p.weeklyAfterTardiness),
+    fmtMoney(p.manualDeduction),
+    fmtMoney(p.netWeeklyTips),
+    fmtMoney(p.tardinessRedistribution ?? 0),
+    fmtMoney(p.finalWeeklyTipsPayable ?? 0),
   ];
 }
 
@@ -264,14 +281,30 @@ export default function PayoutReports() {
         const hdr = weeklyReportHeaders(cols);
         const exportMeta = buildWeeklyPayoutExportMeta(sd, ed, scopeSummary());
 
+        const oneLocationLabel =
+          geographicScope === "one_location"
+            ? (() => {
+                const fromList = activeLocations.find(
+                  (l) => String(l._id) === String(singleLocationId),
+                )?.name;
+                if (fromList) return fromList;
+                const fromPayout = String(
+                  payouts[0]?.locationName ?? "",
+                ).trim();
+                return fromPayout || "location";
+              })()
+            : "";
         const scopeSlug =
-          geographicScope === "all_locations" ? "all-locations" : "one-loc";
+          geographicScope === "all_locations"
+            ? "all-locations"
+            : sanitizeExportSlug(oneLocationLabel);
         const empSlug =
           employeeScope === "one_employee"
             ? `emp-${String(selectedEmployeeId).slice(0, 12)}`
             : "all-employees";
         const fileBase = `weekly-payout-report-${scopeSlug}-${empSlug}-${sd}-${ed}`;
 
+        const forCsv = kind === "csv";
         const allLocationsAllEmployees =
           geographicScope === "all_locations" && employeeScope !== "one_employee";
 
@@ -284,7 +317,7 @@ export default function PayoutReports() {
             sectionTitle: g.label,
             headers: hdr,
             rows: g.payouts.map((p) =>
-              payoutToExportRow(p, p.locationName ?? g.label, cols),
+              payoutToExportRow(p, p.locationName ?? g.label, cols, forCsv),
             ),
           }));
           if (kind === "csv") {
@@ -313,7 +346,7 @@ export default function PayoutReports() {
                 ).flatMap((g) => g.payouts)
               : payouts;
           const rows = orderedPayouts.map((p) =>
-            payoutToExportRow(p, p.locationName ?? "-", cols),
+            payoutToExportRow(p, p.locationName ?? "-", cols, forCsv),
           );
 
           if (kind === "csv") {
@@ -358,6 +391,7 @@ export default function PayoutReports() {
       startDate,
       endDate,
       geographicScope,
+      singleLocationId,
       employeeScope,
       selectedEmployeeId,
       selectedEmployeeLabel,

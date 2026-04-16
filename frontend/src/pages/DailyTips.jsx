@@ -21,7 +21,11 @@ import {
   formatClockLabel,
   toTimeInputValue,
 } from "../utils/tipShiftUtils";
-import { exportTableToCSV, exportTableToPDF } from "../utils/reportUtils";
+import {
+  exportTableToCSV,
+  exportTableToPDF,
+  formatCsvNumeric,
+} from "../utils/reportUtils";
 import Button from "../components/ui/Button";
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -116,6 +120,26 @@ function dailyRedistributionCellTitle(allocation, redistributionPool) {
     return "No share for this row; pool is split only among eligible staff";
   }
   return "Tips received from redistribution pool (aligned with Weekly Payout manual redistribution)";
+}
+
+/** CSV breakdown amounts/hours: up to 3 fraction digits, trunc (matches on-screen tips). */
+function csvTipExport(value) {
+  return formatCsvNumeric(value, { maxFractionDigits: 3 });
+}
+
+function sanitizeFilenameSegment(name) {
+  const s = String(name ?? "").trim();
+  if (!s) return "location";
+  return s
+    .replace(/[/\\?%*:|"<>]/g, "-")
+    .replace(/\s+/g, " ")
+    .slice(0, 80);
+}
+
+function dailyTipsBreakdownExportBasename(locationName, dateStr) {
+  const loc = sanitizeFilenameSegment(locationName);
+  const date = String(dateStr ?? "").trim() || "export";
+  return `daily-tips-${loc}-${date}`;
 }
 
 export default function DailyTips() {
@@ -1645,11 +1669,11 @@ export default function DailyTips() {
                             "Manual Redistribution",
                             "Total",
                           ];
-                      const tail = (a) => [
-                        `$${netTipsAfterDeductions(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-                        `$${Number(a.redistributionShare ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                      const tailCsv = (a) => [
+                        csvTipExport(netTipsAfterDeductions(a)),
+                        csvTipExport(Number(a.redistributionShare ?? 0)),
                         (a.finalTips ?? a.totalTips) != null
-                          ? `$${Number(a.finalTips ?? a.totalTips).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`
+                          ? csvTipExport(Number(a.finalTips ?? a.totalTips))
                           : "",
                       ];
                       const rows = allocations.map((a) =>
@@ -1658,19 +1682,19 @@ export default function DailyTips() {
                               a.employeeName ?? "",
                               a.clockIn ?? "–",
                               a.clockOut ?? "–",
-                              a.amWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "",
-                              a.pmWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "",
-                              `$${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-                              `$${displayedPmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-                              ...tail(a),
+                              csvTipExport(a.amWorkedHours ?? ""),
+                              csvTipExport(a.pmWorkedHours ?? ""),
+                              csvTipExport(displayedAmTips(a)),
+                              csvTipExport(displayedPmTips(a)),
+                              ...tailCsv(a),
                             ]
                           : [
                               a.employeeName ?? "",
                               a.clockIn ?? "–",
                               a.clockOut ?? "–",
-                              a.amWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "",
-                              `$${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-                              ...tail(a),
+                              csvTipExport(a.amWorkedHours ?? ""),
+                              csvTipExport(displayedAmTips(a)),
+                              ...tailCsv(a),
                             ],
                       );
                       if (normalizedTotals) {
@@ -1680,30 +1704,30 @@ export default function DailyTips() {
                                 "Total",
                                 "",
                                 "",
-                                normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
-                                normalizedTotals.pmWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
-                                `$${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-                                `$${normalizedTotals.pmTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-                                `$${normalizedTotals.netTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-                                `$${normalizedTotals.redistributionShare.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-                                `$${normalizedTotals.totalTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                csvTipExport(normalizedTotals.amWorkedHours),
+                                csvTipExport(normalizedTotals.pmWorkedHours),
+                                csvTipExport(normalizedTotals.amTips),
+                                csvTipExport(normalizedTotals.pmTips),
+                                csvTipExport(normalizedTotals.netTips),
+                                csvTipExport(normalizedTotals.redistributionShare),
+                                csvTipExport(normalizedTotals.totalTips),
                               ]
                             : [
                                 "Total",
                                 "",
                                 "",
-                                normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
-                                `$${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-                                `$${normalizedTotals.netTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-                                `$${normalizedTotals.redistributionShare.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-                                `$${normalizedTotals.totalTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
+                                csvTipExport(normalizedTotals.amWorkedHours),
+                                csvTipExport(normalizedTotals.amTips),
+                                csvTipExport(normalizedTotals.netTips),
+                                csvTipExport(normalizedTotals.redistributionShare),
+                                csvTipExport(normalizedTotals.totalTips),
                               ],
                         );
                       }
                       exportTableToCSV(
                         headers,
                         rows,
-                        `daily-tips-${breakdownView?.dateStr ?? "export"}.csv`,
+                        `${dailyTipsBreakdownExportBasename(breakdownLocation?.name, breakdownView?.dateStr)}.csv`,
                       );
                     }}
                   >
@@ -1795,7 +1819,7 @@ export default function DailyTips() {
                         `Daily Tips — ${breakdownLocation?.name ?? ""} — ${breakdownView?.dateStr ?? ""}`,
                         headers,
                         rows,
-                        `daily-tips-${breakdownView?.dateStr ?? "export"}.pdf`,
+                        `${dailyTipsBreakdownExportBasename(breakdownLocation?.name, breakdownView?.dateStr)}.pdf`,
                       );
                     }}
                   >

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getDailyTipsHistory } from '../services/dailyTipService';
-import { exportTableToCSV, exportTableToPDF } from '../utils/reportUtils';
+import { exportTableToCSV, exportTableToPDF, formatCsvNumeric } from '../utils/reportUtils';
 import Button from '../components/ui/Button';
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -67,19 +67,21 @@ export default function DailyTipsHistory() {
 
   const exportHeaders = ['User', 'Role', 'AM Tips', 'PM Tips', 'Total', 'Date', 'Location'];
 
-  function buildExportRows(sourceItems) {
+  function buildExportRows(sourceItems, forCsv = false) {
     return sourceItems.map((row) => {
       const totalTips = (Number(row.amGrossTips) || 0) + (Number(row.pmGrossTips) || 0);
       const userDisplay = row.createdByUsername
         ? `${row.createdByUsername} (${row.createdByEmail || ''})`
         : row.createdByEmail || '';
       const locationName = row.locationId?.name ?? (row.locationId && typeof row.locationId === 'object' ? '' : row.locationId ?? '');
+      const moneyCell = (n) =>
+        forCsv ? formatCsvNumeric(n, { maxFractionDigits: 2 }) : formatMoney(n);
       return [
         userDisplay,
         row.createdByRole || '',
-        formatMoney(row.amGrossTips),
-        formatMoney(row.pmGrossTips),
-        formatMoney(totalTips),
+        moneyCell(row.amGrossTips),
+        moneyCell(row.pmGrossTips),
+        moneyCell(totalTips),
         formatDate(row.date),
         locationName,
       ];
@@ -90,21 +92,21 @@ export default function DailyTipsHistory() {
     // Export all pages: fetch with large limit
     try {
       const all = await getDailyTipsHistory(1, 10000);
-      const rows = buildExportRows(all?.items ?? items);
+      const rows = buildExportRows(all?.items ?? items, true);
       exportTableToCSV(exportHeaders, rows, `daily-tips-history.csv`);
     } catch {
       // fallback to current page
-      exportTableToCSV(exportHeaders, buildExportRows(items), `daily-tips-history.csv`);
+      exportTableToCSV(exportHeaders, buildExportRows(items, true), `daily-tips-history.csv`);
     }
   }
 
   async function handleExportPDF() {
     try {
       const all = await getDailyTipsHistory(1, 10000);
-      const rows = buildExportRows(all?.items ?? items);
+      const rows = buildExportRows(all?.items ?? items, false);
       exportTableToPDF('Daily Tips History', exportHeaders, rows, `daily-tips-history.pdf`);
     } catch {
-      exportTableToPDF('Daily Tips History', exportHeaders, buildExportRows(items), `daily-tips-history.pdf`);
+      exportTableToPDF('Daily Tips History', exportHeaders, buildExportRows(items, false), `daily-tips-history.pdf`);
     }
   }
 

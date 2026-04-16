@@ -19,6 +19,26 @@ function escapeCsvCell(value) {
   return s;
 }
 
+/**
+ * Format a number for CSV export: no `$`, no thousands separators, so spreadsheets
+ * treat cells as numbers. Uses `trunc` like tip breakdown UI when decimals are shown.
+ * @param {unknown} value
+ * @param {{ maxFractionDigits?: number }} [options]
+ * @returns {string}
+ */
+export function formatCsvNumeric(value, options = {}) {
+  const maxFractionDigits = options.maxFractionDigits ?? 2;
+  if (value === null || value === undefined || value === '') return '';
+  const x = Number(value);
+  if (!Number.isFinite(x)) return '';
+  return x.toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: maxFractionDigits,
+    roundingMode: 'trunc',
+    useGrouping: false,
+  });
+}
+
 const INDIGO_RGB = [79, 70, 229];
 /** Matches single-employee weekly payout PDF branding. */
 export const REPORT_BRAND_NAME = 'Corvia Tips Dashboard';
