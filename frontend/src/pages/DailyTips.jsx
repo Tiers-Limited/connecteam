@@ -373,7 +373,17 @@ export default function DailyTips() {
         });
         const calc = await getDailyTipCalculation(locationId, dateStr, {
           refresh: forceRefresh,
-        }).catch(() => ({ error: "Failed to load calculation" }));
+        }).catch((err) => {
+          const msg =
+            err.response?.data?.error ||
+            err.response?.data?.message ||
+            err.message;
+          return {
+            error: msg
+              ? String(msg).slice(0, 500)
+              : "Failed to load calculation",
+          };
+        });
         if (calc?.error) {
           setCalculation(null);
           setCalculationError(calc.error);
@@ -1196,7 +1206,9 @@ export default function DailyTips() {
                     dateStr: viewerDate,
                   };
                   setBreakdownView(v);
-                  void refreshBreakdownCalculation(false, v);
+                  // Same as "Refresh calculation" / pending "Load calculation": full run so
+                  // audit snapshot bugs or stale snapshot state cannot block the first load.
+                  void refreshBreakdownCalculation(false, v, true);
                 }}
               >
                 Load breakdown

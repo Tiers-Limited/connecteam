@@ -25,10 +25,18 @@ async function getCalculation(req, res, next) {
     if (forceRefresh) {
       result = await tipsCalculationService.getDailyTipCalculation(locationId, date);
     } else {
-      const snapshot = await tipsCalculationService.getDailyTipCalculationSnapshot(
-        locationId,
-        date,
-      );
+      let snapshot = null;
+      try {
+        snapshot = await tipsCalculationService.getDailyTipCalculationSnapshot(
+          locationId,
+          date,
+        );
+      } catch (snapErr) {
+        console.warn(
+          '[getCalculation] Snapshot rebuild failed; falling back to full calculation:',
+          snapErr?.message || snapErr,
+        );
+      }
       if (snapshot && snapshot.error) {
         result = snapshot;
       } else if (snapshot) {
