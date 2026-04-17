@@ -228,18 +228,44 @@ function dateStringToUtcMidnight(date) {
   return dateStringToAppDayStart(date);
 }
 
+/**
+ * Inclusive list of YYYY-MM-DD calendar days between startStr and endStr in the **app** timezone
+ * (same meaning as dateStringToUtcRange / DailyTipAudit day keys). Not server-local and not UTC
+ * midnight derived from local noon (which broke alignment with Aruba calendar days vs ISO dates).
+ */
 function getDatesInRange(startStr, endStr) {
-  const start = new Date(startStr + 'T12:00:00');
-  const end = new Date(endStr + 'T12:00:00');
-  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
-    return typeof startStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(startStr)
-      ? [startStr]
-      : [toDateString(startStr) || startStr];
-  }
+  const tz = getAppTimezone();
+  const start = String(startStr || '').trim().slice(0, 10);
+  const end = String(endStr || '').trim().slice(0, 10);
+  const startOk = /^\d{4}-\d{2}-\d{2}$/.test(start);
+  const endOk = /^\d{4}-\d{2}-\d{2}$/.test(end);
+  if (!startOk && !endOk) return [];
+  if (!startOk) return [end];
+  if (!endOk) return [start];
+  if (end < start) return [start];
+
   const dates = [];
-  const d = new Date(start);
-  while (d <= end) {
-    dates.push(d.toISOString().slice(0, 10));
+  const startMs = getStartOfDayUtcMs(start, tz);
+  const endMs = getStartOfDayUtcMs(end, tz);
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  if (!Number.isNaN(startMs) && !Number.isNaN(endMs)) {
+    let ymd = start;
+    while (ymd <= end) {
+      dates.push(ymd);
+      if (ymd === end) break;
+      const curStart = getStartOfDayUtcMs(ymd, tz);
+      ymd = formatDateStringInTimezone(curStart + DAY_MS, tz);
+    }
+    return dates;
+  }
+
+  const s = new Date(`${start}T12:00:00`);
+  const e = new Date(`${end}T12:00:00`);
+  if (isNaN(s.getTime()) || isNaN(e.getTime()) || e < s) return [start];
+  const d = new Date(s);
+  while (d <= e) {
+    dates.push(formatDateStringInTimezone(d.getTime(), tz));
     d.setDate(d.getDate() + 1);
   }
   return dates;

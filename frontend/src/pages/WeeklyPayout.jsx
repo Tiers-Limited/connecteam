@@ -13,6 +13,7 @@ import {
   formatWeekRange,
   getWeekDateColumns,
   getDateRangeColumns,
+  columnsFromDayDateKeys,
 } from "../utils/dateUtils";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
@@ -199,7 +200,9 @@ export default function WeeklyPayout() {
   const rangeStart = data?.dateRange?.startDate ?? startDate;
   const rangeEnd = data?.dateRange?.endDate ?? endDate;
   const weekDateColumns = data?.dateRange
-    ? getDateRangeColumns(rangeStart, rangeEnd)
+    ? Array.isArray(data.dayDateKeys) && data.dayDateKeys.length > 0
+      ? columnsFromDayDateKeys(data.dayDateKeys)
+      : getDateRangeColumns(rangeStart, rangeEnd)
     : getWeekDateColumns(startDate);
   const totalRows = payouts.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));

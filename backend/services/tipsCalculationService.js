@@ -1460,6 +1460,8 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
     locationName: location?.name || '',
     weekStart: weekStartStr,
     weekEnd: weekEndStr,
+    /** Canonical YYYY-MM-DD order for dailyTipsByDay (app timezone); use for CSV/PDF headers so indices match saved payout. */
+    dayDateKeys: dateStrs,
     redistributionPool: totalRedistributionPool,
     eligibleTotalHours,
     daysWithTipInput,

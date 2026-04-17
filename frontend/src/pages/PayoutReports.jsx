@@ -10,6 +10,7 @@ import {
   getWeekEnd,
   toLocalDateString,
   getDateRangeColumns,
+  columnsFromDayDateKeys,
 } from "../utils/dateUtils";
 import {
   exportTableToCSV,
@@ -308,7 +309,10 @@ export default function PayoutReports() {
           reportData.dateRange?.startDate ?? startDate.trim().slice(0, 10);
         const ed =
           reportData.dateRange?.endDate ?? endDate.trim().slice(0, 10);
-        const cols = getDateRangeColumns(sd, ed);
+        const cols =
+          Array.isArray(reportData.dayDateKeys) && reportData.dayDateKeys.length > 0
+            ? columnsFromDayDateKeys(reportData.dayDateKeys)
+            : getDateRangeColumns(sd, ed);
         const hdr = weeklyReportHeaders(cols);
         const exportMeta = buildWeeklyPayoutExportMeta(sd, ed, scopeSummary());
 

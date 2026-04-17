@@ -73,3 +73,22 @@ export function getDateRangeColumns(startDate, endDate) {
   }
   return cols;
 }
+
+/**
+ * Build table/export columns from backend `dayDateKeys` so each index matches `dailyTipsByDay`.
+ * @param {string[]} dayDateKeys
+ * @returns {{ dateKey: string, label: string }[]}
+ */
+export function columnsFromDayDateKeys(dayDateKeys) {
+  if (!Array.isArray(dayDateKeys) || dayDateKeys.length === 0) return [];
+  return dayDateKeys.map((raw) => {
+    const dateKey = String(raw || '').trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return { dateKey, label: '—' };
+    }
+    const d = new Date(`${dateKey}T12:00:00`);
+    const day = String(d.getDate()).padStart(2, '0');
+    const mon = d.toLocaleDateString('en-GB', { month: 'short' });
+    return { dateKey, label: `${day} ${mon}` };
+  });
+}

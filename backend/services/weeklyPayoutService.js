@@ -488,8 +488,14 @@ async function buildWeeklyPayoutReport(opts) {
     });
   });
 
+  const dayDateKeys =
+    payloadsForExport.length > 0 && Array.isArray(payloadsForExport[0].dayDateKeys)
+      ? payloadsForExport[0].dayDateKeys
+      : null;
+
   return {
     dateRange: { startDate: sd, endDate: ed },
+    ...(dayDateKeys && dayDateKeys.length > 0 ? { dayDateKeys } : {}),
     payouts: flat,
     geographicScope,
     employeeScope,
