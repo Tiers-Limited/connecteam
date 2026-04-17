@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import { useApp } from "../context/AppContext";
 import {
@@ -116,6 +116,8 @@ export default function PayoutReports() {
   const [employeeOptions, setEmployeeOptions] = useState([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [isEmployeeDropdownOpen, setIsEmployeeDropdownOpen] = useState(false);
+  const employeeDropdownRef = useRef(null);
 
   const selectedEmployeeLabel = useMemo(() => {
     const opt = employeeOptions.find((e) => e.employeeId === selectedEmployeeId);
@@ -124,6 +126,14 @@ export default function PayoutReports() {
       ? `${opt.employeeName} — ${opt.locationName}`
       : opt.employeeName;
   }, [employeeOptions, selectedEmployeeId, geographicScope]);
+
+  const employeePlaceholder = useMemo(() => {
+    if (loadingEmployees) return "Loading employees…";
+    if (employeeOptions.length === 0) {
+      return "No saved payout — load payout on Weekly Payout first";
+    }
+    return "Select employee…";
+  }, [loadingEmployees, employeeOptions.length]);
 
   useEffect(() => {
     if (geographicScope !== "one_location" || singleLocationId) return;
@@ -199,6 +209,27 @@ export default function PayoutReports() {
     const ok = employeeOptions.some((e) => e.employeeId === selectedEmployeeId);
     if (!ok) setSelectedEmployeeId("");
   }, [employeeOptions, selectedEmployeeId]);
+
+  useEffect(() => {
+    if (!isEmployeeDropdownOpen) return;
+    const onClickOutside = (event) => {
+      if (
+        employeeDropdownRef.current &&
+        !employeeDropdownRef.current.contains(event.target)
+      ) {
+        setIsEmployeeDropdownOpen(false);
+      }
+    };
+    const onEscape = (event) => {
+      if (event.key === "Escape") setIsEmployeeDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    document.addEventListener("keydown", onEscape);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("keydown", onEscape);
+    };
+  }, [isEmployeeDropdownOpen]);
 
   const scopeSummary = useCallback(() => {
     if (geographicScope === "all_locations") return "All locations";
@@ -547,6 +578,7 @@ export default function PayoutReports() {
                 onChange={() => {
                   setEmployeeScope("one_employee");
                   setSelectedEmployeeId("");
+                  setIsEmployeeDropdownOpen(false);
                 }}
                 className="h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-500"
               />
@@ -558,30 +590,63 @@ export default function PayoutReports() {
               <label className="mb-1 block text-xs font-medium text-slate-500">
                 Employee (from saved payout for this date range)
               </label>
-              <select
-                value={selectedEmployeeId}
-                onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                disabled={loadingEmployees}
-                className="w-full rounded-lg border border-slate-200 bg-white/90 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:opacity-60"
-              >
-                <option value="">
-                  {loadingEmployees
-                    ? "Loading employees…"
-                    : employeeOptions.length === 0
-                      ? "No saved payout — load payout on Weekly Payout first"
-                      : "Select employee…"}
-                </option>
-                {employeeOptions.map((e) => (
-                  <option
-                    key={`${e.locationId}-${e.employeeId}`}
-                    value={e.employeeId}
-                  >
-                    {geographicScope === "all_locations"
-                      ? `${e.employeeName} — ${e.locationName}`
-                      : e.employeeName}
-                  </option>
-                ))}
-              </select>
+              <div className="relative" ref={employeeDropdownRef}>
+                <button
+                  type="button"
+                  disabled={loadingEmployees || employeeOptions.length === 0}
+                  onClick={() =>
+                    setIsEmployeeDropdownOpen((prev) => !prev)
+                  }
+                  className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white/90 px-3 py-2 text-left text-sm text-slate-700 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="truncate">
+                    {selectedEmployeeLabel || employeePlaceholder}
+                  </span>
+                  <span className="ml-3 text-slate-400" aria-hidden="true">
+                    ▾
+                  </span>
+                </button>
+                {isEmployeeDropdownOpen && (
+                  <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                    <div className="max-h-56 overflow-y-scroll">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedEmployeeId("");
+                          setIsEmployeeDropdownOpen(false);
+                        }}
+                        className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-indigo-50"
+                      >
+                        Select employee…
+                      </button>
+                      {employeeOptions.map((e) => {
+                        const label =
+                          geographicScope === "all_locations"
+                            ? `${e.employeeName} — ${e.locationName}`
+                            : e.employeeName;
+                        const isSelected = selectedEmployeeId === e.employeeId;
+                        return (
+                          <button
+                            key={`${e.locationId}-${e.employeeId}`}
+                            type="button"
+                            onClick={() => {
+                              setSelectedEmployeeId(e.employeeId);
+                              setIsEmployeeDropdownOpen(false);
+                            }}
+                            className={`block w-full px-3 py-2 text-left text-sm hover:bg-indigo-50 ${
+                              isSelected
+                                ? "bg-indigo-50 text-indigo-700"
+                                : "text-slate-700"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
