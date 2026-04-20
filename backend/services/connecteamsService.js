@@ -136,13 +136,18 @@ function formatTimeInTimezone(tsMs, timezone) {
       timeZone: tz,
       hour: '2-digit',
       minute: '2-digit',
+      second: '2-digit',
       hour12: false,
     });
-    return s && s.length >= 5 ? s.slice(0, 5) : '—';
+    return s && s.length >= 8 ? s.slice(0, 8) : '—';
   } catch (_) {
     const d = new Date(tsMs);
     return (
-      String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+      String(d.getHours()).padStart(2, '0') +
+      ':' +
+      String(d.getMinutes()).padStart(2, '0') +
+      ':' +
+      String(d.getSeconds()).padStart(2, '0')
     );
   }
 }
@@ -211,7 +216,8 @@ function getDateRangeBoundsUnixSeconds(startStr, endStr) {
 
 /**
  * Fetch time entries from Connecteams API for the given date range (uncached).
- * Returns array of { connecteamsUserId, employeeName, locationKey, date, clockIn, clockOut }.
+ * Returns an array of punches plus `manualBreaks`: same-array property listing
+ * { connecteamsUserId, date, startMs, endMs } from the time-activities API.
  */
 async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
   if (!connecteamsApiKey) {
@@ -368,6 +374,10 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
     .slice(0, 3)
     .map(([ukey, dates]) => ({ userId: ukey, dates: Object.keys(dates).slice(0, 5) }));
 
+  /** Manual breaks from time-activities API (deduped across time clocks). */
+  const allManualBreaks = [];
+  const manualBreakDedupe = new Set();
+
   // 4. Time-activities (per time clock): startDate, endDate, userIds -> get shifts with jobId
   const allShiftsWithUser = [];
   for (const tcId of timeClockIds) {
@@ -402,6 +412,30 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
         }
         for (const shift of shifts) {
           allShiftsWithUser.push({ shift, ukey, userInfo });
+        }
+
+        const manualBreaksRaw = userObj.manualBreaks || userObj.manual_breaks || [];
+        for (const br of manualBreaksRaw) {
+          const bStartMs = getClockInMsFromRecord(br);
+          const bEndMs = getClockOutMsFromRecord(br);
+          if (bStartMs == null || bEndMs == null || bEndMs <= bStartMs) continue;
+          const bStart = br.start || {};
+          const tzBr = (bStart.timezone || br.timezone) || DEFAULT_TIMEZONE;
+          const breakDate =
+            toDateString(dateFromTimestampInTimezone(Math.floor(bStartMs / 1000), tzBr)) || startDate;
+          if (!datesInRange.includes(breakDate)) continue;
+          const dedupeKey =
+            br.id != null && String(br.id).trim() !== ''
+              ? `${ukey}|${String(br.id)}`
+              : `${ukey}|${bStartMs}|${bEndMs}`;
+          if (manualBreakDedupe.has(dedupeKey)) continue;
+          manualBreakDedupe.add(dedupeKey);
+          allManualBreaks.push({
+            connecteamsUserId: ukey,
+            date: breakDate,
+            startMs: bStartMs,
+            endMs: bEndMs,
+          });
         }
       }
     } catch (_) {
@@ -490,12 +524,14 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
       scheduledStartMs: sched && sched.scheduledStartMs != null ? sched.scheduledStartMs : undefined,
       clockInMs: clockInTs,
       clockOutMs: clockOutMsUse,
+      timezone: tz,
       // propagate job identifiers so callers can resolve titles or apply multipliers
       jobId: shift.jobId || null,
       subJobId: shift.subJobId || null,
     });
   }
 
+  entries.manualBreaks = allManualBreaks;
   return entries;
 }
 
