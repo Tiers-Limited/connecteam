@@ -30,6 +30,27 @@ function getDefaultDateRange() {
   return { start: toLocalDateString(mon), end: toLocalDateString(sun) };
 }
 
+function formatDurationHours(totalMinutes) {
+  const mins = Math.max(0, Number(totalMinutes) || 0);
+  if (mins <= 0) return "0h (0.00h)";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const decimal = (mins / 60).toFixed(2);
+  return `${h}h${m ? ` ${m}m` : ""} (${decimal}h)`;
+}
+
+function breakMinutesFromRow(row) {
+  const direct = Number(row?.totalBreakMinutes);
+  if (Number.isFinite(direct) && direct >= 0) return direct;
+  if (Array.isArray(row?.dailyBreakdown)) {
+    return row.dailyBreakdown.reduce(
+      (sum, d) => sum + (Number(d?.breakMinutes) || 0),
+      0,
+    );
+  }
+  return 0;
+}
+
 export default function WeeklyPayout() {
   const { selectedLocationId, setSelectedLocationId, locations } = useApp();
   const defaultRange = getDefaultDateRange();
@@ -193,7 +214,11 @@ export default function WeeklyPayout() {
   }, [selectedLocationId, startDate, data?.payouts, data?.dateRange]);
 
   const location = locations.find((l) => l._id === selectedLocationId);
-  const payouts = data?.payouts ?? [];
+  const payouts = [...(data?.payouts ?? [])].sort((a, b) =>
+    (a?.employeeName || "").localeCompare(b?.employeeName || "", undefined, {
+      sensitivity: "base",
+    }),
+  );
   const locationName = data?.locationName ?? location?.name ?? "—";
   const displayRangeStart = startDate.trim().slice(0, 10);
   const displayRangeEnd = endDate.trim().slice(0, 10);
@@ -333,7 +358,7 @@ export default function WeeklyPayout() {
               <strong className="text-slate-600">To date</strong>, then click{" "}
               <strong className="text-slate-600">Load payout</strong>. Tardiness
               and working hours are pulled from Connecteam for the selected
-              range. Weekly Gross Tips = Σ Daily Tips in range. Tardiness: 0–5
+              range (working hours are net after manual breaks). Weekly Gross Tips = Σ Daily Tips in range. Tardiness: 0–5
               min → 0%; &gt;5–10 min → 15%; &gt;10 min → 20%. Redistribution by{" "}
               <strong className="text-slate-600">total working hours</strong>{" "}
               from Connecteam.
@@ -478,6 +503,12 @@ export default function WeeklyPayout() {
                       >
                         Working hours
                       </th>
+                      <th
+                        className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                        title="Manual break time from Connecteam for the range"
+                      >
+                        Break hours
+                      </th>
                       <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Weekly Tardiness (min)
                       </th>
@@ -552,13 +583,13 @@ export default function WeeklyPayout() {
                           className="py-3 pr-4 text-right tabular-nums text-slate-600"
                           title="From Weekly Tardiness (Connecteam); used for redistribution"
                         >
-                          {(() => {
-                            const mins = p.totalWorkingMinutes ?? 0;
-                            if (mins <= 0) return "–";
-                            const h = Math.floor(mins / 60);
-                            const m = mins % 60;
-                            return `${h}h${m ? ` ${m}m` : ""}`;
-                          })()}
+                          {formatDurationHours(p.totalWorkingMinutes)}
+                        </td>
+                        <td
+                          className="py-3 pr-4 text-right tabular-nums text-slate-600"
+                          title="Manual break time from Connecteam"
+                        >
+                          {formatDurationHours(breakMinutesFromRow(p))}
                         </td>
                         <td className="py-3 pr-4 text-right tabular-nums text-slate-600">
                           {p.weeklyTardinessMinutes ?? 0}

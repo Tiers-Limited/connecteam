@@ -5,6 +5,7 @@ const dailyBreakdownSchema = new mongoose.Schema(
   {
     date: { type: Date, required: true },
     workingMinutes: { type: Number, default: 0, min: 0 },
+    breakMinutes: { type: Number, default: 0, min: 0 },
     tardinessMinutes: { type: Number, default: 0, min: 0 },
   },
   { _id: false }
@@ -38,6 +39,12 @@ const weeklyTardinessSchema = new mongoose.Schema(
     },
     /** Total working minutes for the period (from clock-in/clock-out). */
     totalWorkingMinutes: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    /** Total break minutes for the period (manual breaks from Connecteam). */
+    totalBreakMinutes: {
       type: Number,
       default: 0,
       min: 0,

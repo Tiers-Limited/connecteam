@@ -590,6 +590,22 @@ function getDatesInRange(startStr, endStr) {
   return dates;
 }
 
+function mergeIntervalsMs(intervals) {
+  if (!Array.isArray(intervals) || intervals.length === 0) return [];
+  const sorted = intervals
+    .filter((iv) => iv && Number.isFinite(iv.start) && Number.isFinite(iv.end) && iv.end > iv.start)
+    .sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const iv of sorted) {
+    if (!merged.length || iv.start > merged[merged.length - 1].end) {
+      merged.push({ start: iv.start, end: iv.end });
+    } else {
+      merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, iv.end);
+    }
+  }
+  return merged;
+}
+
 const DAY_KEY_BY_JS_DAY = { 0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat' };
 
 
@@ -634,7 +650,10 @@ function buildTardinessPayload(rawEntries, locationKeyFilter) {
     }
   }
 
-  // Working minutes: same as TimeEntries — group by (employee, location, date), first clock-in / last clock-out per day, then interval = last - first, sum over week. Use timestamps (clockInMs/clockOutMs) when present so duration is correct.
+  const manualBreaks = Array.isArray(rawEntries?.manualBreaks) ? rawEntries.manualBreaks : [];
+
+  // Working minutes: same as TimeEntries — group by (employee, location, date), first clock-in / last clock-out per day,
+  // then interval = last - first. Deduct overlapping manual breaks from Connecteam.
   const dayPunchesByKey = new Map();
   for (const e of filtered) {
     const key = `${String(e.connecteamsUserId || '').trim()}|${(e.locationKey || '').toString().toLowerCase().trim()}|${(e.date || '').slice(0, 10)}`;
@@ -664,31 +683,59 @@ function buildTardinessPayload(rawEntries, locationKeyFilter) {
     }
   }
   const workingMinutesByEmpLoc = new Map();
+  const breakMinutesByEmpLoc = new Map();
   const workingMinutesByEmployee = new Map();
+  const breakMinutesByEmployee = new Map();
   /** Per-day working minutes: { connecteamsUserId, locationKey, date (YYYY-MM-DD), workingMinutes } for persistence. */
   const dailyWorkingMinutes = [];
+  /** Per-day break minutes (same grain as dailyWorkingMinutes). */
+  const dailyBreakMinutes = [];
   for (const [key, row] of dayPunchesByKey) {
-    let durationMins = 0;
+    let grossDurationMins = 0;
     if (row.clockInMs != null && row.clockOutMs != null && row.clockOutMs > row.clockInMs) {
-      durationMins = Math.max(0, Math.floor((row.clockOutMs - row.clockInMs) / 60000));
+      grossDurationMins = Math.max(0, Math.floor((row.clockOutMs - row.clockInMs) / 60000));
     } else if (row.clockOutMins >= 0 && row.clockInMins < Infinity) {
-      durationMins = Math.max(0, row.clockOutMins - row.clockInMins);
+      grossDurationMins = Math.max(0, row.clockOutMins - row.clockInMins);
     }
     const parts = key.split('|');
     const connecteamsUserId = parts[0] || '';
     const locationKey = parts[1] || '';
     const dateStr = parts[2] || '';
     const empName = row.employeeName || connecteamsUserId;
+    let breakDurationMins = 0;
+    if (connecteamsUserId && dateStr && row.clockInMs != null && row.clockOutMs != null && row.clockOutMs > row.clockInMs && manualBreaks.length > 0) {
+      const overlaps = [];
+      for (const br of manualBreaks) {
+        if (String(br.connecteamsUserId || '') !== connecteamsUserId) continue;
+        if ((br.date || '').toString().slice(0, 10) !== dateStr) continue;
+        const bStart = Number(br.startMs);
+        const bEnd = Number(br.endMs);
+        if (!Number.isFinite(bStart) || !Number.isFinite(bEnd) || bEnd <= bStart) continue;
+        const ovStart = Math.max(row.clockInMs, bStart);
+        const ovEnd = Math.min(row.clockOutMs, bEnd);
+        if (ovEnd > ovStart) overlaps.push({ start: ovStart, end: ovEnd });
+      }
+      const mergedOverlaps = mergeIntervalsMs(overlaps);
+      breakDurationMins = mergedOverlaps.reduce(
+        (sum, iv) => sum + Math.max(0, Math.floor((iv.end - iv.start) / 60000)),
+        0
+      );
+    }
+    const durationMins = Math.max(0, grossDurationMins - breakDurationMins);
     if (connecteamsUserId && locationKey) {
       const empLocKey = `${connecteamsUserId}|${locationKey}`;
       workingMinutesByEmpLoc.set(empLocKey, (workingMinutesByEmpLoc.get(empLocKey) || 0) + durationMins);
+      breakMinutesByEmpLoc.set(empLocKey, (breakMinutesByEmpLoc.get(empLocKey) || 0) + breakDurationMins);
       if (dateStr) dailyWorkingMinutes.push({ connecteamsUserId, locationKey, date: dateStr, workingMinutes: durationMins });
+      if (dateStr) dailyBreakMinutes.push({ connecteamsUserId, locationKey, date: dateStr, breakMinutes: breakDurationMins });
     }
     if (empName) {
       workingMinutesByEmployee.set(empName, (workingMinutesByEmployee.get(empName) || 0) + durationMins);
+      breakMinutesByEmployee.set(empName, (breakMinutesByEmployee.get(empName) || 0) + breakDurationMins);
     }
   }
   const employeeTotalWorkingMinutes = [];
+  const employeeTotalBreakMinutes = [];
   const seenEmpLoc = new Set();
   for (const [empLocKey, totalWorkingMinutes] of workingMinutesByEmpLoc) {
     if (seenEmpLoc.has(empLocKey)) continue;
@@ -703,8 +750,15 @@ function buildTardinessPayload(rawEntries, locationKeyFilter) {
       locationKey,
       totalWorkingMinutes,
     });
+    employeeTotalBreakMinutes.push({
+      connecteamsUserId,
+      employeeName,
+      locationKey,
+      totalBreakMinutes: breakMinutesByEmpLoc.get(empLocKey) || 0,
+    });
   }
   const totalWorkingMinutesByEmployee = Object.fromEntries(workingMinutesByEmployee);
+  const totalBreakMinutesByEmployee = Object.fromEntries(breakMinutesByEmployee);
 
 
 
@@ -749,8 +803,11 @@ function buildTardinessPayload(rawEntries, locationKeyFilter) {
     dailyTotals,
     weekTotal,
     employeeTotalWorkingMinutes,
+    employeeTotalBreakMinutes,
     totalWorkingMinutesByEmployee,
+    totalBreakMinutesByEmployee,
     dailyWorkingMinutes,
+    dailyBreakMinutes,
   };
 }
 

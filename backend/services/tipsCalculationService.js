@@ -1326,6 +1326,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
 
   const tardinessMap = new Map();
   const workingMinutesMap = new Map();
+  const breakMinutesMap = new Map();
   const dailyBreakdownByEmployeeId = new Map();
   let employees = [];
 
@@ -1337,6 +1338,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
       if (!emp || (emp && !emp.name)) continue;
       tardinessMap.set(eid, t.totalTardinessMinutes ?? 0);
       workingMinutesMap.set(eid, Number(t.totalWorkingMinutes) || 0);
+      breakMinutesMap.set(eid, Number(t.totalBreakMinutes) || 0);
       if (Array.isArray(t.dailyBreakdown) && t.dailyBreakdown.length > 0) {
         dailyBreakdownByEmployeeId.set(eid, t.dailyBreakdown);
       }
@@ -1420,10 +1422,17 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
         tardinessByConnecteamsId.set(uid, (tardinessByConnecteamsId.get(uid) || 0) + mins);
       }
       const workingByConnecteamsId = new Map();
+      const breakByConnecteamsId = new Map();
       for (const item of connecteamPayload?.employeeTotalWorkingMinutes || []) {
         const uid = String(item.connecteamsUserId || '').trim();
         if (uid && (item.locationKey || '').toLowerCase().trim() === locationKey.toLowerCase()) {
           workingByConnecteamsId.set(uid, (workingByConnecteamsId.get(uid) || 0) + (Number(item.totalWorkingMinutes) || 0));
+        }
+      }
+      for (const item of connecteamPayload?.employeeTotalBreakMinutes || []) {
+        const uid = String(item.connecteamsUserId || '').trim();
+        if (uid && (item.locationKey || '').toLowerCase().trim() === locationKey.toLowerCase()) {
+          breakByConnecteamsId.set(uid, (breakByConnecteamsId.get(uid) || 0) + (Number(item.totalBreakMinutes) || 0));
         }
       }
       for (const emp of employees) {
@@ -1431,6 +1440,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
         if (uid) {
           tardinessMap.set(emp._id.toString(), tardinessByConnecteamsId.get(uid) ?? 0);
           workingMinutesMap.set(emp._id.toString(), workingByConnecteamsId.get(uid) ?? 0);
+          breakMinutesMap.set(emp._id.toString(), breakByConnecteamsId.get(uid) ?? 0);
         }
       }
       const connecteamsIdsInPayload = new Set(
@@ -1445,6 +1455,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
         if (eid) {
           tardinessMap.set(eid, t.totalTardinessMinutes);
           workingMinutesMap.set(eid, Number(t.totalWorkingMinutes) || 0);
+          breakMinutesMap.set(eid, Number(t.totalBreakMinutes) || 0);
         }
       }
     }
@@ -1612,6 +1623,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
     };
     const tardinessMinutes = tardinessMap.get(id) ?? 0;
     const totalWorkingMinutes = workingMinutesMap.get(id) ?? 0;
+    const totalBreakMinutes = breakMinutesMap.get(id) ?? 0;
     const workingHoursForRedistribution = totalWorkingMinutes / 60;
     const deductionPercent = getTardinessDeductionPercent(tardinessMinutes);
     const tardinessDeductionAmount = roundMoney(weeklyGrossTips * deductionPercent);
@@ -1637,6 +1649,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
       netWeeklyTips,
       weeklyWorkedHours,
       totalWorkingMinutes,
+      totalBreakMinutes,
       workingHoursForRedistribution,
       eligibleForRedistribution: tardinessMinutes <= 5 && workingHoursForRedistribution > 0,
       dailyBreakdown,
@@ -1717,6 +1730,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
       tardinessRedistribution: r.tardinessRedistribution,
       finalWeeklyTipsPayable: r.finalWeeklyTipsPayable,
       totalWorkingMinutes: r.totalWorkingMinutes,
+      totalBreakMinutes: r.totalBreakMinutes,
       dailyBreakdown: r.dailyBreakdown || [],
     })),
   };

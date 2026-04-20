@@ -57,15 +57,33 @@ function getDefaultDateRange() {
   return { start: toLocalDateString(mon), end: toLocalDateString(sun) };
 }
 
+function formatDurationForReport(totalMinutes) {
+  const mins = Math.max(0, Number(totalMinutes) || 0);
+  if (mins <= 0) return "-";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${h}h${m ? ` ${m}m` : ""} (${(mins / 60).toFixed(2)}h)`;
+}
+
+function breakMinutesFromPayout(p) {
+  const direct = Number(p?.totalBreakMinutes);
+  if (Number.isFinite(direct) && direct >= 0) return direct;
+  if (Array.isArray(p?.dailyBreakdown)) {
+    return p.dailyBreakdown.reduce(
+      (sum, d) => sum + (Number(d?.breakMinutes) || 0),
+      0,
+    );
+  }
+  return 0;
+}
+
 function payoutToExportRow(p, locLabel, cols, forCsv = false) {
   const fmtMoney = forCsv
     ? (n) => formatCsvNumeric(n, { maxFractionDigits: 2 })
     : formatMoney;
   const wh = p.totalWorkingMinutes ?? 0;
-  const whStr =
-    wh <= 0
-      ? "-"
-      : `${Math.floor(wh / 60)}h${wh % 60 ? ` ${wh % 60}m` : ""}`;
+  const whStr = formatDurationForReport(wh);
+  const bhStr = formatDurationForReport(breakMinutesFromPayout(p));
   return [
     p.employeeName ?? "",
     locLabel,
@@ -74,6 +92,7 @@ function payoutToExportRow(p, locLabel, cols, forCsv = false) {
     ),
     fmtMoney(p.weeklyGrossTips ?? p.dailyTipsMonToSun),
     whStr,
+    bhStr,
     String(p.weeklyTardinessMinutes ?? 0),
     `${p.tardinessPercent ?? 0}%`,
     fmtMoney(p.tardinessDeduction),
@@ -91,6 +110,7 @@ const weeklyReportHeaders = (dateCols) => [
   ...dateCols.map((c) => c.label),
   "Weekly Gross Tips",
   "Working hours",
+  "Break hours",
   "Weekly Tardiness (min)",
   "Tardiness %",
   "Tardiness Deduction",
@@ -162,7 +182,7 @@ export default function PayoutReports() {
     if (
       !sd ||
       !ed ||
-      new Date(`${ed}T12:00:00`) < new Date(`${sd}T12:00:00`)
+      ed < sd
     ) {
       setEmployeeOptions([]);
       return;
@@ -244,7 +264,7 @@ export default function PayoutReports() {
     if (
       !sd ||
       !ed ||
-      new Date(`${ed}T12:00:00`) < new Date(`${sd}T12:00:00`)
+      ed < sd
     ) {
       toast.error("Please select a valid date range (From ≤ To).");
       return null;

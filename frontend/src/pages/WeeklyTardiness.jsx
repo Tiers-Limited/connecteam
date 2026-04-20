@@ -39,6 +39,26 @@ function sanitizeForExport(s) {
     .trim();
 }
 
+function formatDurationProfessional(totalMinutes) {
+  const mins = Math.max(0, Number(totalMinutes) || 0);
+  if (mins <= 0) return "—";
+  const hours = mins / 60;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const human = `${h}h${m ? ` ${m}m` : ""}`;
+  return `${human} (${hours.toFixed(2)}h)`;
+}
+
+function getMinutesByEmployee(mapObj, employeeName) {
+  const direct = mapObj?.[employeeName];
+  if (direct != null) return Number(direct) || 0;
+  if (!mapObj || typeof mapObj !== "object") return 0;
+  const hit = Object.entries(mapObj).find(
+    ([k]) => (k || "").trim() === (employeeName || "").trim(),
+  );
+  return Number(hit?.[1]) || 0;
+}
+
 export default function WeeklyTardiness() {
   const { selectedLocationId, setSelectedLocationId, locations } = useApp();
   const defaultRange = getDefaultDateRange();
@@ -56,7 +76,7 @@ export default function WeeklyTardiness() {
     if (
       !start ||
       !end ||
-      new Date(end + "T12:00:00") < new Date(start + "T12:00:00")
+      end < start
     ) {
       toast.error("Please select a valid date range (From ≤ To).");
       return;
@@ -150,6 +170,7 @@ export default function WeeklyTardiness() {
   }
 
   const workingByEmployee = data?.totalWorkingMinutesByEmployee || {};
+  const breakByEmployee = data?.totalBreakMinutesByEmployee || {};
 
   const totalsByDate = {};
   dateColumns.forEach((col) => {
@@ -338,6 +359,7 @@ export default function WeeklyTardiness() {
                             ...dateColumns.map((c) => c.label),
                             "Total (min)",
                             "Working hours",
+                            "Break hours",
                           ];
                           const dataRows = employeeRows.map((rec) => {
                             const rowTotal = dateColumns.reduce((sum, col) => {
@@ -357,18 +379,14 @@ export default function WeeklyTardiness() {
                                     );
                               return sum + mins;
                             }, 0);
-                            const mins =
-                              workingByEmployee[rec.employeeName] ??
-                              Object.entries(workingByEmployee).find(
-                                ([k]) =>
-                                  (k || "").trim() ===
-                                  (rec.employeeName || "").trim(),
-                              )?.[1] ??
-                              0;
-                            const hoursStr =
-                              mins > 0
-                                ? `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ""}`
-                                : "";
+                            const mins = getMinutesByEmployee(
+                              workingByEmployee,
+                              rec.employeeName,
+                            );
+                            const breakMins = getMinutesByEmployee(
+                              breakByEmployee,
+                              rec.employeeName,
+                            );
                             return [
                               sanitizeForExport(rec.employeeName),
                               ...dateColumns.map((col) =>
@@ -377,7 +395,10 @@ export default function WeeklyTardiness() {
                                 ),
                               ),
                               String(rowTotal),
-                              sanitizeForExport(hoursStr),
+                              sanitizeForExport(formatDurationProfessional(mins)),
+                              sanitizeForExport(
+                                formatDurationProfessional(breakMins),
+                              ),
                             ];
                           });
                           const totalTardinessLabel = sanitizeForExport(
@@ -390,6 +411,7 @@ export default function WeeklyTardiness() {
                             ),
                             "Total",
                             "",
+                            "",
                           ];
                           const summaryDataRow = [
                             "",
@@ -397,6 +419,7 @@ export default function WeeklyTardiness() {
                               (col) => `${totalsByDate[col.dateKey] ?? 0} min`,
                             ),
                             `${rangeTotal} min`,
+                            "",
                             "",
                           ];
                           const emptyRow = headers.map(() => "");
@@ -439,6 +462,7 @@ export default function WeeklyTardiness() {
                             ...dateColumns.map((c) => c.label),
                             "Total (min)",
                             "Working hours",
+                            "Break hours",
                           ];
                           const dataRows = employeeRows.map((rec) => {
                             const rowTotal = dateColumns.reduce((sum, col) => {
@@ -458,18 +482,14 @@ export default function WeeklyTardiness() {
                                     );
                               return sum + mins;
                             }, 0);
-                            const mins =
-                              workingByEmployee[rec.employeeName] ??
-                              Object.entries(workingByEmployee).find(
-                                ([k]) =>
-                                  (k || "").trim() ===
-                                  (rec.employeeName || "").trim(),
-                              )?.[1] ??
-                              0;
-                            const hoursStr =
-                              mins > 0
-                                ? `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ""}`
-                                : "";
+                            const mins = getMinutesByEmployee(
+                              workingByEmployee,
+                              rec.employeeName,
+                            );
+                            const breakMins = getMinutesByEmployee(
+                              breakByEmployee,
+                              rec.employeeName,
+                            );
                             return [
                               sanitizeForExport(rec.employeeName),
                               ...dateColumns.map((col) =>
@@ -478,7 +498,10 @@ export default function WeeklyTardiness() {
                                 ),
                               ),
                               String(rowTotal),
-                              sanitizeForExport(hoursStr),
+                              sanitizeForExport(formatDurationProfessional(mins)),
+                              sanitizeForExport(
+                                formatDurationProfessional(breakMins),
+                              ),
                             ];
                           });
                           const totalTardinessLabel = sanitizeForExport(
@@ -491,6 +514,7 @@ export default function WeeklyTardiness() {
                             ),
                             "Total",
                             "",
+                            "",
                           ];
                           const summaryDataRow = [
                             "",
@@ -498,6 +522,7 @@ export default function WeeklyTardiness() {
                               (col) => `${totalsByDate[col.dateKey] ?? 0} min`,
                             ),
                             `${rangeTotal} min`,
+                            "",
                             "",
                           ];
                           const emptyRow = headers.map(() => "");
@@ -569,6 +594,9 @@ export default function WeeklyTardiness() {
                       <th className="whitespace-nowrap pb-3 pl-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Working hours
                       </th>
+                      <th className="whitespace-nowrap pb-3 pl-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                        Break hours
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -637,27 +665,20 @@ export default function WeeklyTardiness() {
                             {rowTotal}
                           </td>
                           <td className="py-2.5 pl-2 text-right tabular-nums text-slate-600">
-                            {(() => {
-                              const byEmployee =
-                                data?.totalWorkingMinutesByEmployee || {};
-                              const exact = byEmployee[rec.employeeName];
-                              const trimmedMatch =
-                                exact == null &&
-                                typeof byEmployee === "object" &&
-                                Object.keys(byEmployee).length > 0
-                                  ? Object.entries(byEmployee).find(
-                                      ([key]) =>
-                                        (key || "").trim() ===
-                                        (rec.employeeName || "").trim(),
-                                    )?.[1]
-                                  : undefined;
-                              const mins = exact ?? trimmedMatch ?? 0;
-                              const hours = Math.floor(mins / 60);
-                              const m = mins % 60;
-                              return mins > 0
-                                ? `${hours}h${m ? ` ${m}m` : ""}`
-                                : "–";
-                            })()}
+                            {formatDurationProfessional(
+                              getMinutesByEmployee(
+                                data?.totalWorkingMinutesByEmployee || {},
+                                rec.employeeName,
+                              ),
+                            )}
+                          </td>
+                          <td className="py-2.5 pl-2 text-right tabular-nums text-slate-600">
+                            {formatDurationProfessional(
+                              getMinutesByEmployee(
+                                data?.totalBreakMinutesByEmployee || {},
+                                rec.employeeName,
+                              ),
+                            )}
                           </td>
                         </tr>
                       );
