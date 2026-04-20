@@ -127,6 +127,15 @@ function csvTipExport(value) {
   return formatCsvNumeric(value, { maxFractionDigits: 3 });
 }
 
+/** Worked / break hours in breakdown table (truncated, matches CSV hours). */
+function formatAllocHours(value) {
+  return (Number(value) || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3,
+    roundingMode: "trunc",
+  });
+}
+
 function sanitizeFilenameSegment(name) {
   const s = String(name ?? "").trim();
   if (!s) return "location";
@@ -672,6 +681,8 @@ export default function DailyTips() {
           (acc, a) => ({
             amWorkedHours: acc.amWorkedHours + (Number(a.amWorkedHours) || 0),
             pmWorkedHours: acc.pmWorkedHours + (Number(a.pmWorkedHours) || 0),
+            connecteamBreakHours:
+              acc.connecteamBreakHours + (Number(a.connecteamBreakHours) || 0),
             amTips: acc.amTips + displayedAmTips(a),
             pmTips: acc.pmTips + displayedPmTips(a),
             deductions:
@@ -686,6 +697,7 @@ export default function DailyTips() {
           {
             amWorkedHours: 0,
             pmWorkedHours: 0,
+            connecteamBreakHours: 0,
             amTips: 0,
             pmTips: 0,
             deductions: 0,
@@ -1663,6 +1675,9 @@ export default function DailyTips() {
                             "Employee",
                             "Clock In",
                             "Clock Out",
+                            "Break In",
+                            "Break Out",
+                            "Break (hrs)",
                             "AM hrs",
                             "PM hrs",
                             "AM tips",
@@ -1675,6 +1690,9 @@ export default function DailyTips() {
                             "Employee",
                             "Clock In",
                             "Clock Out",
+                            "Break In",
+                            "Break Out",
+                            "Break (hrs)",
                             "Hours",
                             "Tips",
                             "Net tips",
@@ -1694,6 +1712,9 @@ export default function DailyTips() {
                               a.employeeName ?? "",
                               a.clockIn ?? "–",
                               a.clockOut ?? "–",
+                              a.breakClockIn ?? "–",
+                              a.breakClockOut ?? "–",
+                              csvTipExport(a.connecteamBreakHours ?? ""),
                               csvTipExport(a.amWorkedHours ?? ""),
                               csvTipExport(a.pmWorkedHours ?? ""),
                               csvTipExport(displayedAmTips(a)),
@@ -1704,6 +1725,9 @@ export default function DailyTips() {
                               a.employeeName ?? "",
                               a.clockIn ?? "–",
                               a.clockOut ?? "–",
+                              a.breakClockIn ?? "–",
+                              a.breakClockOut ?? "–",
+                              csvTipExport(a.connecteamBreakHours ?? ""),
                               csvTipExport(a.amWorkedHours ?? ""),
                               csvTipExport(displayedAmTips(a)),
                               ...tailCsv(a),
@@ -1716,6 +1740,9 @@ export default function DailyTips() {
                                 "Total",
                                 "",
                                 "",
+                                "",
+                                "",
+                                csvTipExport(normalizedTotals.connecteamBreakHours),
                                 csvTipExport(normalizedTotals.amWorkedHours),
                                 csvTipExport(normalizedTotals.pmWorkedHours),
                                 csvTipExport(normalizedTotals.amTips),
@@ -1728,6 +1755,9 @@ export default function DailyTips() {
                                 "Total",
                                 "",
                                 "",
+                                "",
+                                "",
+                                csvTipExport(normalizedTotals.connecteamBreakHours),
                                 csvTipExport(normalizedTotals.amWorkedHours),
                                 csvTipExport(normalizedTotals.amTips),
                                 csvTipExport(normalizedTotals.netTips),
@@ -1754,6 +1784,9 @@ export default function DailyTips() {
                             "Employee",
                             "Clock In",
                             "Clock Out",
+                            "Break In",
+                            "Break Out",
+                            "Break (hrs)",
                             "AM hrs",
                             "PM hrs",
                             "AM tips",
@@ -1766,6 +1799,9 @@ export default function DailyTips() {
                             "Employee",
                             "Clock In",
                             "Clock Out",
+                            "Break In",
+                            "Break Out",
+                            "Break (hrs)",
                             "Hours",
                             "Tips",
                             "Net tips",
@@ -1785,6 +1821,9 @@ export default function DailyTips() {
                               a.employeeName ?? "",
                               a.clockIn ?? "–",
                               a.clockOut ?? "–",
+                              a.breakClockIn ?? "–",
+                              a.breakClockOut ?? "–",
+                              formatAllocHours(a.connecteamBreakHours),
                               a.amWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "",
                               a.pmWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "",
                               `$${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
@@ -1795,6 +1834,9 @@ export default function DailyTips() {
                               a.employeeName ?? "",
                               a.clockIn ?? "–",
                               a.clockOut ?? "–",
+                              a.breakClockIn ?? "–",
+                              a.breakClockOut ?? "–",
+                              formatAllocHours(a.connecteamBreakHours),
                               a.amWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "",
                               `$${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
                               ...tail(a),
@@ -1807,6 +1849,9 @@ export default function DailyTips() {
                                 "Total",
                                 "",
                                 "",
+                                "",
+                                "",
+                                formatAllocHours(normalizedTotals.connecteamBreakHours),
                                 normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
                                 normalizedTotals.pmWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
                                 `$${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
@@ -1819,6 +1864,9 @@ export default function DailyTips() {
                                 "Total",
                                 "",
                                 "",
+                                "",
+                                "",
+                                formatAllocHours(normalizedTotals.connecteamBreakHours),
                                 normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
                                 `$${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
                                 `$${normalizedTotals.netTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
@@ -1855,6 +1903,18 @@ export default function DailyTips() {
                   <th className="pb-2 text-left font-medium text-slate-700">
                     Clock Out
                   </th>
+                  <th className="pb-2 text-left font-medium text-slate-700">
+                    Break In
+                  </th>
+                  <th className="pb-2 text-left font-medium text-slate-700">
+                    Break Out
+                  </th>
+                  <th
+                    className="pb-2 text-right font-medium text-slate-700"
+                    title="Connecteam manual breaks that overlap first clock-in through last clock-out (deducted from worked hours for tips)."
+                  >
+                    Break (hrs)
+                  </th>
                   {showShiftSplit ? (
                     <>
                       <th className="pb-2 text-right font-medium text-slate-700">
@@ -1887,7 +1947,7 @@ export default function DailyTips() {
                     className="pb-2 text-right font-medium text-slate-700"
                     title="Equal share of Deduct & Redistribute pool (same role as Weekly Payout)"
                   >
-                    Manual Redistribution
+                    MR
                   </th>
                   <th className="pb-2 text-right font-medium text-slate-700">
                     Total
@@ -1911,6 +1971,15 @@ export default function DailyTips() {
                     </td>
                     <td className="py-2 tabular-nums text-slate-600">
                       {formatClockLabel(a.clockOut)}
+                    </td>
+                    <td className="py-2 tabular-nums text-slate-600">
+                      {formatClockLabel(a.breakClockIn)}
+                    </td>
+                    <td className="py-2 tabular-nums text-slate-600">
+                      {formatClockLabel(a.breakClockOut)}
+                    </td>
+                    <td className="py-2 text-right tabular-nums text-slate-600">
+                      {formatAllocHours(a.connecteamBreakHours)}
                     </td>
                     {showShiftSplit ? (
                       <>
@@ -1970,6 +2039,11 @@ export default function DailyTips() {
                   <tr className="bg-slate-100 font-semibold">
                     <td className="py-3 pl-2 text-slate-800">Total</td>
                     <td className="py-3" colSpan={2} />
+                    <td className="py-3" />
+                    <td className="py-3" />
+                    <td className="py-3 text-right tabular-nums text-slate-800">
+                      {formatAllocHours(normalizedTotals.connecteamBreakHours)}
+                    </td>
                     {showShiftSplit ? (
                       <>
                         <td className="py-3 text-right tabular-nums text-slate-800">
@@ -2032,6 +2106,12 @@ export default function DailyTips() {
                       </strong>
                     </span>
                     <span>
+                      Break (Connecteam):{" "}
+                      <strong className="text-slate-800">
+                        {formatAllocHours(normalizedTotals.connecteamBreakHours)}
+                      </strong>
+                    </span>
+                    <span>
                       AM tips:{" "}
                       <strong className="text-slate-800">
                         ${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
@@ -2050,6 +2130,12 @@ export default function DailyTips() {
                       Hours:{" "}
                       <strong className="text-slate-800">
                         {normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
+                      </strong>
+                    </span>
+                    <span>
+                      Break (Connecteam):{" "}
+                      <strong className="text-slate-800">
+                        {formatAllocHours(normalizedTotals.connecteamBreakHours)}
                       </strong>
                     </span>
                     <span>

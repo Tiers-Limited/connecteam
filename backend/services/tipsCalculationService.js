@@ -70,6 +70,166 @@ function splitWorkedHours(clockIn, clockOut, opts = {}) {
   };
 }
 
+function mergeIntervalsMs(intervals) {
+  if (!intervals || intervals.length === 0) return [];
+  const sorted = [...intervals].sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const cur of sorted) {
+    if (!merged.length || cur.start > merged[merged.length - 1].end) {
+      merged.push({ start: cur.start, end: cur.end });
+    } else {
+      merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, cur.end);
+    }
+  }
+  return merged;
+}
+
+function totalMsFromMergedIntervals(intervals) {
+  if (!intervals || intervals.length === 0) return 0;
+  return intervals.reduce((sum, iv) => sum + Math.max(0, iv.end - iv.start), 0);
+}
+
+/**
+ * Intersections of Connecteam manual breaks with the merged punch span [workStartMs, workEndMs).
+ */
+function collectBreakIntervalsForEmployee(manualBreaks, connecteamsUserId, dateStr, workStartMs, workEndMs) {
+  if (
+    workStartMs == null ||
+    workEndMs == null ||
+    Number.isNaN(workStartMs) ||
+    Number.isNaN(workEndMs) ||
+    workEndMs <= workStartMs ||
+    !manualBreaks ||
+    manualBreaks.length === 0
+  ) {
+    return [];
+  }
+  const uid = String(connecteamsUserId);
+  const d = (dateStr || '').slice(0, 10);
+  const raw = [];
+  for (const b of manualBreaks) {
+    if (String(b.connecteamsUserId) !== uid) continue;
+    if ((b.date || '').toString().slice(0, 10) !== d) continue;
+    const s = Number(b.startMs);
+    const e = Number(b.endMs);
+    if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) continue;
+    const ov0 = Math.max(s, workStartMs);
+    const ov1 = Math.min(e, workEndMs);
+    if (ov1 > ov0) raw.push({ start: ov0, end: ov1 });
+  }
+  return mergeIntervalsMs(raw);
+}
+
+function localHourMinuteForTz(tsMs, timeZone) {
+  const tz = (timeZone || 'UTC').trim() || 'UTC';
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(tsMs));
+    const hour = Number(parts.find((p) => p.type === 'hour')?.value);
+    const minute = Number(parts.find((p) => p.type === 'minute')?.value);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) return { hour: 0, minute: 0 };
+    return { hour, minute };
+  } catch (_) {
+    const d = new Date(tsMs);
+    return { hour: d.getUTCHours(), minute: d.getUTCMinutes() };
+  }
+}
+
+function formatTimeInTimezoneHHmm(tsMs, timeZone) {
+  if (tsMs == null || Number.isNaN(tsMs)) return null;
+  const tz = (timeZone || 'UTC').trim() || 'UTC';
+  try {
+    const s = new Date(tsMs).toLocaleTimeString('en-CA', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    return s && s.length >= 8 ? s.slice(0, 8) : null;
+  } catch (_) {
+    const d = new Date(tsMs);
+    return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}:${String(d.getUTCSeconds()).padStart(2, '0')}`;
+  }
+}
+
+/**
+ * Same AM/PM rules as splitWorkedHours, but minutes inside excludeIntervalsMs are not counted.
+ * Used when Connecteam reports manualBreaks between punches or during a shift.
+ */
+function splitWorkedHoursDeducingManualBreaks(
+  clockIn,
+  clockOut,
+  workStartMs,
+  workEndMs,
+  excludeIntervalsMs,
+  timeZone,
+  opts = {}
+) {
+  const tz = (timeZone || getAppTimezone()).trim() || getAppTimezone();
+  if (
+    workStartMs == null ||
+    workEndMs == null ||
+    Number.isNaN(workStartMs) ||
+    Number.isNaN(workEndMs) ||
+    workEndMs <= workStartMs
+  ) {
+    return splitWorkedHours(clockIn, clockOut, opts);
+  }
+
+  if (opts.singleShift) {
+    const grossMs = workEndMs - workStartMs;
+    let exclMs = 0;
+    for (const iv of excludeIntervalsMs || []) {
+      const lo = Math.max(iv.start, workStartMs);
+      const hi = Math.min(iv.end, workEndMs);
+      if (hi > lo) exclMs += hi - lo;
+    }
+    const netMs = Math.max(0, grossMs - exclMs);
+    return { amHours: netMs / 3600000, pmHours: 0 };
+  }
+
+  const bounds = opts.shiftBoundaries || SHIFT_BOUNDARIES;
+  const AM_START = timeToMinutes(bounds.AM_START);
+  const AM_END = timeToMinutes(bounds.AM_END);
+  const PM_END = timeToMinutes(bounds.PM_END);
+  if (
+    AM_START == null ||
+    AM_END == null ||
+    PM_END == null ||
+    Number.isNaN(AM_START) ||
+    Number.isNaN(AM_END) ||
+    Number.isNaN(PM_END)
+  ) {
+    return splitWorkedHours(clockIn, clockOut, opts);
+  }
+
+  let amMinutes = 0;
+  let pmMinutes = 0;
+  for (let t = workStartMs; t < workEndMs; t += 60 * 1000) {
+    let excluded = false;
+    for (const iv of excludeIntervalsMs || []) {
+      if (t >= iv.start && t < iv.end) {
+        excluded = true;
+        break;
+      }
+    }
+    if (excluded) continue;
+    const { hour, minute } = localHourMinuteForTz(t, tz);
+    const minuteOfDay = hour * 60 + minute;
+    if (minuteOfDay >= AM_START && minuteOfDay < AM_END) amMinutes++;
+    else if (minuteOfDay >= AM_END && minuteOfDay < PM_END) pmMinutes++;
+  }
+  return {
+    amHours: amMinutes / 60,
+    pmHours: pmMinutes / 60,
+  };
+}
+
 /**
  * Round to configured decimals (output stage only)
  */
@@ -358,6 +518,10 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     }
   }
 
+  const connecteamManualBreaksForDay = Array.isArray(rawConnecteamEntries.manualBreaks)
+    ? rawConnecteamEntries.manualBreaks.filter((b) => (b.date || '').toString().slice(0, 10) === dateStr)
+    : [];
+
   // When using preFetchedEntries (from DB by locationId), entries are already for this location – do not filter by locationKey (DB entries have no locationKey)
   const connecteamEntries =
     options.preFetchedEntries && Array.isArray(options.preFetchedEntries)
@@ -383,16 +547,22 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         subJobId: entry.subJobId || null,
         inMin,
         outMin,
+        firstInMs: entry.clockInMs != null ? entry.clockInMs : null,
+        lastOutMs: entry.clockOutMs != null ? entry.clockOutMs : null,
+        timezone: entry.timezone || null,
       });
     } else {
       const row = employeeFirstLast.get(uid);
       if (inMin < row.inMin) {
         row.firstIn = entry.clockIn;
         row.inMin = inMin;
+        if (entry.clockInMs != null) row.firstInMs = entry.clockInMs;
+        if (entry.timezone) row.timezone = entry.timezone;
       }
       if (outMin > row.outMin) {
         row.lastOut = entry.clockOut;
         row.outMin = outMin;
+        if (entry.clockOutMs != null) row.lastOutMs = entry.clockOutMs;
       }
       // Use the job title from whichever entry we have it from
       if (!row.jobTitle && entry.jobTitle) {
@@ -402,15 +572,61 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     }
   }
 
+  for (const entry of connecteamEntries) {
+    const uid = String(entry.connecteamsUserId || entry.employeeName || '');
+    if (!uid || !employeeFirstLast.has(uid)) continue;
+    const row = employeeFirstLast.get(uid);
+    if (entry.clockInMs != null) {
+      if (row.firstInMs == null || entry.clockInMs < row.firstInMs) {
+        row.firstInMs = entry.clockInMs;
+        if (entry.timezone) row.timezone = entry.timezone;
+      }
+    }
+    if (entry.clockOutMs != null) {
+      if (row.lastOutMs == null || entry.clockOutMs > row.lastOutMs) {
+        row.lastOutMs = entry.clockOutMs;
+      }
+    }
+  }
+
   // Resolve Connecteam user to our Employee (for allocation output); use stable key for map
   const employeeHours = new Map();
   for (const [connecteamsUserId, row] of employeeFirstLast) {
-    const { amHours, pmHours } = splitWorkedHours(row.firstIn, row.lastOut, {
+    const breakIntervals =
+      connecteamManualBreaksForDay.length > 0 && row.firstInMs != null && row.lastOutMs != null
+        ? collectBreakIntervalsForEmployee(
+            connecteamManualBreaksForDay,
+            connecteamsUserId,
+            dateStr,
+            row.firstInMs,
+            row.lastOutMs
+          )
+        : [];
+    const useBreakDeduction = breakIntervals.length > 0;
+    const connecteamBreakHours = totalMsFromMergedIntervals(breakIntervals) / 3600000;
+    const breakClockIn = useBreakDeduction
+      ? formatTimeInTimezoneHHmm(breakIntervals[0].start, row.timezone || getAppTimezone())
+      : null;
+    const breakClockOut = useBreakDeduction
+      ? formatTimeInTimezoneHHmm(breakIntervals[breakIntervals.length - 1].end, row.timezone || getAppTimezone())
+      : null;
+    const splitOpts = {
       singleShift: isTheCove,
       shiftBoundaries: shiftBoundaries || undefined,
       shiftStart: LOCATION_SINGLE_SHIFT.shiftStart,
       shiftEnd: LOCATION_SINGLE_SHIFT.shiftEnd,
-    });
+    };
+    const { amHours, pmHours } = useBreakDeduction
+      ? splitWorkedHoursDeducingManualBreaks(
+          row.firstIn,
+          row.lastOut,
+          row.firstInMs,
+          row.lastOutMs,
+          breakIntervals,
+          row.timezone || getAppTimezone(),
+          splitOpts
+        )
+      : splitWorkedHours(row.firstIn, row.lastOut, splitOpts);
     let employee = await Employee.findOne({ connecteamsUserId, locationId }).lean();
     if (!employee && row.employeeName && String(row.employeeName).trim()) {
       employee = await Employee.findOne({ locationId, name: String(row.employeeName).trim() }).lean();
@@ -444,6 +660,9 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       employeeName,
       amHours,
       pmHours,
+      connecteamBreakHours,
+      breakClockIn,
+      breakClockOut,
       clockIn: row.firstIn,
       clockOut: row.lastOut,
       jobTitle,
@@ -481,6 +700,9 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         employeeName: manual.employeeId.name || '—',
         amHours: 0,
         pmHours: 0,
+        connecteamBreakHours: 0,
+        breakClockIn: null,
+        breakClockOut: null,
         clockIn: null,
         clockOut: null,
         manualAmTips: 0,
@@ -568,6 +790,9 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       clockOut: row.clockOut || null,
       amWorkedHours: row.amHours,
       pmWorkedHours: row.pmHours,
+      connecteamBreakHours: row.connecteamBreakHours ?? 0,
+      breakClockIn: row.breakClockIn || null,
+      breakClockOut: row.breakClockOut || null,
       amTipsRaw,
       pmTipsRaw,
       manualAmTipsRaw: row.manualAmTips || 0,
@@ -590,6 +815,9 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       clockOut: draft.clockOut,
       amWorkedHours: draft.amWorkedHours,
       pmWorkedHours: draft.pmWorkedHours,
+      connecteamBreakHours: draft.connecteamBreakHours ?? 0,
+      breakClockIn: draft.breakClockIn ?? null,
+      breakClockOut: draft.breakClockOut ?? null,
       amTips,
       pmTips,
       manualAmTips,
@@ -663,6 +891,9 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         jobTipMultiplier: getJobTipMultiplier(r.jobTitle),
         amHours: r.amHours,
         pmHours: r.pmHours,
+        connecteamBreakHours: r.connecteamBreakHours ?? 0,
+        breakClockIn: r.breakClockIn ?? null,
+        breakClockOut: r.breakClockOut ?? null,
         firstClockIn: r.clockIn ?? null,
         lastClockOut: r.clockOut ?? null,
       })),
@@ -950,6 +1181,9 @@ async function getDailyTipCalculationSnapshot(locationId, date) {
       clockOut,
       amWorkedHours: Number(h?.amHours ?? 0),
       pmWorkedHours: Number(h?.pmHours ?? 0),
+      connecteamBreakHours: Number(h?.connecteamBreakHours ?? 0),
+      breakClockIn: h?.breakClockIn ?? null,
+      breakClockOut: h?.breakClockOut ?? null,
       amTips: Number(p.amTips ?? 0),
       pmTips: Number(p.pmTips ?? 0),
       manualAmTips: 0,

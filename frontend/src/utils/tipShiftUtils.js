@@ -102,13 +102,14 @@ export function splitWorkedHoursForLocation(clockIn, clockOut, locationName) {
   });
 }
 
-/** Normalize "HH:MM:SS" or "HH:MM" for display. */
+/** Normalize "HH:MM:SS" or "HH:MM" for display as "HH:MM:SS". */
 export function formatClockLabel(value) {
   if (value == null || String(value).trim() === "") return "—";
   const s = String(value).trim();
-  const m = s.match(/^(\d{1,2}):(\d{2})/);
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
   if (!m) return s;
-  return `${m[1].padStart(2, "0")}:${m[2]}`;
+  const sec = m[3] ?? "00";
+  return `${m[1].padStart(2, "0")}:${m[2]}:${sec}`;
 }
 
 /** For <input type="time" /> value (HH:MM). */
