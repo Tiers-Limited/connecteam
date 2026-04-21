@@ -51,7 +51,6 @@ async function getCalculation(req, res, next) {
   }
 }
 
-/** Persists gross tips only. Production pool (4% of gross) is derived from DailyTipInput when reporting; per-employee split is not run until GET …/calculation. */
 async function upsert(req, res, next) {
   try {
     const { locationId, date } = req.params;
@@ -134,7 +133,6 @@ async function getPendingCalculation(req, res, next) {
   }
 }
 
-/** Runs getDailyTipCalculation for up to `max` pending rows (no audit completion flag). Sequential — can be slow. */
 async function calculateAllPending(req, res, next) {
   try {
     const maxRaw = req.body?.max ?? req.query?.max;

@@ -11,11 +11,6 @@ function toDateString(d) {
   return x.toISOString().slice(0, 10);
 }
 
-/**
- * Get dashboard summary: locations, employee count, **previous week** payout by location,
- * production total, and daily gross tips for the **previous week** (Mon–Sun).
- * Uses the completed week before the current one (e.g. if today is Wed 18 Feb, shows 9–15 Feb).
- */
 async function getDashboardSummary() {
   const locations = await Location.find({ isActive: true }).lean();
   let employeesCount = 0;

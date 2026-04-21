@@ -11,10 +11,7 @@ function roundHours4(value) {
   return Math.round(Math.max(0, Number(value) || 0) * 10000) / 10000;
 }
 
-/**
- * Create or update manual working entry.
- * Provide employeeId, or employeeName + locationId to find/create a local-only employee (no Connecteam link).
- */
+
 async function createOrUpdateManualWorking(req, res) {
   try {
     let {
@@ -155,9 +152,7 @@ async function createOrUpdateManualWorking(req, res) {
   }
 }
 
-/**
- * Get manual working entries for a date range
- */
+
 async function getManualWorkingByDateRange(req, res) {
   try {
     const { locationId, startDate, endDate } = req.query;
@@ -186,9 +181,7 @@ async function getManualWorkingByDateRange(req, res) {
   }
 }
 
-/**
- * Get manual working for a specific date and location
- */
+
 async function getManualWorkingByDate(req, res) {
   try {
     const { locationId, date } = req.query;
@@ -214,9 +207,6 @@ async function getManualWorkingByDate(req, res) {
   }
 }
 
-/**
- * Delete a manual working entry
- */
 async function deleteManualWorking(req, res) {
   try {
     const { manualWorkingId } = req.params;
@@ -238,9 +228,6 @@ async function deleteManualWorking(req, res) {
   }
 }
 
-/**
- * Get all manual working entries for an employee in a date range
- */
 async function getEmployeeManualWorking(req, res) {
   try {
     const { employeeId, startDate, endDate } = req.query;

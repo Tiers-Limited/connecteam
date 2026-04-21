@@ -10,12 +10,7 @@ const WeeklyTardinessCache = require('../models/WeeklyTardinessCache');
 const { LOCATIONS } = require('../utils/constants');
 const { dateRangeToUtcBounds } = require('../utils/dateUtils');
 
-/**
- * GET /connecteams/weekly-tardiness
- * Query: weekStart=YYYY-MM-DD (Monday) OR startDate=YYYY-MM-DD&endDate=YYYY-MM-DD, locationId=optional, refresh=optional
- * Returns tardiness detail (employee, location/job, scheduled, clock-in, minutes late) and daily totals + total.
- * With weekStart: uses DB cache when available; refresh=true forces fetch. With startDate+endDate: always fetches (no cache).
- */
+
 async function getWeeklyTardiness(req, res, next) {
   try {
     const { weekStart, startDate, endDate, locationId, refresh } = req.query;
@@ -118,11 +113,6 @@ async function getWeeklyTardiness(req, res, next) {
   }
 }
 
-/**
- * Sync time entries from Connecteams API into TimeEntry collection.
- * Uses the 4 fixed locations: Oranjestad, Casa del Mar, The Cove, Drive Thru.
- * Replaces existing Connecteams-synced entries in the date range (employees with connecteamsUserId).
- */
 async function syncFromConnecteams(req, res, next) {
   try {
     const { startDate, endDate } = req.query;
@@ -143,7 +133,6 @@ async function syncFromConnecteams(req, res, next) {
 
     const rawEntries = await connecteamsService.getTimeEntriesFromConnecteams(startDate, endDate);
 
-    // Step 2.1 Deduplication: same employee + same date + same clock-in + same clock-out → keep only one
     const seenKey = new Set();
     const entries = [];
     for (const e of rawEntries) {
@@ -208,10 +197,7 @@ async function syncFromConnecteams(req, res, next) {
   }
 }
 
-/**
- * GET /connecteams/clock-in-times?userId=...&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&locationId=...|locationName=...
- * Returns clock-in (and clock-out) times for a Connecteam user in a date range, optionally filtered by location.
- */
+
 async function getClockInTimes(req, res, next) {
   try {
     const { userId, startDate, endDate, locationId, locationName } = req.query;
@@ -286,11 +272,6 @@ async function getClockInTimes(req, res, next) {
   }
 }
 
-/**
- * GET /connecteams/time-entries?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&locationId=...
- * Returns time entries from Connecteam API for the given location and date range.
- * Shape matches GET /time-entries/:locationId/range so the frontend can display them (first clock-in / last clock-out per employee per day).
- */
 async function getConnecteamTimeEntries(req, res, next) {
   try {
     const { startDate, endDate, locationId } = req.query;
@@ -334,7 +315,6 @@ async function getConnecteamTimeEntries(req, res, next) {
       (e) => (e.locationKey || '').toLowerCase() === locationKeyFilter.toLowerCase()
     );
 
-    // Collapse to first clock-in / last clock-out per (user, date) — same as DB and frontend grouping
     const timeToMinutes = (str) => {
       if (!str || typeof str !== 'string') return NaN;
       const [h, m] = str.trim().split(':').map(Number);
@@ -367,7 +347,6 @@ async function getConnecteamTimeEntries(req, res, next) {
           row.clockOut = e.clockOut;
           row._clockOutMins = clockOutMins;
         }
-        // preserve job identifiers if missing
         if (!row.jobId && e.jobId) row.jobId = e.jobId;
         if (!row.subJobId && e.subJobId) row.subJobId = e.subJobId;
       }

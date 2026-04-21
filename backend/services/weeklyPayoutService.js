@@ -9,14 +9,12 @@ const WeeklyPayoutCache = require('../models/WeeklyPayoutCache');
 const tipsCalculationService = require('./tipsCalculationService');
 const { LOCATIONS } = require('../utils/constants');
 
-/** Normalize week start to UTC midnight (YYYY-MM-DD) so it matches getWeeklyPayout. */
 function toWeekStartUTC(weekStart) {
   const str = typeof weekStart === 'string' ? weekStart.slice(0, 10) : weekStart.toISOString().slice(0, 10);
   const [y, m, d] = str.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
 }
 
-/** Normalize week/range end to UTC end-of-day so range is explicit in DB. */
 function toWeekEndUTC(weekEndStr) {
   if (!weekEndStr || typeof weekEndStr !== 'string') return null;
   const str = weekEndStr.trim().slice(0, 10);
@@ -24,20 +22,12 @@ function toWeekEndUTC(weekEndStr) {
   return new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999));
 }
 
-/** Parse date string to UTC midnight Date for dailyBreakdown.date */
 function toDateUTC(dateStr) {
   const str = (dateStr || '').toString().trim().slice(0, 10);
   const [y, m, d] = str.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
 }
 
-/**
- * Persist weekly tardiness and working hours from Connecteam payload into WeeklyTardiness collection.
- * When weekEndStr is provided (date range), stores weekEnd and dailyBreakdown so you can see e.g. 478 min on 12 Jan, 488 on 13 Jan.
- * @param {{ entries: Array<...>, employeeTotalWorkingMinutes?: Array<...>, employeeTotalBreakMinutes?: Array<...>, dailyWorkingMinutes?: Array<{ connecteamsUserId, locationKey, date, workingMinutes }>, dailyBreakMinutes?: Array<{ connecteamsUserId, locationKey, date, breakMinutes }> }} payload
- * @param {string} weekStartStr - YYYY-MM-DD (range start or Monday)
- * @param {string} [weekEndStr] - YYYY-MM-DD range end (inclusive). When set, record is for [weekStart, weekEnd] with dailyBreakdown.
- */
 async function persistTardinessFromPayload(payload, weekStartStr, weekEndStr = null) {
   if (!payload) return;
   const ws = toWeekStartUTC(weekStartStr);
@@ -289,10 +279,6 @@ async function getOrBuildWeeklyPayoutPayload(locationId, sd, ed) {
   return rebuilt;
 }
 
-/**
- * Employees present in saved payout cache for the same scope/dates as the report (for dropdowns).
- * Returns an empty list when no cache exists (no error).
- */
 async function listWeeklyPayoutReportEmployees(opts) {
   const { startDate, endDate, geographicScope, singleLocationId } = opts;
 
@@ -373,18 +359,6 @@ async function listWeeklyPayoutReportEmployees(opts) {
 
   return { employees };
 }
-
-/**
- * Build report rows from WeeklyPayoutCache only (no live recompute). User must load payout on Weekly Payout first.
- * @param {object} opts
- * @param {string} opts.startDate - YYYY-MM-DD (cache key; must match Load payout From date)
- * @param {string} opts.endDate - YYYY-MM-DD
- * @param {'one_location'|'all_locations'} opts.geographicScope
- * @param {string} [opts.singleLocationId] - when scope is one_location
- * @param {'all'|'one_employee'} opts.employeeScope
- * @param {string} [opts.employeeName] - substring match when employeeScope is one_employee (if employeeId not set)
- * @param {string} [opts.employeeId] - exact match when employeeScope is one_employee
- */
 async function buildWeeklyPayoutReport(opts) {
   const {
     startDate,

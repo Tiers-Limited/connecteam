@@ -5,18 +5,12 @@ const { toDateString, getWeekEnd, timeToMinutes } = require('../utils/dateUtils'
 
 const DEFAULT_TIMEZONE = 'America/Aruba';
 
-/** Cache and in-flight dedupe for getTimeEntriesFromConnecteams to avoid repeated API hits for same range. */
 const CONNECTEAM_ENTRIES_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 const connecteamEntriesCache = new Map();
 const connecteamEntriesInFlight = new Map();
 
 let connecteamCallCount = 0;
 
-/**
- * Fetch JSON from Connecteams API (GET).
- * @param {string} path - e.g. /users/v1/users?limit=100&offset=0
- * @returns {Promise<object>}
- */
 function connecteamsFetch(path) {
   const url = new URL(path.startsWith('http') ? path : path, connecteamsBase);
   connecteamCallCount += 1;
@@ -38,7 +32,6 @@ function connecteamsFetch(path) {
           const msg = (body || '').trim().slice(0, 150) || `HTTP ${res.statusCode}`;
           return reject(new Error(`Connecteams API error (${res.statusCode}): ${msg}`));
         }
-        // Strip BOM and normalize empty/null responses — never throw on parse
         let trimmed = (body || '').trim().replace(/^\uFEFF/, '');
         if (!trimmed || trimmed === 'null' || trimmed === 'undefined') {
           return resolve({});
@@ -47,7 +40,6 @@ function connecteamsFetch(path) {
           const parsed = JSON.parse(trimmed);
           resolve(parsed != null && typeof parsed === 'object' ? parsed : {});
         } catch (e) {
-          // Never propagate parse errors; return empty object so callers get []
           resolve({});
         }
       });
@@ -97,10 +89,6 @@ function normalizeLocationKey(str) {
   return null;
 }
 
-/**
- * Get all location keys for a punch: from shift (single) or from user's Location / Location - Job (can be multiple).
- * So an employee assigned to "Casa Del Mar", "Oranjestad", "The Cove" gets one entry per location when there's no shift.
- */
 function getLocationKeysForPunch(userInfo, schedLocationKey, locationKeys) {
   if (schedLocationKey && locationKeys.includes(schedLocationKey)) {
     return [schedLocationKey];
@@ -190,11 +178,6 @@ function dateFromTimestampInTimezone(tsSeconds, timezone) {
   }
 }
 
-/**
- * Get date range as Unix seconds (start of startDate 00:00 UTC, end of endDate 23:59:59 UTC).
- * Using UTC so the scheduler API gets a consistent range for the requested calendar day(s)
- * regardless of server timezone (fixes single-day requests missing schedule → scheduledTime undefined).
- */
 function getDateRangeBoundsUnixSeconds(startStr, endStr) {
   const start = new Date(startStr + 'T00:00:00Z');
   const end = new Date(endStr + 'T23:59:59.999Z');
@@ -214,11 +197,6 @@ function getDateRangeBoundsUnixSeconds(startStr, endStr) {
   };
 }
 
-/**
- * Fetch time entries from Connecteams API for the given date range (uncached).
- * Returns an array of punches plus `manualBreaks`: same-array property listing
- * { connecteamsUserId, date, startMs, endMs } from the time-activities API.
- */
 async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
   if (!connecteamsApiKey) {
     throw new Error('CONNECTEAMS_API_KEY is not set');
@@ -226,12 +204,10 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
 
   connecteamCallCount = 0;
   const locationKeys = LOCATIONS.map((l) => l.key);
-  /** First user flow: log only for the first user that has shifts (for debugging). */
   const firstUserFlow = { userId: null, userName: null, userFromApi: null, timeActivitiesResponse: null, jobIds: null, jobResponses: [] };
   const datesInRange = getDatesInRange(startDate, endDate);
   const dayBounds = getDateRangeBoundsUnixSeconds(startDate, endDate);
 
-  // 1. Users
   const userMap = {};
   let offset = 0;
   const limit = 100;
@@ -267,7 +243,6 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
     offset += limit;
   }
 
-  // 2. Time clocks
   const timeClocksRes = await connecteamsFetch('/time-clock/v1/time-clocks');
   const tcRaw = timeClocksRes.data != null ? timeClocksRes.data : timeClocksRes;
   const timeClocksList = Array.isArray(tcRaw) ? tcRaw : (tcRaw.timeClocks || tcRaw.items || []);
@@ -276,12 +251,10 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
     .map((c) => (c.id != null ? c.id : c.timeClockId))
     .filter(Boolean);
 
-  // User IDs that belong to our locations (for time-activities filter)
   const locationFilteredUserIds = Object.keys(userMap).filter((ukey) =>
     userBelongsToLocations(userMap[ukey], locationKeys)
   );
 
-  // 3. Schedulers + Shifts -> scheduleMap[userId][date] = { locationKey, timezone }
   const scheduleMap = {};
   let totalShiftsLoaded = 0;
   try {
@@ -294,7 +267,6 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
     const schedIds = activeSchedulers.length
       ? activeSchedulers.map((s) => s.id ?? s.schedulerId).filter(Boolean)
       : (schedList || []).map((s) => s.id ?? s.schedulerId).filter(Boolean);
-    // Try both: Connecteam doc says "Unix format (in seconds)" but some APIs use milliseconds
     const timeParamSets = [
       { start: dayBounds.startTime * 1000, end: dayBounds.endTime * 1000, label: 'ms' },
       { start: dayBounds.startTime, end: dayBounds.endTime, label: 'sec' },
@@ -360,7 +332,6 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
           shOffset += shiftList.length;
           }
         } catch (_) {
-          // skip scheduler
         }
       }
     }
@@ -374,11 +345,9 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
     .slice(0, 3)
     .map(([ukey, dates]) => ({ userId: ukey, dates: Object.keys(dates).slice(0, 5) }));
 
-  /** Manual breaks from time-activities API (deduped across time clocks). */
   const allManualBreaks = [];
   const manualBreakDedupe = new Set();
 
-  // 4. Time-activities (per time clock): startDate, endDate, userIds -> get shifts with jobId
   const allShiftsWithUser = [];
   for (const tcId of timeClockIds) {
     try {
@@ -439,15 +408,11 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
         }
       }
     } catch (_) {
-      // skip this time clock
     }
   }
 
-  // 5. Get unique jobIds from shifts, then fetch each job -> job.title = location
   const uniqueJobIds = [...new Set(allShiftsWithUser.map(({ shift }) => shift.jobId).filter(Boolean))];
-  /** Active LOCATIONS only — used for tips/tardiness attribution. */
   const jobIdToLocationKey = {};
-  /** Normalized site from job title for every fetched job (includes inactive sites like Drive Thru). */
   const jobIdToResolvedKey = {};
   const firstUserJobIdSet = firstUserFlow.jobIds ? new Set(firstUserFlow.jobIds) : null;
   for (const jobId of uniqueJobIds) {
@@ -465,11 +430,9 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
         jobIdToLocationKey[jobId] = locKey;
       }
     } catch (_) {
-      // job not found or API error
     }
   }
 
-  // 6. Build entries from time-activities shifts; location from job.title
   const entries = [];
   for (const { shift, ukey, userInfo } of allShiftsWithUser) {
     const clockInTs =
@@ -491,8 +454,6 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
 
     const jobId = shift.jobId;
     let locationKey = jobId && jobIdToLocationKey[jobId] ? jobIdToLocationKey[jobId] : null;
-    // If the punch has a jobId but the job maps to a site outside active LOCATIONS (e.g. Drive Thru),
-    // do not fall back to the employee's other assigned sites — that wrongly attributes hours to Casa del Mar, etc.
     if (!locationKey && jobId != null && Object.prototype.hasOwnProperty.call(jobIdToResolvedKey, jobId)) {
       const resolved = jobIdToResolvedKey[jobId];
       if (resolved != null && resolved !== '' && !locationKeys.includes(resolved)) {
@@ -525,7 +486,6 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
       clockInMs: clockInTs,
       clockOutMs: clockOutMsUse,
       timezone: tz,
-      // propagate job identifiers so callers can resolve titles or apply multipliers
       jobId: shift.jobId || null,
       subJobId: shift.subJobId || null,
     });
@@ -535,10 +495,6 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
   return entries;
 }
 
-/**
- * Fetch time entries from Connecteams API for the given date range.
- * Results are cached for 2 minutes and in-flight requests for the same range are deduplicated.
- */
 async function getTimeEntriesFromConnecteams(startDate, endDate) {
   const start = (startDate || '').toString().trim();
   const end = (endDate || '').toString().trim();
@@ -567,7 +523,6 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
   return promise;
 }
 
-/** Format Date as YYYY-MM-DD in local time (so single-day range matches requested date). */
 function toLocalDateString(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -636,7 +591,6 @@ function buildTardinessPayload(rawEntries, locationKeyFilter) {
     );
   }
 
-  // Same collapse as Time Entries: one row per (employee, date) = earliest clock-in (first punch) of the day
   const firstPunchByKey = new Map();
   for (const e of filtered) {
     const key = `${e.connecteamsUserId}|${e.date}`;
@@ -651,9 +605,6 @@ function buildTardinessPayload(rawEntries, locationKeyFilter) {
   }
 
   const manualBreaks = Array.isArray(rawEntries?.manualBreaks) ? rawEntries.manualBreaks : [];
-
-  // Working minutes: same as TimeEntries — group by (employee, location, date), first clock-in / last clock-out per day,
-  // then interval = last - first. Deduct overlapping manual breaks from Connecteam.
   const dayPunchesByKey = new Map();
   for (const e of filtered) {
     const key = `${String(e.connecteamsUserId || '').trim()}|${(e.locationKey || '').toString().toLowerCase().trim()}|${(e.date || '').slice(0, 10)}`;
@@ -686,9 +637,7 @@ function buildTardinessPayload(rawEntries, locationKeyFilter) {
   const breakMinutesByEmpLoc = new Map();
   const workingMinutesByEmployee = new Map();
   const breakMinutesByEmployee = new Map();
-  /** Per-day working minutes: { connecteamsUserId, locationKey, date (YYYY-MM-DD), workingMinutes } for persistence. */
   const dailyWorkingMinutes = [];
-  /** Per-day break minutes (same grain as dailyWorkingMinutes). */
   const dailyBreakMinutes = [];
   for (const [key, row] of dayPunchesByKey) {
     let grossDurationMins = 0;
@@ -810,11 +759,6 @@ function buildTardinessPayload(rawEntries, locationKeyFilter) {
     dailyBreakMinutes,
   };
 }
-
-/**
- * Get count of active users from Connecteam API (paginates until no more).
- * @returns {Promise<number>}
- */
 async function getActiveUsersCount() {
   if (!connecteamsApiKey) return 0;
   let count = 0;
@@ -833,13 +777,7 @@ async function getActiveUsersCount() {
   return count;
 }
 
-/**
- * Fetch job information from Connecteam API by jobId or subJobId
- * @param {string} jobId - The job ID
- * @returns {Promise<{jobId: string, title: string, code: string, description: string}|null>}
- */
-// simple in‑memory cache for job titles so repeated lookups (e.g. many
-// employees with the same subJobId) don't hammer the Connecteam API.
+
 const jobInfoCache = new Map();
 
 async function getJobInfo(jobId) {

@@ -42,7 +42,6 @@ function splitWorkedHours(clockIn, clockOut, opts = {}) {
   }
 
   if (opts.singleShift) {
-    // For a single-shift location (The Cove), use the full clocked duration, no AM/PM split.
     const totalMinutes = endMin - startMin;
     return {
       amHours: totalMinutes / 60,
@@ -89,9 +88,7 @@ function totalMsFromMergedIntervals(intervals) {
   return intervals.reduce((sum, iv) => sum + Math.max(0, iv.end - iv.start), 0);
 }
 
-/**
- * Intersections of Connecteam manual breaks with the merged punch span [workStartMs, workEndMs).
- */
+
 function collectBreakIntervalsForEmployee(manualBreaks, connecteamsUserId, dateStr, workStartMs, workEndMs) {
   if (
     workStartMs == null ||
@@ -157,10 +154,6 @@ function formatTimeInTimezoneHHmm(tsMs, timeZone) {
   }
 }
 
-/**
- * Same AM/PM rules as splitWorkedHours, but minutes inside excludeIntervalsMs are not counted.
- * Used when Connecteam reports manualBreaks between punches or during a shift.
- */
 function splitWorkedHoursDeducingManualBreaks(
   clockIn,
   clockOut,
@@ -230,15 +223,12 @@ function splitWorkedHoursDeducingManualBreaks(
   };
 }
 
-/**
- * Round to configured decimals (output stage only)
- */
+
 function roundMoney(value) {
   const scale = 10 ** ROUND_DECIMALS;
   return Math.round(value * scale) / scale;
 }
 
-/** Round to 4 decimals (for redistribution so small amounts are not lost) */
 function roundMoney4(value) {
   return Math.round(value * 10000) / 10000;
 }
@@ -301,7 +291,6 @@ function allocateRoundedByLargestRemainder(rawRows, targetTotal) {
     remainder -= 1;
   }
 
-  // Safety for over-allocation edge cases caused by floating noise.
   if (remainder < 0) {
     const reverse = ordered.slice().reverse();
     for (let i = 0; i < reverse.length && remainder < 0; i += 1) {
@@ -350,7 +339,6 @@ function computeHourWeightedRedistributionShares(employeeAllocations, redistribu
     0,
   );
 
-  // Fallback to equal split only when recipient hours are all zero.
   if (totalRecipientHours <= 0) {
     const equalShare = poolAmount / recipientRows.length;
     const sharesByEmployeeId = new Map();
@@ -369,13 +357,6 @@ function computeHourWeightedRedistributionShares(employeeAllocations, redistribu
   return { recipients, sharesByEmployeeId };
 }
 
-/**
- * 4% production pool is taken from total gross (AM + PM). Each shift’s share of the pool
- * is proportional to that shift’s gross, so:
- *   AM distributable = AM gross − pool × (AM gross / total gross)
- *   PM distributable = PM gross − pool × (PM gross / total gross)
- * (Same numeric result as subtracting 4% of each shift’s gross when the pool is 4% of total.)
- */
 function computeProductionPoolAndDistributables(tipInput, isTheCove) {
   const amGross = Number(tipInput.amGrossTips) || 0;
   const pmGross = Number(tipInput.pmGrossTips) || 0;
@@ -403,40 +384,28 @@ function computeProductionPoolAndDistributables(tipInput, isTheCove) {
   };
 }
 
-/**
- * Get tardiness deduction percent for weekly minutes
- */
 function getTardinessDeductionPercent(minutes) {
   if (minutes <= 5) return 0;
   if (minutes <= 10) return 0.15;
   return 0.2;
 }
 
-/**
- * Get job-based tip multiplier for a job title
- * @param {string} jobTitle - The job title from Connecteam
- * @returns {number} Multiplier between 0.0 and 1.0
- */
 function getJobTipMultiplier(jobTitle) {
   console.log("job title", jobTitle);
   if (!jobTitle) return JOB_TIP_MULTIPLIERS.default || 1.0;
   const title = String(jobTitle).trim();
-  // Exact match first
   if (title in JOB_TIP_MULTIPLIERS) {
     return JOB_TIP_MULTIPLIERS[title];
   }
-  // Case-insensitive match
   const titleLower = title.toLowerCase();
   for (const [key, multiplier] of Object.entries(JOB_TIP_MULTIPLIERS)) {
     if (key !== 'default' && key.toLowerCase() === titleLower) {
       return multiplier;
     }
   }
-  // Default multiplier
   return JOB_TIP_MULTIPLIERS.default || 1.0;
 }
 
-/** Set of active production staff names (excluded from Daily Tips and Weekly Payout). */
 let productionStaffNamesCache = null;
 async function getProductionStaffNames() {
   if (productionStaffNamesCache) return productionStaffNamesCache;
@@ -448,18 +417,6 @@ function clearProductionStaffNamesCache() {
   productionStaffNamesCache = null;
 }
 
-/**
- * Phase 1: Daily tip calculation — exact flow per Tips Calculation document.
- * 1) Raw time entries → 2) Deduplicate (same employee, date, clockIn, clockOut → one)
- * 3) Group Location → Date → Employee → entries[] → 4) Split each into AM/PM, sum per employee
- * 5) Location TOTAL_AM_HOURS / TOTAL_PM_HOURS → 6) Manager input (AM/PM gross) → 7) Production 4%
- * 8) Tip rates (guardrail 0 if no hours) → 9) Employee allocation → 10) Audit snapshot
- */
-/**
- * @param {string} locationId
- * @param {string|Date} date
- * @param {{ preFetchedEntries?: Array<{ date?: string, locationKey?: string, connecteamsUserId?: string, employeeName?: string, clockIn?: string, clockOut?: string }> }} [options] - If provided, use these entries instead of calling Connecteam (used by getWeeklyPayout to pass one week's data).
- */
 async function getDailyTipCalculation(locationId, date, options = {}) {
   const dateStr = typeof date === 'string' ? date.slice(0, 10) : toDateString(date);
   const tz = getAppTimezone();
@@ -478,7 +435,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     return { error: 'No tip input for this location and date', locationId, date: dateStr };
   }
 
-  // Time entries from Connecteam API (or pre-fetched for the week) — one source of truth for hours
   let locationKeyFilter = null;
   const locationDoc = await Location.findById(locationId).lean();
   const isTheCove = (locationDoc?.name || '').trim().toLowerCase() === LOCATION_SINGLE_SHIFT.key;
@@ -522,7 +478,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     ? rawConnecteamEntries.manualBreaks.filter((b) => (b.date || '').toString().slice(0, 10) === dateStr)
     : [];
 
-  // When using preFetchedEntries (from DB by locationId), entries are already for this location – do not filter by locationKey (DB entries have no locationKey)
   const connecteamEntries =
     options.preFetchedEntries && Array.isArray(options.preFetchedEntries)
       ? rawConnecteamEntries
@@ -530,7 +485,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         ? rawConnecteamEntries.filter((e) => (e.locationKey || '').toLowerCase() === locationKeyFilter.toLowerCase() && (e.date || '').toString().slice(0, 10) === dateStr)
         : rawConnecteamEntries.filter((e) => (e.date || '').toString().slice(0, 10) === dateStr);
 
-  // Per employee: first clock-in and last clock-out of the day (spans across AM/PM: e.g. 06:00–15:10 → 9h AM + 10min PM)
   const employeeFirstLast = new Map();
   for (const entry of connecteamEntries) {
     const uid = String(entry.connecteamsUserId || entry.employeeName || '');
@@ -564,7 +518,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         row.outMin = outMin;
         if (entry.clockOutMs != null) row.lastOutMs = entry.clockOutMs;
       }
-      // Use the job title from whichever entry we have it from
       if (!row.jobTitle && entry.jobTitle) {
         row.jobTitle = entry.jobTitle;
         row.subJobId = entry.subJobId || null;
@@ -589,7 +542,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     }
   }
 
-  // Resolve Connecteam user to our Employee (for allocation output); use stable key for map
   const employeeHours = new Map();
   for (const [connecteamsUserId, row] of employeeFirstLast) {
     const breakIntervals =
@@ -634,11 +586,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     const employeeId = employee?._id || null;
     const employeeName = employee?.name || row.employeeName;
     const mapKey = employeeId ? employeeId.toString() : `connecteam_${connecteamsUserId}`;
-    
-    // If a subJobId exists we always want to resolve the actual job title from
-    // Connecteam.  The raw entry.jobTitle is derived from the parent/jobId
-    // (typically the location) and will not reflect a sub‑job such as
-    // "Dishwasher".  Overwrite whatever was captured earlier.
     let jobTitle = row.jobTitle;
     if (row.subJobId) {
       try {
@@ -689,7 +636,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     .populate('employeeId', 'name')
     .lean();
 
-  // Manual working entries (add hours and fixed tips)
   let manualAMTipsTotal = 0;
   let manualPMTipsTotal = 0;
   for (const manual of manualEntries) {
@@ -730,7 +676,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     }
   }
 
-  // Exclude production staff: they are paid from Production Pool only, not from Daily Tips
   const productionNames = await getProductionStaffNames();
   const keysToRemove = [];
   for (const [key, row] of employeeHours.entries()) {
@@ -738,7 +683,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   }
   keysToRemove.forEach((k) => employeeHours.delete(k));
 
-  // Step 5: Location-level total hours
   let totalAMHours = 0;
   let totalPMHours = 0;
   for (const row of employeeHours.values()) {
@@ -746,7 +690,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     totalPMHours += row.pmHours;
   }
 
-  // Step 7: Production pool (4% of total gross); AM/PM distributable = shift gross minus that shift’s share of the pool
   const {
     productionDeductionTotal,
     productionDeductionAM,
@@ -759,8 +702,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   const adjustedDistributableAM = isTheCove ? Math.max(0, distributableAM - combinedManualTips) : Math.max(0, distributableAM - manualAMTipsTotal);
   const adjustedDistributablePM = isTheCove ? 0 : Math.max(0, distributablePM - manualPMTipsTotal);
 
-  // Step 8: Tip rate (guardrail: 0 if no weighted hours; no rounding here)
-  // Use multiplier-weighted hours so the allocated AM/PM totals match distributables.
   const {
     totalWeightedAMHours,
     totalWeightedPMHours,
@@ -774,8 +715,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       ? adjustedDistributablePM / totalWeightedPMHours
       : 0;
 
-  // Step 9: Employee tip allocation; round only at output (2 decimals)
-  // Apply job-based multiplier to tips
   const allocationDrafts = [];
   for (const [mapKey, row] of employeeHours.entries()) {
     const jobMultiplier = multiplierByKey.get(mapKey) ?? getJobTipMultiplier(row.jobTitle);
@@ -826,7 +765,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     };
   });
 
-  // Step 9b: Daily adjustments
   const adjustments = await DailyTipAdjustment.find({
     locationId,
     date: { $gte: dateStart, $lte: dateEnd },
@@ -866,13 +804,11 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     r.finalTips = finalTips;
   }
 
-  // Step 10: Audit snapshot (raw, derived, financial)
   const auditPayload = {
     locationId,
     date: dateStart,
     raw: {
       source: 'Connecteam API',
-      // One row per employee with resolved hours (includes first/last punch for audit UI / snapshot).
       firstLastPerEmployee: Array.from(employeeHours.values())
         .filter((r) => r.clockIn && r.clockOut)
         .map((r) => ({
@@ -975,7 +911,6 @@ function normalizeTipEmployeeName(name) {
     .toLowerCase();
 }
 
-/** First clock-in / last clock-out per employeeId for a location+day (matches tip calc aggregation). */
 function mapFirstLastClockByEmployeeFromTimeEntries(entries) {
   const byEmp = new Map();
   for (const entry of entries) {
@@ -1004,11 +939,6 @@ function mapFirstLastClockByEmployeeFromTimeEntries(entries) {
   }
   return out;
 }
-
-/**
- * Rebuild GET /calculation response from DailyTipAudit (no Connecteam). Returns null if no audit — caller runs full calc.
- * @returns {Promise<object|null>} Full calc-shaped object, or { error } if no tip input, or null if no audit.
- */
 async function getDailyTipCalculationSnapshot(locationId, date) {
   const dateStr = typeof date === 'string' ? date.slice(0, 10) : toDateString(date);
   const tz = getAppTimezone();
@@ -1252,9 +1182,7 @@ async function getDailyTipCalculationSnapshot(locationId, date) {
   };
 }
 
-/**
- * Get daily tips total for an employee at a location for a given date (for Phase 2 aggregation)
- */
+
 async function getEmployeeDailyTipsForDate(employeeId, locationId, date) {
   const calc = await getDailyTipCalculation(locationId, date);
   if (calc.error) return 0;
@@ -1262,10 +1190,7 @@ async function getEmployeeDailyTipsForDate(employeeId, locationId, date) {
   return found ? found.totalTips : 0;
 }
 
-/**
- * Phase 2: Get weekly payout for a location and week (Monday–Sunday) or date range.
- * options: { startDate, endDate } — when both set, fetches tardiness from Connecteam for that range and uses range for days.
- */
+
 async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
   const useDateRange =
     options.startDate && typeof options.startDate === 'string' && options.endDate && typeof options.endDate === 'string' &&

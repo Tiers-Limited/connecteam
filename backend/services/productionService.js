@@ -27,7 +27,6 @@ function allocateCentsProportionally(items, poolAmount, weightSelector, keySelec
   });
   const totalWeight = weighted.reduce((sum, x) => sum + x.weight, 0);
 
-  // If all weights are zero, split equally in cents.
   if (totalWeight <= 0) {
     const base = Math.floor(poolCents / weighted.length);
     let remainder = poolCents - base * weighted.length;
@@ -75,10 +74,6 @@ function getTardinessDeductionPercent(minutes) {
   return 0.2;
 }
 
-/**
- * Daily production pool = Σ (4% of AM + PM gross tips) across all locations for the given date.
- * @param {string} dateStr - YYYY-MM-DD
- */
 async function getDailyProductionPool(dateStr) {
   const d = typeof dateStr === 'string' ? dateStr.slice(0, 10) : toDateString(dateStr);
   const dateStart = new Date(d + 'T00:00:00.000Z');
@@ -94,12 +89,6 @@ async function getDailyProductionPool(dateStr) {
   return roundMoney(pool);
 }
 
-/**
- * Location-wise tip pool for a week or date range: 4% of (AM + PM gross tips) per location, per day and weekly total.
- * @param {string} weekStartStr - YYYY-MM-DD (Monday or range start)
- * @param {{ startDate?: string, endDate?: string }} [options] - when both set, use this range instead of fixed 7 days
- * @returns {Promise<Array<{ locationId, locationName, weeklyPool, dailyByDay }>>}
- */
 async function getLocationWiseProductionPool(weekStartStr, options = {}) {
   const useDateRange = options.startDate && options.endDate && typeof options.startDate === 'string' && typeof options.endDate === 'string';
   let dateStarts;
@@ -156,18 +145,10 @@ async function getLocationWiseProductionPool(weekStartStr, options = {}) {
   }).sort((a, b) => (a.locationName || '').localeCompare(b.locationName || ''));
 }
 
-/**
- * Get all active production staff (for admin and payout).
- */
 async function getProductionStaff() {
   return ProductionStaff.find({ isActive: true }).sort({ name: 1 }).lean();
 }
 
-/**
- * Build tardiness map (staff name -> weekly minutes).
- * When options.connecteamPayload is provided, uses that (from Connecteam API for date range); otherwise reads from WeeklyTardinessCache.
- * First punch per (name, date).
- */
 async function getProductionTardinessMap(weekStartStr, staffNames, options = {}) {
   const map = new Map(staffNames.map((n) => [n, 0]));
   let entries = [];
@@ -202,10 +183,7 @@ async function getProductionTardinessMap(weekStartStr, staffNames, options = {})
   return map;
 }
 
-/**
- * Weekly production payout: daily pool × allocation → weekly gross → tardiness → manual → redistribution (by %) → final.
- * options: { startDate, endDate } — when both set, fetches tardiness from Connecteam for that range and uses range for days.
- */
+
 async function getWeeklyProductionPayout(weekStartStr, options = {}) {
   const staff = await ProductionStaff.find({ isActive: true }).sort({ name: 1 });
   if (staff.length === 0) {
@@ -238,7 +216,6 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
   }
   const numDays = dateStrs.length;
 
-  // Use the same source as "Location-wise tip pool" so both tables always match.
   const locationWise = await getLocationWiseProductionPool(weekStartStr, options);
   const dailyPoolByDate = new Map(
     dateStrs.map((d, idx) => [

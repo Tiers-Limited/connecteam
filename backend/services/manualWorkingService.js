@@ -9,9 +9,6 @@ function ymd(date) {
   return typeof date === 'string' ? date.slice(0, 10) : date.toISOString().slice(0, 10);
 }
 
-/**
- * Create or update a manual working entry
- */
 async function upsertManualWorking(employeeId, locationId, date, amHours, pmHours, amTips, pmTips, reason, notes = '') {
   const dateStr = ymd(date);
   const tz = getAppTimezone();

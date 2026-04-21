@@ -8,6 +8,37 @@ function weekStartToYYYYMMDD(weekStart) {
   return s.slice(0, 10);
 }
 
+function payloadDateToYMD(v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'string') return v.trim().slice(0, 10);
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+  return String(v).slice(0, 10);
+}
+
+function addDaysYMD(ymd, daysToAdd) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ''))) return '';
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + Number(daysToAdd || 0), 0, 0, 0, 0));
+  return dt.toISOString().slice(0, 10);
+}
+
+function cachedPayloadMatchesRange(payload, sd, ed) {
+  if (!payload || typeof payload !== 'object') return false;
+  if (payload.dateRange && payload.dateRange.startDate && payload.dateRange.endDate) {
+    return payload.dateRange.startDate === sd && payload.dateRange.endDate === ed;
+  }
+  const ws = payloadDateToYMD(payload.weekStart);
+  const we = payloadDateToYMD(payload.weekEnd);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ws) && /^\d{4}-\d{2}-\d{2}$/.test(we)) {
+    return ws === sd && we === ed;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ws) && ws === sd) {
+    const expectedWeekEnd = addDaysYMD(sd, 6);
+    if (expectedWeekEnd && expectedWeekEnd === ed) return true;
+  }
+  return false;
+}
+
 async function getPayout(req, res, next) {
   try {
     const { locationId, weekStart } = req.params;
@@ -23,14 +54,25 @@ async function getPayout(req, res, next) {
         locationId,
         weekStart: weekStartStr,
       }).lean();
-      if (cached && cached.payload) {
+      const cachedPayload = cached?.payload;
+      const requestedStart = useDateRange ? startDate : weekStartStr;
+      const requestedEnd = useDateRange
+        ? endDate
+        : addDaysYMD(weekStartStr, 6);
+      const cacheMatches = requestedStart && requestedEnd
+        ? cachedPayloadMatchesRange(cachedPayload, requestedStart, requestedEnd)
+        : Boolean(cachedPayload);
+
+      if (cachedPayload && cacheMatches) {
         console.log('[weeklyPayoutController.getPayout] Tip/payout data from DB (cache):', {
           locationId,
           weekStartStr,
-          payoutsCount: cached.payload?.payouts?.length ?? 0,
+          requestedStart,
+          requestedEnd,
+          payoutsCount: cachedPayload?.payouts?.length ?? 0,
           fromCache: true,
         });
-        return res.json({ success: true, data: cached.payload, fromCache: true });
+        return res.json({ success: true, data: cachedPayload, fromCache: true });
       }
     }
 
