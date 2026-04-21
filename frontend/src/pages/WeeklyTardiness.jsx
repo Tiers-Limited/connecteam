@@ -59,6 +59,15 @@ function getMinutesByEmployee(mapObj, employeeName) {
   return Number(hit?.[1]) || 0;
 }
 
+function toFilenamePart(value, fallback = "all-locations") {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || fallback;
+}
+
 export default function WeeklyTardiness() {
   const { selectedLocationId, setSelectedLocationId, locations } = useApp();
   const defaultRange = getDefaultDateRange();
@@ -110,6 +119,7 @@ export default function WeeklyTardiness() {
   }, [startDate, endDate, selectedLocationId, locations]);
 
   const location = locations.find((l) => l._id === selectedLocationId);
+  const reportLocationPart = toFilenamePart(location?.name);
   const allEntries = data?.entries ?? [];
   const entries =
     selectedLocationId && location
@@ -433,7 +443,7 @@ export default function WeeklyTardiness() {
                           exportTableToCSV(
                             headers.map(sanitizeForExport),
                             rows,
-                            `weekly-tardiness-${rangeStart}-${rangeEnd}.csv`,
+                            `weekly-tardiness-${reportLocationPart}-${rangeStart}-${rangeEnd}.csv`,
                           );
                         }}
                       >
@@ -539,7 +549,7 @@ export default function WeeklyTardiness() {
                             ),
                             headers.map(sanitizeForExport),
                             rows,
-                            `weekly-tardiness-${rangeStart}-${rangeEnd}.pdf`,
+                            `weekly-tardiness-${reportLocationPart}-${rangeStart}-${rangeEnd}.pdf`,
                           );
                         }}
                       >
