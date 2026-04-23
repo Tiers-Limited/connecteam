@@ -103,44 +103,44 @@ export default function Login() {
 
   // Shared input wrapper style
   const inputWrap =
-    "relative flex items-center rounded-lg border border-slate-200 bg-white/80 shadow-sm transition-colors focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100";
+    "relative flex items-center rounded-xl border border-white/15 bg-white/5 shadow-sm transition-colors focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-300/30";
   const inputBase =
-    "w-full rounded-lg border-0 bg-transparent py-2 pl-10 pr-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0";
-  const labelBase = "block text-sm font-medium text-slate-600";
+    "w-full rounded-xl border-0 bg-transparent py-2.5 pl-10 pr-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-0";
+  const labelBase = "block text-sm font-medium text-slate-300";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-white to-indigo-50 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-4 sm:p-6 lg:p-8">
       <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-6 lg:gap-8 items-stretch">
         {/* Left Panel — Branding */}
-        <div className="hidden lg:flex flex-col rounded-2xl border border-slate-200/70 bg-white/60 backdrop-blur-sm p-8 shadow-sm">
+        <div className="hidden lg:flex flex-col rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm p-8 shadow-xl">
           <div className="flex items-center gap-3 mb-8">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50">
-              <FiUsers className="h-6 w-6 text-indigo-500" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-500/20">
+              <FiUsers className="h-6 w-6 text-indigo-300" />
             </div>
-            <span className="text-2xl font-semibold tracking-tight text-indigo-600">
+            <span className="text-2xl font-semibold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-200 via-violet-200 to-fuchsia-300">
               Corvia Tips
             </span>
           </div>
 
           <div className="flex-1 flex flex-col justify-center space-y-6">
-            <h2 className="text-2xl font-bold text-slate-800 leading-tight sm:text-3xl">
+            <h2 className="text-2xl font-bold text-white leading-tight sm:text-3xl">
               Manage your team and operations in one place
             </h2>
-            <p className="text-slate-500">
-              Sign in with your admin account to access the dashboard, reports,
+            <p className="text-slate-300">
+              Sign in with your account to access the dashboard, reports,
               and team tools.
             </p>
             <div className="flex items-start gap-3">
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100">
-                <FiShield className="h-3 w-3 text-slate-500" />
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10">
+                <FiShield className="h-3 w-3 text-slate-300" />
               </div>
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-300">
                 Secure access with role-based permissions
               </p>
             </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-slate-100">
+          <div className="mt-8 pt-6 border-t border-white/10">
             <p className="text-xs text-slate-400">
               © Corvia Tips. Authorized access only.
             </p>
@@ -148,24 +148,24 @@ export default function Login() {
         </div>
 
         {/* Right Panel — Form */}
-        <div className="flex flex-col justify-center rounded-2xl border border-slate-200/70 bg-white/70 backdrop-blur-sm shadow-sm p-8 lg:p-10">
+        <div className="flex flex-col justify-center rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm shadow-xl p-8 lg:p-10">
           {/* Mobile Logo */}
           <div className="flex items-center gap-2 lg:hidden mb-8">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500">
-              <FiUsers className="h-5 w-5 text-white" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-500/20">
+              <FiUsers className="h-5 w-5 text-indigo-200" />
             </div>
-            <span className="text-xl font-semibold text-slate-800">
+            <span className="text-xl font-semibold text-slate-100">
               Corvia Tips
             </span>
           </div>
 
           <div className="mb-8">
-            <h1 className="text-2xl font-bold text-slate-800 sm:text-3xl">
+            <h1 className="text-2xl font-bold text-white sm:text-3xl">
               {view === VIEW.LOGIN && "Welcome back"}
               {view === VIEW.FORGOT && "Forgot password"}
               {view === VIEW.RESET && "Reset password"}
             </h1>
-            <p className="mt-2 text-sm text-slate-500">
+            <p className="mt-2 text-sm text-slate-300">
               {view === VIEW.LOGIN && "Sign in to your account to continue"}
               {view === VIEW.FORGOT &&
                 "Enter your email to receive a 6-digit PIN"}
@@ -200,14 +200,14 @@ export default function Login() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2.5"
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500 text-white hover:opacity-95"
               >
                 {loading ? "Sending…" : "Send PIN"}
               </Button>
               <button
                 type="button"
                 onClick={() => setView(VIEW.LOGIN)}
-                className="w-full text-sm font-medium text-indigo-500 hover:text-indigo-600 transition-colors"
+                className="w-full text-sm font-medium text-indigo-300 hover:text-indigo-200 transition-colors"
               >
                 Back to sign in
               </button>
@@ -219,8 +219,8 @@ export default function Login() {
             <form onSubmit={handleResetPassword} className="space-y-6">
               <div className="space-y-2">
                 <label className={labelBase}>Email</label>
-                <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
-                  <span className="text-sm text-slate-600">{forgotEmail}</span>
+                <div className="rounded-xl border border-white/15 bg-white/5 px-3 py-2">
+                  <span className="text-sm text-slate-200">{forgotEmail}</span>
                 </div>
               </div>
               <div className="space-y-2">
@@ -264,7 +264,7 @@ export default function Login() {
                   <button
                     type="button"
                     onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute right-0 flex h-full items-center px-3 text-slate-400 hover:text-slate-600 transition-colors"
+                    className="absolute right-0 flex h-full items-center px-3 text-slate-400 hover:text-slate-200 transition-colors"
                     aria-label={
                       showNewPassword ? "Hide password" : "Show password"
                     }
@@ -299,7 +299,7 @@ export default function Login() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2.5"
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500 text-white hover:opacity-95"
               >
                 {loading ? "Resetting…" : "Reset password"}
               </Button>
@@ -311,7 +311,7 @@ export default function Login() {
                   setNewPassword("");
                   setConfirmPassword("");
                 }}
-                className="w-full text-sm font-medium text-indigo-500 hover:text-indigo-600 transition-colors"
+                className="w-full text-sm font-medium text-indigo-300 hover:text-indigo-200 transition-colors"
               >
                 Back to sign in
               </button>
@@ -363,7 +363,7 @@ export default function Login() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-0 flex h-full items-center px-3 text-slate-400 hover:text-slate-600 transition-colors"
+                    className="absolute right-0 flex h-full items-center px-3 text-slate-400 hover:text-slate-200 transition-colors"
                     aria-label={
                       showPassword ? "Hide password" : "Show password"
                     }
@@ -384,7 +384,7 @@ export default function Login() {
                     setView(VIEW.FORGOT);
                     setForgotEmail(email);
                   }}
-                  className="text-sm font-medium text-indigo-500 hover:text-indigo-600 transition-colors"
+                  className="text-sm font-medium text-indigo-300 hover:text-indigo-200 transition-colors"
                 >
                   Forgot password?
                 </button>
@@ -393,7 +393,7 @@ export default function Login() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2.5"
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500 text-white hover:opacity-95"
               >
                 {loading ? (
                   <span className="inline-flex items-center justify-center gap-2">

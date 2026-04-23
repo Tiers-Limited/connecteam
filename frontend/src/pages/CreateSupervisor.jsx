@@ -254,9 +254,9 @@ export default function CreateSupervisor() {
   if (!isAdmin) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-800">Supervisors</h1>
-        <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm p-6 shadow-sm">
-          <p className="text-slate-500">
+        <h1 className="text-2xl font-bold text-white">Supervisors</h1>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-lg backdrop-blur">
+          <p className="text-slate-300">
             You do not have permission to access this page.
           </p>
         </div>
@@ -265,20 +265,19 @@ export default function CreateSupervisor() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4 shadow-2xl sm:p-6">
+      <div className="pointer-events-none absolute -top-24 -right-8 h-56 w-56 rounded-full bg-indigo-500/20 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-24 -left-8 h-64 w-64 rounded-full bg-fuchsia-500/10 blur-3xl" />
+      <div className="relative space-y-5">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Supervisors</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Manage supervisors. Add new ones to send them login credentials by
-            email. Use the key icon to set or reset a supervisor’s password.
-          </p>
+          <h1 className="text-3xl font-extrabold tracking-tight text-white">Supervisors</h1>
         </div>
         <Button
           type="button"
           onClick={openModal}
-          className="inline-flex items-center gap-2"
+          className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500 text-white shadow-lg hover:opacity-95"
         >
           <FiUserPlus className="h-5 w-5" />
           Add supervisor
@@ -286,48 +285,46 @@ export default function CreateSupervisor() {
       </div>
 
       {/* List card */}
-      <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm shadow-sm overflow-hidden">
-        <div className="px-6 pt-5 pb-4 border-b border-slate-100">
-          <h2 className="text-base font-semibold text-slate-700">
+      <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-xl backdrop-blur">
+        <div className="border-b border-white/10 px-6 pt-5 pb-4">
+          <h2 className="text-base font-semibold text-slate-100">
             Existing supervisors
           </h2>
         </div>
         <div className="px-6 py-4">
           {listLoading ? (
-            <p className="text-slate-400">Loading…</p>
+            <p className="text-slate-300">Loading…</p>
           ) : list.length === 0 ? (
-            <p className="text-slate-400">
-              No supervisors yet. Click "Add supervisor" to create one.
-            </p>
+            <p className="text-slate-300">No supervisors yet.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <tr className="border-b border-white/10">
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">
                       Email
                     </th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">
                       Username
                     </th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">
                       Created
                     </th>
-                    <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-300">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-white/10">
                   {list.map((s) => (
                     <tr
                       key={s._id}
-                      className="hover:bg-slate-50/70 transition-colors"
+                      className="transition-colors hover:bg-white/5"
                     >
-                      <td className="px-4 py-3 text-slate-700 font-medium">
+                      <td className="px-4 py-3 font-medium text-slate-100">
                         {s.email}
                       </td>
-                      <td className="px-4 py-3 text-slate-500">{s.username}</td>
+                      <td className="px-4 py-3 text-slate-300">{s.username}</td>
                       <td className="px-4 py-3 text-slate-400">
                         {s.createdAt
                           ? new Date(s.createdAt).toLocaleDateString()
@@ -338,7 +335,7 @@ export default function CreateSupervisor() {
                           <button
                             type="button"
                             onClick={() => openPasswordModal(s)}
-                            className="rounded-lg p-2 text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-amber-500/15 hover:text-amber-300"
                             aria-label="Set password"
                             title="Set password"
                           >
@@ -347,7 +344,7 @@ export default function CreateSupervisor() {
                           <button
                             type="button"
                             onClick={() => openEditModal(s)}
-                            className="rounded-lg p-2 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-indigo-500/15 hover:text-indigo-300"
                             aria-label="Edit"
                           >
                             <FiEdit2 className="h-4 w-4" />
@@ -355,7 +352,7 @@ export default function CreateSupervisor() {
                           <button
                             type="button"
                             onClick={() => openDeleteModal(s)}
-                            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-500/15 hover:text-red-300"
                             aria-label="Delete"
                           >
                             <FiTrash2 className="h-4 w-4" />
@@ -383,18 +380,18 @@ export default function CreateSupervisor() {
             className="absolute inset-0 bg-slate-800/40 backdrop-blur-sm"
             onClick={closeModal}
           />
-          <div className="relative w-full max-w-md rounded-2xl border border-slate-200/80 bg-white/90 backdrop-blur-md shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/95 backdrop-blur-md shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
               <h2
                 id="modal-title"
-                className="text-lg font-semibold text-slate-800"
+                className="text-lg font-semibold text-white"
               >
                 Add supervisor
               </h2>
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
                 aria-label="Close"
               >
                 <FiX className="h-5 w-5" />
@@ -404,11 +401,11 @@ export default function CreateSupervisor() {
               <div>
                 <label
                   htmlFor="supervisor-username"
-                  className="mb-1 block text-sm font-medium text-slate-600"
+                  className="mb-1 block text-sm font-medium text-slate-300"
                 >
                   Username
                 </label>
-                <div className="relative flex items-center rounded-lg border border-slate-200 bg-white/80 shadow-sm transition-colors focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100">
+                <div className="relative flex items-center rounded-lg border border-white/15 bg-white/5 shadow-sm transition-colors focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-300/30">
                   <div className="absolute left-0 pl-3 flex items-center pointer-events-none">
                     <FiUser className="h-5 w-5 text-slate-400" />
                   </div>
@@ -420,18 +417,18 @@ export default function CreateSupervisor() {
                     placeholder="Display name or login username"
                     autoComplete="username"
                     disabled={loading}
-                    className="w-full rounded-lg border-0 bg-transparent py-2 pl-10 pr-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0"
+                    className="w-full rounded-lg border-0 bg-transparent py-2 pl-10 pr-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-0"
                   />
                 </div>
               </div>
               <div>
                 <label
                   htmlFor="supervisor-email"
-                  className="mb-1 block text-sm font-medium text-slate-600"
+                  className="mb-1 block text-sm font-medium text-slate-300"
                 >
                   Email address
                 </label>
-                <div className="relative flex items-center rounded-lg border border-slate-200 bg-white/80 shadow-sm transition-colors focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100">
+                <div className="relative flex items-center rounded-lg border border-white/15 bg-white/5 shadow-sm transition-colors focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-300/30">
                   <div className="absolute left-0 pl-3 flex items-center pointer-events-none">
                     <FiMail className="h-5 w-5 text-slate-400" />
                   </div>
@@ -443,11 +440,11 @@ export default function CreateSupervisor() {
                     placeholder="supervisor@company.com"
                     autoComplete="email"
                     disabled={loading}
-                    className="w-full rounded-lg border-0 bg-transparent py-2 pl-10 pr-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0"
+                    className="w-full rounded-lg border-0 bg-transparent py-2 pl-10 pr-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-0"
                   />
                 </div>
               </div>
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-200">
                 <input
                   type="checkbox"
                   checked={autoGeneratePassword}
@@ -464,7 +461,7 @@ export default function CreateSupervisor() {
                 <div>
                   <label
                     htmlFor="create-supervisor-password"
-                    className="mb-1 block text-sm font-medium text-slate-600"
+                    className="mb-1 block text-sm font-medium text-slate-300"
                   >
                     Password
                   </label>
@@ -475,7 +472,7 @@ export default function CreateSupervisor() {
                     onChange={(e) => setCreatePassword(e.target.value)}
                     autoComplete="new-password"
                     disabled={loading}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                    className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-300/30"
                   />
                 </div>
               )}
@@ -491,7 +488,7 @@ export default function CreateSupervisor() {
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 inline-flex items-center justify-center gap-2"
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500 text-white hover:opacity-95"
                 >
                   {loading ? (
                     <>{spinner} Creating…</>
@@ -520,18 +517,18 @@ export default function CreateSupervisor() {
             className="absolute inset-0 bg-slate-800/40 backdrop-blur-sm"
             onClick={closeEditModal}
           />
-          <div className="relative w-full max-w-md rounded-2xl border border-slate-200/80 bg-white/90 backdrop-blur-md shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/95 backdrop-blur-md shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
               <h2
                 id="edit-modal-title"
-                className="text-lg font-semibold text-slate-800"
+                className="text-lg font-semibold text-white"
               >
                 Edit supervisor
               </h2>
               <button
                 type="button"
                 onClick={closeEditModal}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
                 aria-label="Close"
               >
                 <FiX className="h-5 w-5" />
@@ -623,27 +620,27 @@ export default function CreateSupervisor() {
             className="absolute inset-0 bg-slate-800/40 backdrop-blur-sm"
             onClick={closePasswordModal}
           />
-          <div className="relative w-full max-w-md rounded-2xl border border-slate-200/80 bg-white/90 backdrop-blur-md shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/95 backdrop-blur-md shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
               <h2
                 id="password-modal-title"
-                className="text-lg font-semibold text-slate-800"
+                className="text-lg font-semibold text-white"
               >
                 Set password
               </h2>
               <button
                 type="button"
                 onClick={closePasswordModal}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
                 aria-label="Close"
               >
                 <FiX className="h-5 w-5" />
               </button>
             </div>
             <form onSubmit={handlePasswordSubmit} className="space-y-5 p-5">
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-300">
                 Set a new login password for{" "}
-                <strong className="text-slate-700">{passwordTarget.email}</strong>
+                <strong className="text-slate-100">{passwordTarget.email}</strong>
                 . They can sign in with this password immediately. Minimum 6
                 characters.
               </p>
@@ -723,16 +720,16 @@ export default function CreateSupervisor() {
             className="absolute inset-0 bg-slate-800/40 backdrop-blur-sm"
             onClick={closeDeleteModal}
           />
-          <div className="relative w-full max-w-sm rounded-2xl border border-slate-200/80 bg-white/90 backdrop-blur-md shadow-xl p-6">
+          <div className="relative w-full max-w-sm rounded-2xl border border-white/10 bg-slate-900/95 p-6 shadow-2xl backdrop-blur-md">
             <h2
               id="delete-modal-title"
-              className="text-lg font-semibold text-slate-800"
+              className="text-lg font-semibold text-white"
             >
               Delete supervisor
             </h2>
-            <p className="mt-2 text-sm text-slate-500">
+            <p className="mt-2 text-sm text-slate-300">
               Are you sure you want to delete{" "}
-              <strong className="text-slate-700">{deleteTarget.email}</strong>?
+              <strong className="text-slate-100">{deleteTarget.email}</strong>?
               This cannot be undone.
             </p>
             <div className="mt-6 flex gap-3">
@@ -764,6 +761,7 @@ export default function CreateSupervisor() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

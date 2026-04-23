@@ -287,16 +287,18 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
         </div>
       </div>
 
-      <p className="text-slate-500">
-        {selectedLocationId && location
-          ? `${location.name} — `
-          : "All locations — "}
-        Select <strong className="text-slate-600">From date</strong> and{" "}
-        <strong className="text-slate-600">To date</strong>, then click{" "}
-        <strong className="text-slate-600">Load from Connecteam</strong>.
-        Tardiness = minutes late (clock-in after scheduled start). Data from
-        Connecteam.
-      </p>
+      {!embedded && (
+        <p className="text-slate-500">
+          {selectedLocationId && location
+            ? `${location.name} — `
+            : "All locations — "}
+          Select <strong className="text-slate-600">From date</strong> and{" "}
+          <strong className="text-slate-600">To date</strong>, then click{" "}
+          <strong className="text-slate-600">Load from Connecteam</strong>.
+          Tardiness = minutes late (clock-in after scheduled start). Data from
+          Connecteam.
+        </p>
+      )}
 
       {!data && !loading && (
         <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm p-8 shadow-sm text-center">

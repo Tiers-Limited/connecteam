@@ -281,10 +281,12 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           {!embedded && <h1 className="text-2xl font-bold text-slate-800">{pageTitle}</h1>}
-          <p className="mt-1 text-sm text-slate-500">
-            Phase 2: Weekly aggregation → Tardiness deduction → Weekly after
-            tardiness
-          </p>
+          {!embedded && (
+            <p className="mt-1 text-sm text-slate-500">
+              Phase 2: Weekly aggregation → Tardiness deduction → Weekly after
+              tardiness
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
@@ -346,25 +348,27 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
       </div>
 
       {/* Info card */}
-      <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 backdrop-blur-sm border-l-4 border-l-indigo-400 p-5 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="font-medium text-slate-700">
-              {locationName} — {displayRangeStart} – {displayRangeEnd}
-            </p>
-            <p className="mt-1 text-sm text-slate-500">
-              Select <strong className="text-slate-600">From date</strong> and{" "}
-              <strong className="text-slate-600">To date</strong>, then click{" "}
-              <strong className="text-slate-600">Load payout</strong>. Tardiness
-              and working hours are pulled from Connecteam for the selected
-              range (working hours are net after manual breaks). Weekly Gross Tips = Σ Daily Tips in range. Tardiness: 0–5
-              min → 0%; &gt;5–10 min → 15%; &gt;10 min → 20%. Redistribution by{" "}
-              <strong className="text-slate-600">total working hours</strong>{" "}
-              from Connecteam.
-            </p>
+      {!embedded && (
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 backdrop-blur-sm border-l-4 border-l-indigo-400 p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="font-medium text-slate-700">
+                {locationName} — {displayRangeStart} – {displayRangeEnd}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Select <strong className="text-slate-600">From date</strong> and{" "}
+                <strong className="text-slate-600">To date</strong>, then click{" "}
+                <strong className="text-slate-600">Load payout</strong>. Tardiness
+                and working hours are pulled from Connecteam for the selected
+                range (working hours are net after manual breaks). Weekly Gross Tips = Σ Daily Tips in range. Tardiness: 0–5
+                min → 0%; &gt;5–10 min → 15%; &gt;10 min → 20%. Redistribution by{" "}
+                <strong className="text-slate-600">total working hours</strong>{" "}
+                from Connecteam.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {!data && !loading && (
         <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm p-8 shadow-sm text-center">
