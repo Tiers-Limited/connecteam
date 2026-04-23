@@ -13,7 +13,7 @@ import {
   columnsFromDayDateKeys,
 } from "../utils/dateUtils";
 import { getWeeklyTardiness } from "../services/weeklyTardinessService";
-import { getDailyTipCalculation } from "../services/dailyTipService";
+import { getDailyTipCalculation, getDailyTipsHistory } from "../services/dailyTipService";
 import {
   getWeeklyProductionPayout,
   getLocationWiseProductionPool,
@@ -32,6 +32,15 @@ import {
 } from "../utils/reportUtils";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
+import {
+  FiCalendar,
+  FiChevronRight,
+  FiDownload,
+  FiFileText,
+  FiMapPin,
+  FiTrendingUp,
+  FiUser,
+} from "react-icons/fi";
 
 const PDF_HEAD_INDIGO = [79, 70, 229];
 
@@ -153,8 +162,37 @@ const REPORT_TYPES = [
   { id: "weekly_payout", label: "Weekly Payout" },
   { id: "weekly_tardiness", label: "Weekly Tardiness" },
   { id: "daily_tips", label: "Daily Tips" },
+  { id: "tip_history", label: "Tip History" },
   { id: "production_pool", label: "Production Pool" },
 ];
+
+const REPORT_TYPE_STYLES = {
+  weekly_payout: {
+    accent: "from-indigo-500 via-violet-500 to-fuchsia-500",
+    ring: "ring-indigo-300",
+    icon: FiTrendingUp,
+  },
+  weekly_tardiness: {
+    accent: "from-amber-500 via-orange-500 to-rose-500",
+    ring: "ring-amber-300",
+    icon: FiCalendar,
+  },
+  daily_tips: {
+    accent: "from-emerald-500 via-teal-500 to-cyan-500",
+    ring: "ring-emerald-300",
+    icon: FiFileText,
+  },
+  tip_history: {
+    accent: "from-violet-500 via-purple-500 to-indigo-500",
+    ring: "ring-violet-300",
+    icon: FiFileText,
+  },
+  production_pool: {
+    accent: "from-sky-500 via-indigo-500 to-purple-500",
+    ring: "ring-sky-300",
+    icon: FiDownload,
+  },
+};
 
 export default function PayoutReports() {
   const { selectedLocationId, locations } = useApp();
@@ -174,13 +212,19 @@ export default function PayoutReports() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [employeeOptions, setEmployeeOptions] = useState([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [exportLoadingKind, setExportLoadingKind] = useState(null);
+  const firstActiveLocationId = activeLocations[0]?._id || "";
 
   useEffect(() => {
-    if (!singleLocationId && selectedLocationId) {
+    if (singleLocationId) return;
+    if (selectedLocationId && activeLocations.some((l) => l._id === selectedLocationId)) {
       setSingleLocationId(selectedLocationId);
+      return;
     }
-  }, [selectedLocationId, singleLocationId]);
+    if (firstActiveLocationId) {
+      setSingleLocationId(firstActiveLocationId);
+    }
+  }, [selectedLocationId, singleLocationId, activeLocations, firstActiveLocationId]);
 
   useEffect(() => {
     if (reportType !== "weekly_payout" || employeeScope !== "one_employee") {
@@ -721,194 +765,329 @@ export default function PayoutReports() {
     [startDate, endDate],
   );
 
+  const runTipHistoryExport = useCallback(
+    async (kind) => {
+      const sd = toFileDate(startDate);
+      const ed = toFileDate(endDate);
+      if (!sd || !ed || ed < sd) {
+        toast.error("Invalid date range");
+        return;
+      }
+
+      const all = await getDailyTipsHistory(1, 10000);
+      const source = Array.isArray(all?.items) ? all.items : [];
+      const rowsFiltered = source.filter((row) => {
+        const d = toFileDate(row?.date);
+        if (!d || d < sd || d > ed) return false;
+        const lid =
+          typeof row?.locationId === "object"
+            ? String(row.locationId?._id || "")
+            : String(row?.locationId || "");
+        return lid === String(singleLocationId);
+      });
+
+      if (!rowsFiltered.length) {
+        toast.error("No tip history rows for selected filters");
+        return;
+      }
+
+      const headers = ["User", "Role", "AM Tips", "PM Tips", "Total", "Date", "Location"];
+      const rowValues = rowsFiltered.map((row) => {
+        const totalTips = (Number(row.amGrossTips) || 0) + (Number(row.pmGrossTips) || 0);
+        const userDisplay = row.createdByUsername
+          ? `${row.createdByUsername} (${row.createdByEmail || ""})`
+          : row.createdByEmail || "";
+        const locationName =
+          row.locationId?.name ??
+          (row.locationId && typeof row.locationId === "object" ? "" : row.locationId ?? "");
+        const moneyCell = (n) =>
+          kind === "csv" ? formatCsvNumeric(n, { maxFractionDigits: 2 }) : formatMoney(n);
+        return [
+          userDisplay,
+          row.createdByRole || "",
+          moneyCell(row.amGrossTips),
+          moneyCell(row.pmGrossTips),
+          moneyCell(totalTips),
+          toFileDate(row.date),
+          locationName,
+        ];
+      });
+
+      const totals = {
+        am: sum(rowsFiltered.map((r) => Number(r.amGrossTips) || 0)),
+        pm: sum(rowsFiltered.map((r) => Number(r.pmGrossTips) || 0)),
+      };
+      rowValues.push([
+        "Total",
+        "",
+        kind === "csv" ? formatCsvNumeric(totals.am, { maxFractionDigits: 2 }) : formatMoney(totals.am),
+        kind === "csv" ? formatCsvNumeric(totals.pm, { maxFractionDigits: 2 }) : formatMoney(totals.pm),
+        kind === "csv"
+          ? formatCsvNumeric(totals.am + totals.pm, { maxFractionDigits: 2 })
+          : formatMoney(totals.am + totals.pm),
+        "",
+        "",
+      ]);
+
+      const locSlug = singleLocationId
+        ? sanitizeExportSlug(activeLocations.find((l) => l._id === singleLocationId)?.name)
+        : "all-locations";
+      const file = `tip-history-${locSlug}-${sd}-${ed}.${kind}`;
+      if (kind === "csv") {
+        exportTableToCSV(headers, rowValues, file);
+      } else {
+        exportTableToPDF("Tip History", headers, rowValues, file);
+      }
+    },
+    [startDate, endDate, singleLocationId, activeLocations],
+  );
+
   const runExport = useCallback(
     async (kind) => {
-      setExporting(true);
+      if (exportLoadingKind) return;
+      setExportLoadingKind(kind);
       try {
         if (reportType === "weekly_payout") await runWeeklyPayoutExport(kind);
         if (reportType === "weekly_tardiness") await runWeeklyTardinessExport(kind);
         if (reportType === "daily_tips") await runDailyTipsExport(kind);
+        if (reportType === "tip_history") await runTipHistoryExport(kind);
         if (reportType === "production_pool") await runProductionPoolExport(kind);
       } catch (err) {
         toast.error(err?.response?.data?.error || err?.message || "Export failed");
       } finally {
-        setExporting(false);
+        setExportLoadingKind(null);
       }
     },
-    [reportType, runWeeklyPayoutExport, runWeeklyTardinessExport, runDailyTipsExport, runProductionPoolExport],
+    [
+      reportType,
+      runWeeklyPayoutExport,
+      runWeeklyTardinessExport,
+      runDailyTipsExport,
+      runTipHistoryExport,
+      runProductionPoolExport,
+      exportLoadingKind,
+    ],
   );
 
   return (
-    <div className="space-y-4 pb-6">
-      <h1 className="text-2xl font-bold text-slate-900">Reports</h1>
+    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4 shadow-2xl sm:p-6">
+      <div className="pointer-events-none absolute -top-20 -right-10 h-56 w-56 rounded-full bg-indigo-500/25 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-24 -left-10 h-64 w-64 rounded-full bg-fuchsia-500/15 blur-3xl" />
 
-      <Card className="border-slate-300 bg-gray-100 p-4 shadow-sm">
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Report type
-            </label>
-            <select
-              value={reportType}
-              onChange={(e) => setReportType(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-            >
-              {REPORT_TYPES.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
+      <div className="relative space-y-5 pb-2">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">
+                Corvia Analytics
+              </p>
+              <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white">
+                Reports Studio
+              </h1>
+            </div>
+            <div className={`inline-flex items-center gap-2 rounded-full bg-gradient-to-r px-4 py-2 text-xs font-semibold text-white shadow ${REPORT_TYPE_STYLES[reportType].accent}`}>
+              {(() => {
+                const Icon = REPORT_TYPE_STYLES[reportType].icon;
+                return <Icon className="h-4 w-4" />;
+              })()}
+              {REPORT_TYPES.find((x) => x.id === reportType)?.label}
+            </div>
           </div>
-
-          {reportType === "daily_tips" ? (
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Date
-              </label>
-              <input
-                type="date"
-                value={singleDate}
-                onChange={(e) => setSingleDate(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-              />
-            </div>
-          ) : (
-            <>
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  From
-                </label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  To
-                </label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-                />
-              </div>
-            </>
-          )}
-
-          {(reportType === "daily_tips" || reportType === "weekly_tardiness") && (
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Location
-              </label>
-              <select
-                value={singleLocationId}
-                onChange={(e) => setSingleLocationId(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-              >
-                {reportType === "weekly_tardiness" && <option value="">All locations</option>}
-                <option value="">Select location…</option>
-                {activeLocations.map((loc) => (
-                  <option key={loc._id} value={loc._id}>
-                    {loc.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
-      </Card>
 
-      {reportType === "weekly_payout" && (
-        <Card className="border-slate-300 bg-gray-100 p-4 shadow-sm">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Location scope
+        <Card className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
+          <div className="grid gap-4 xl:grid-cols-12">
+            <div className="xl:col-span-4">
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-300">
+                Report Type
               </label>
-              <select
-                value={geographicScope}
-                onChange={(e) => setGeographicScope(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-              >
-                <option value="one_location">One location</option>
-                <option value="all_locations">All locations</option>
-              </select>
-            </div>
-            {geographicScope === "one_location" && (
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  Location
-                </label>
-                <select
-                  value={singleLocationId}
-                  onChange={(e) => setSingleLocationId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-                >
-                  <option value="">Select location…</option>
-                  {activeLocations.map((loc) => (
-                    <option key={loc._id} value={loc._id}>
-                      {loc.name}
-                    </option>
-                  ))}
-                </select>
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                {REPORT_TYPES.map((t) => {
+                  const active = reportType === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setReportType(t.id)}
+                      className={`group flex items-center justify-between rounded-xl border px-3 py-2 text-left transition ${
+                        active
+                          ? `bg-white/10 shadow ring-2 ${REPORT_TYPE_STYLES[t.id].ring} border-transparent`
+                          : "border-white/15 bg-white/5 hover:border-white/30 hover:bg-white/10"
+                      }`}
+                    >
+                      <span className={`text-sm font-semibold ${active ? "text-white" : "text-slate-200"}`}>
+                        {t.label}
+                      </span>
+                      <FiChevronRight className={`h-4 w-4 transition ${active ? "text-indigo-300" : "text-slate-400 group-hover:text-slate-200"}`} />
+                    </button>
+                  );
+                })}
               </div>
-            )}
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Employee scope
-              </label>
-              <select
-                value={employeeScope}
-                onChange={(e) => {
-                  setEmployeeScope(e.target.value);
-                  setSelectedEmployeeId("");
-                }}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
-              >
-                <option value="all">All employees</option>
-                <option value="one_employee">One employee</option>
-              </select>
             </div>
-            {employeeScope === "one_employee" && (
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  Employee
-                </label>
-                <select
-                  value={selectedEmployeeId}
-                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                  disabled={loadingEmployees}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 disabled:opacity-60"
-                >
-                  <option value="">
-                    {loadingEmployees ? "Loading employees…" : "Select employee…"}
-                  </option>
-                  {employeeOptions.map((e) => (
-                    <option key={`${e.locationId}-${e.employeeId}`} value={e.employeeId}>
-                      {geographicScope === "all_locations"
-                        ? `${e.employeeName} — ${e.locationName}`
-                        : e.employeeName}
-                    </option>
-                  ))}
-                </select>
+
+            <div className="xl:col-span-8 xl:border-l xl:border-white/15 xl:pl-5">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {reportType === "daily_tips" ? (
+                  <div>
+                    <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                      <FiCalendar className="h-3.5 w-3.5" /> Date
+                    </label>
+                    <input
+                      type="date"
+                      value={singleDate}
+                      onChange={(e) => setSingleDate(e.target.value)}
+                      className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                        <FiCalendar className="h-3.5 w-3.5" /> From
+                      </label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                        <FiCalendar className="h-3.5 w-3.5" /> To
+                      </label>
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {(reportType === "daily_tips" || reportType === "weekly_tardiness" || reportType === "tip_history") && (
+                  <div>
+                    <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                      <FiMapPin className="h-3.5 w-3.5" /> Location
+                    </label>
+                    <select
+                      value={singleLocationId}
+                      onChange={(e) => setSingleLocationId(e.target.value)}
+                      className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30"
+                    >
+                      {activeLocations.map((loc) => (
+                        <option key={loc._id} value={loc._id}>
+                          {loc.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
-            )}
+
+              {reportType === "weekly_payout" && (
+                <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                      Location Scope
+                    </label>
+                    <select
+                      value={geographicScope}
+                      onChange={(e) => setGeographicScope(e.target.value)}
+                      className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30"
+                    >
+                      <option value="one_location">One location</option>
+                      <option value="all_locations">All locations</option>
+                    </select>
+                  </div>
+
+                  {geographicScope === "one_location" && (
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                        Location
+                      </label>
+                      <select
+                        value={singleLocationId}
+                        onChange={(e) => setSingleLocationId(e.target.value)}
+                        className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30"
+                      >
+                        {activeLocations.map((loc) => (
+                          <option key={loc._id} value={loc._id}>
+                            {loc.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                      Employee Scope
+                    </label>
+                    <select
+                      value={employeeScope}
+                      onChange={(e) => {
+                        setEmployeeScope(e.target.value);
+                        setSelectedEmployeeId("");
+                      }}
+                      className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30"
+                    >
+                      <option value="all">All employees</option>
+                      <option value="one_employee">One employee</option>
+                    </select>
+                  </div>
+
+                  {employeeScope === "one_employee" && (
+                    <div>
+                      <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                        <FiUser className="h-3.5 w-3.5" /> Employee
+                      </label>
+                      <select
+                        value={selectedEmployeeId}
+                        onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                        disabled={loadingEmployees}
+                        className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30 disabled:opacity-60"
+                      >
+                        <option value="">
+                          {loadingEmployees ? "Loading employees…" : "Select employee…"}
+                        </option>
+                        {employeeOptions.map((e) => (
+                          <option key={`${e.locationId}-${e.employeeId}`} value={e.employeeId}>
+                            {geographicScope === "all_locations"
+                              ? `${e.employeeName} — ${e.locationName}`
+                              : e.employeeName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </Card>
-      )}
 
-      <div className="flex justify-end gap-2">
-        <Button type="button" disabled={exporting} onClick={() => runExport("csv")}>
-          {exporting ? "Exporting…" : "Export CSV"}
-        </Button>
-        <Button type="button" disabled={exporting} onClick={() => runExport("pdf")}>
-          {exporting ? "Exporting…" : "Export PDF"}
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            type="button"
+            disabled={!!exportLoadingKind}
+            onClick={() => runExport("csv")}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-800 text-slate-100 shadow-lg ring-1 ring-white/15 transition hover:bg-slate-700"
+          >
+            <FiFileText className="h-4 w-4" />
+            {exportLoadingKind === "csv" ? "Exporting…" : "Export CSV"}
+          </Button>
+          <Button
+            type="button"
+            disabled={!!exportLoadingKind}
+            onClick={() => runExport("pdf")}
+            className={`inline-flex items-center gap-2 rounded-xl bg-gradient-to-r px-4 text-white shadow-lg transition hover:opacity-95 ${REPORT_TYPE_STYLES[reportType].accent}`}
+          >
+            <FiDownload className="h-4 w-4" />
+            {exportLoadingKind === "pdf" ? "Exporting…" : "Export PDF"}
+          </Button>
+        </div>
       </div>
     </div>
   );

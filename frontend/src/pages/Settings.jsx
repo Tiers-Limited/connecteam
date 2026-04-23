@@ -43,77 +43,70 @@ export default function Settings() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-800">Settings</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Manage your account and security preferences.
-        </p>
-      </header>
-
-      <div className="grid gap-8 lg:grid-cols-[1fr_1.2fr]">
-        {/* Account summary */}
-        <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm shadow-sm overflow-hidden">
-          <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-50">
-              <FiUser className="h-5 w-5 text-indigo-500" />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold text-slate-700">
-                Account
-              </h2>
-              <p className="text-xs text-slate-400">Your profile details</p>
-            </div>
-          </div>
-          <dl className="divide-y divide-slate-100 px-6">
-            <div className="flex justify-between gap-4 py-3">
-              <dt className="text-sm text-slate-500">Email</dt>
-              <dd className="truncate text-right text-sm font-medium text-slate-700">
-                {user?.email}
-              </dd>
-            </div>
-            {user?.username && (
-              <div className="flex justify-between gap-4 py-3">
-                <dt className="text-sm text-slate-500">Username</dt>
-                <dd className="truncate text-right text-sm font-medium text-slate-700">
-                  {user.username}
-                </dd>
-              </div>
-            )}
-            <div className="flex justify-between gap-4 py-3">
-              <dt className="text-sm text-slate-500">Role</dt>
-              <dd className="text-right text-sm font-medium capitalize text-slate-700">
-                {user?.role}
-              </dd>
-            </div>
-          </dl>
+    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4 shadow-2xl sm:p-6">
+      <div className="pointer-events-none absolute -top-20 -right-10 h-56 w-56 rounded-full bg-indigo-500/20 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-24 -left-10 h-64 w-64 rounded-full bg-fuchsia-500/10 blur-3xl" />
+      <div className="relative space-y-5">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg backdrop-blur">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">
+            Corvia Security
+          </p>
+          <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white">
+            Settings
+          </h1>
         </div>
 
-        {/* Change password */}
-        <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm shadow-sm overflow-hidden">
-          <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100">
-              <FiShield className="h-5 w-5 text-slate-500" />
+        <div className="grid gap-5 lg:grid-cols-[1fr_1.2fr]">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-xl backdrop-blur">
+            <div className="flex items-center gap-3 border-b border-white/10 px-6 py-5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-500/20">
+                <FiUser className="h-5 w-5 text-indigo-300" />
+              </div>
+              <h2 className="text-base font-semibold text-slate-100">Account</h2>
             </div>
-            <div>
-              <h2 className="text-base font-semibold text-slate-700">
+            <dl className="divide-y divide-white/10 px-6">
+              <div className="flex justify-between gap-4 py-3">
+                <dt className="text-sm text-slate-300">Email</dt>
+                <dd className="truncate text-right text-sm font-medium text-slate-100">
+                  {user?.email}
+                </dd>
+              </div>
+              {user?.username && (
+                <div className="flex justify-between gap-4 py-3">
+                  <dt className="text-sm text-slate-300">Username</dt>
+                  <dd className="truncate text-right text-sm font-medium text-slate-100">
+                    {user.username}
+                  </dd>
+                </div>
+              )}
+              <div className="flex justify-between gap-4 py-3">
+                <dt className="text-sm text-slate-300">Role</dt>
+                <dd className="text-right text-sm font-medium capitalize text-slate-100">
+                  {user?.role}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-xl backdrop-blur">
+            <div className="flex items-center gap-3 border-b border-white/10 px-6 py-5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10">
+                <FiShield className="h-5 w-5 text-slate-300" />
+              </div>
+              <h2 className="text-base font-semibold text-slate-100">
                 Change password
               </h2>
-              <p className="text-xs text-slate-400">
-                Update your password to keep your account secure.
-              </p>
             </div>
-          </div>
-          <form onSubmit={handleSubmit} className="space-y-5 px-6 py-5">
+            <form onSubmit={handleSubmit} className="space-y-5 px-6 py-5">
             {/* Current password */}
             <div>
               <label
                 htmlFor="current-password"
-                className="mb-1.5 block text-sm font-medium text-slate-600"
+                className="mb-1.5 block text-sm font-medium text-slate-300"
               >
                 Current password
               </label>
-              <div className="relative flex items-center rounded-lg border border-slate-200 bg-white/80 shadow-sm transition-colors focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100">
+              <div className="relative flex items-center rounded-lg border border-white/15 bg-white/5 shadow-sm transition-colors focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-300/30">
                 <div className="absolute left-0 pl-3 flex items-center pointer-events-none">
                   <FiLock className="h-5 w-5 text-slate-400" />
                 </div>
@@ -125,12 +118,12 @@ export default function Settings() {
                   placeholder="Enter current password"
                   autoComplete="current-password"
                   disabled={loading}
-                  className="w-full rounded-lg border-0 bg-transparent py-2.5 pl-10 pr-11 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0"
+                  className="w-full rounded-lg border-0 bg-transparent py-2.5 pl-10 pr-11 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-0"
                 />
                 <button
                   type="button"
                   onClick={() => setShowCurrent(!showCurrent)}
-                  className="absolute right-0 flex h-full items-center px-3 text-slate-400 hover:text-slate-600 transition-colors"
+                  className="absolute right-0 flex h-full items-center px-3 text-slate-400 hover:text-slate-200 transition-colors"
                   aria-label={showCurrent ? "Hide password" : "Show password"}
                 >
                   {showCurrent ? (
@@ -146,11 +139,11 @@ export default function Settings() {
             <div>
               <label
                 htmlFor="new-password"
-                className="mb-1.5 block text-sm font-medium text-slate-600"
+                className="mb-1.5 block text-sm font-medium text-slate-300"
               >
                 New password
               </label>
-              <div className="relative flex items-center rounded-lg border border-slate-200 bg-white/80 shadow-sm transition-colors focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100">
+              <div className="relative flex items-center rounded-lg border border-white/15 bg-white/5 shadow-sm transition-colors focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-300/30">
                 <div className="absolute left-0 pl-3 flex items-center pointer-events-none">
                   <FiLock className="h-5 w-5 text-slate-400" />
                 </div>
@@ -162,12 +155,12 @@ export default function Settings() {
                   placeholder="At least 6 characters"
                   autoComplete="new-password"
                   disabled={loading}
-                  className="w-full rounded-lg border-0 bg-transparent py-2.5 pl-10 pr-11 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0"
+                  className="w-full rounded-lg border-0 bg-transparent py-2.5 pl-10 pr-11 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-0"
                 />
                 <button
                   type="button"
                   onClick={() => setShowNew(!showNew)}
-                  className="absolute right-0 flex h-full items-center px-3 text-slate-400 hover:text-slate-600 transition-colors"
+                  className="absolute right-0 flex h-full items-center px-3 text-slate-400 hover:text-slate-200 transition-colors"
                   aria-label={showNew ? "Hide password" : "Show password"}
                 >
                   {showNew ? (
@@ -183,11 +176,11 @@ export default function Settings() {
             <div>
               <label
                 htmlFor="confirm-password"
-                className="mb-1.5 block text-sm font-medium text-slate-600"
+                className="mb-1.5 block text-sm font-medium text-slate-300"
               >
                 Confirm new password
               </label>
-              <div className="relative flex items-center rounded-lg border border-slate-200 bg-white/80 shadow-sm transition-colors focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100">
+              <div className="relative flex items-center rounded-lg border border-white/15 bg-white/5 shadow-sm transition-colors focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-300/30">
                 <div className="absolute left-0 pl-3 flex items-center pointer-events-none">
                   <FiLock className="h-5 w-5 text-slate-400" />
                 </div>
@@ -199,7 +192,7 @@ export default function Settings() {
                   placeholder="Confirm new password"
                   autoComplete="new-password"
                   disabled={loading}
-                  className="w-full rounded-lg border-0 bg-transparent py-2.5 pl-10 pr-3 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0"
+                  className="w-full rounded-lg border-0 bg-transparent py-2.5 pl-10 pr-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-0"
                 />
               </div>
             </div>
@@ -208,7 +201,7 @@ export default function Settings() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full sm:w-auto min-w-[160px] inline-flex items-center justify-center gap-2"
+                className="w-full sm:w-auto min-w-[160px] inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500 text-white hover:opacity-95"
               >
                 {loading ? (
                   <>
@@ -240,6 +233,7 @@ export default function Settings() {
               </Button>
             </div>
           </form>
+        </div>
         </div>
       </div>
     </div>

@@ -5,3 +5,38 @@
     @apply antialiased;
   }
 }
+
+/* Production Pool tables scrollbar */
+.prodpool-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #818cf8 #0f172a;
+}
+
+.prodpool-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.prodpool-scroll::-webkit-scrollbar-track {
+  background: linear-gradient(90deg, #0f172a 0%, #111827 100%);
+  border-radius: 9999px;
+}
+
+.prodpool-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #6366f1 0%, #a855f7 100%);
+  border-radius: 9999px;
+  border: 2px solid #0f172a;
+}
+
+.prodpool-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, #818cf8 0%, #c084fc 100%);
+}
+
+/* Shared dark dropdown style for themed pages */
+.dark-select {
+  color-scheme: dark;
+}
+
+.dark-select option {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}

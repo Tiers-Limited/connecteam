@@ -24,14 +24,18 @@ function formatMoney(n) {
   return '$' + (Number(n) ?? 0).toFixed(2);
 }
 
+function formatPercent(value) {
+  return `${Number(value || 0).toFixed(1)}%`;
+}
+
 function ChartTooltip({ active, payload, label, formatter, labelFormatter }) {
   if (!active || !payload?.length) return null;
   const value = payload[0]?.value;
   const displayLabel = labelFormatter ? labelFormatter(label, payload) : label;
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-lg">
-      {displayLabel && <div className="mb-0.5 font-medium text-slate-700">{displayLabel}</div>}
-      <div className="text-slate-600">{formatter ? formatter(value) : value}</div>
+    <div className="rounded-lg border border-white/10 bg-slate-900/95 px-3 py-2 text-sm shadow-xl backdrop-blur">
+      {displayLabel && <div className="mb-0.5 font-medium text-slate-200">{displayLabel}</div>}
+      <div className="text-slate-300">{formatter ? formatter(value) : value}</div>
     </div>
   );
 }
@@ -42,21 +46,19 @@ function DashboardSkeleton() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-2">
           <SkeletonBox className="h-8 w-48 rounded-md" />
-          <SkeletonBox className="h-4 w-full max-w-md rounded-md" />
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          'border-indigo-100 from-indigo-500/10 to-indigo-600/5',
-          'border-emerald-100 from-emerald-500/10 to-emerald-600/5',
-          'border-amber-100 from-amber-500/10 to-amber-600/5',
-          'border-violet-100 from-violet-500/10 to-violet-600/5',
+          'border-indigo-400/25 from-indigo-500/20 to-indigo-600/10',
+          'border-emerald-400/25 from-emerald-500/20 to-emerald-600/10',
+          'border-amber-400/25 from-amber-500/20 to-amber-600/10',
+          'border-violet-400/25 from-violet-500/20 to-violet-600/10',
         ].map((cls, i) => (
-          <div key={i} className={`rounded-xl border bg-gradient-to-br p-5 shadow-sm ${cls}`}>
+          <div key={i} className={`rounded-2xl border bg-gradient-to-br p-5 shadow-lg shadow-black/20 ${cls}`}>
             <SkeletonBox className="mb-3 h-3 w-20 rounded" />
             <SkeletonBox className="mb-2 h-8 w-14 rounded-md" />
-            <SkeletonBox className="mt-2 h-3 w-24 rounded" />
             {(i === 0 || i === 2 || i === 3) && <SkeletonBox className="mt-2 h-3 w-20 rounded" />}
           </div>
         ))}
@@ -64,9 +66,8 @@ function DashboardSkeleton() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {[0, 1].map((i) => (
-          <div key={i} className="rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
+          <div key={i} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-lg shadow-black/20 backdrop-blur">
             <SkeletonBox className="mb-1 h-6 w-56 rounded-md" />
-            <SkeletonBox className="mb-4 h-4 w-full max-w-sm rounded" />
             <div className="flex h-[280px] items-end justify-around gap-2 px-2 pb-8 pt-4">
               {[40, 65, 45, 80, 55, 70].map((h, j) => (
                 <SkeletonBox key={j} className="w-full flex-1 rounded-t-md" style={{ height: `${h}%` }} />
@@ -76,7 +77,7 @@ function DashboardSkeleton() {
         ))}
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-lg shadow-black/20 backdrop-blur">
         <SkeletonBox className="mb-4 h-6 w-28 rounded-md" />
         <div className="flex flex-wrap gap-3">
           {[1, 2, 3, 4, 5].map((i) => <SkeletonBox key={i} className="h-10 w-28 rounded-lg" />)}
@@ -148,69 +149,98 @@ export default function Dashboard() {
     label: new Date(d.date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
     gross: d.totalGross,
   }));
+  const totalPayout = payoutChartData.reduce((sum, item) => sum + (Number(item.payout) || 0), 0);
+  const totalDailyGross = dailyChartData.reduce((sum, item) => sum + (Number(item.gross) || 0), 0);
+  const avgDailyGross = dailyChartData.length ? totalDailyGross / dailyChartData.length : 0;
+  const topLocation = payoutChartData.reduce(
+    (best, item) => ((Number(item.payout) || 0) > (Number(best?.payout) || 0) ? item : best),
+    payoutChartData[0] ?? null,
+  );
+  const peakDay = dailyChartData.reduce(
+    (best, item) => ((Number(item.gross) || 0) > (Number(best?.gross) || 0) ? item : best),
+    dailyChartData[0] ?? null,
+  );
+  const locationContribution = payoutChartData
+    .map((item) => ({
+      ...item,
+      share: totalPayout ? ((Number(item.payout) || 0) / totalPayout) * 100 : 0,
+    }))
+    .sort((a, b) => b.share - a.share);
 
   return (
     <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-800">Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Previous week analysis: tips, payouts, and production pool. Load data from Weekly Payout and Production Pool for the prior week.
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-100">Dashboard</h1>
         </div>
         {refreshing && <span className="text-xs text-slate-400">Updating…</span>}
       </div>
 
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-500/10 to-indigo-600/5 p-5 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Locations</p>
-          <p className="mt-2 text-2xl font-bold tabular-nums text-slate-800">
+        <div className="rounded-2xl border border-indigo-400/25 bg-gradient-to-br from-indigo-500/20 to-indigo-600/10 p-5 shadow-lg shadow-black/20">
+          <p className="text-xs font-medium uppercase tracking-wider text-indigo-200/80">Locations</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-white">
             {summary?.locationsCount ?? locations.length ?? 0}
           </p>
          
         </div>
 
-        <div className="rounded-xl border border-emerald-100 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 p-5 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Employees</p>
-          <p className="mt-2 text-2xl font-bold tabular-nums text-slate-800">
+        <div className="rounded-2xl border border-emerald-400/25 bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 p-5 shadow-lg shadow-black/20">
+          <p className="text-xs font-medium uppercase tracking-wider text-emerald-200/80">Employees</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-white">
             {summary?.employeesCount ?? 0}
           </p>
-          <p className="mt-1 text-xs text-slate-500">Active (all locations)</p>
         </div>
 
-        <div className="rounded-xl border border-amber-100 bg-gradient-to-br from-amber-500/10 to-amber-600/5 p-5 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Front staff payout</p>
-          <p className="mt-2 text-2xl font-bold tabular-nums text-slate-800">
+        <div className="rounded-2xl border border-amber-400/25 bg-gradient-to-br from-amber-500/20 to-amber-600/10 p-5 shadow-lg shadow-black/20">
+          <p className="text-xs font-medium uppercase tracking-wider text-amber-200/80">Front staff payout</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-white">
             {formatMoney(summary?.totalPayoutThisWeek ?? 0)}
           </p>
-          <p className="mt-1 text-xs text-slate-500">{weekLabel}</p>
-          <Link to="/weekly-payout" className="mt-2 inline-block text-xs font-medium text-amber-600 hover:underline">
+          <p className="mt-1 text-xs text-amber-100/70">{weekLabel}</p>
+          <Link to="/weekly-payout" className="mt-2 inline-block text-xs font-medium text-amber-300 transition hover:text-amber-200">
             Weekly Payout →
           </Link>
         </div>
 
-        <div className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-500/10 to-violet-600/5 p-5 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Production pool</p>
-          <p className="mt-2 text-2xl font-bold tabular-nums text-slate-800">
+        <div className="rounded-2xl border border-violet-400/25 bg-gradient-to-br from-violet-500/20 to-violet-600/10 p-5 shadow-lg shadow-black/20">
+          <p className="text-xs font-medium uppercase tracking-wider text-violet-200/80">Production pool</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-white">
             {formatMoney(summary?.productionTotal ?? 0)}
           </p>
-          <p className="mt-1 text-xs text-slate-500">{weekLabel}</p>
-          <Link to="/production-pool" className="mt-2 inline-block text-xs font-medium text-violet-600 hover:underline">
+          <p className="mt-1 text-xs text-violet-100/70">{weekLabel}</p>
+          <Link to="/production-pool" className="mt-2 inline-block text-xs font-medium text-violet-300 transition hover:text-violet-200">
             Production Pool →
           </Link>
+        </div>
+      </div>
+
+      {/* Analysis strip */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="rounded-2xl border border-cyan-400/25 bg-gradient-to-br from-cyan-500/15 to-slate-900/30 p-5 shadow-lg shadow-black/20">
+          <p className="text-xs font-medium uppercase tracking-wider text-cyan-200/80">Top payout location</p>
+          <p className="mt-2 text-lg font-semibold text-white">{topLocation?.name ?? '--'}</p>
+          <p className="mt-1 text-sm tabular-nums text-cyan-100/80">{formatMoney(topLocation?.payout ?? 0)}</p>
+        </div>
+        <div className="rounded-2xl border border-emerald-400/25 bg-gradient-to-br from-emerald-500/15 to-slate-900/30 p-5 shadow-lg shadow-black/20">
+          <p className="text-xs font-medium uppercase tracking-wider text-emerald-200/80">Average daily gross</p>
+          <p className="mt-2 text-lg font-semibold tabular-nums text-white">{formatMoney(avgDailyGross)}</p>
+          <p className="mt-1 text-sm tabular-nums text-emerald-100/80">7-day total: {formatMoney(totalDailyGross)}</p>
+        </div>
+        <div className="rounded-2xl border border-fuchsia-400/25 bg-gradient-to-br from-fuchsia-500/15 to-slate-900/30 p-5 shadow-lg shadow-black/20">
+          <p className="text-xs font-medium uppercase tracking-wider text-fuchsia-200/80">Peak daily gross</p>
+          <p className="mt-2 text-lg font-semibold text-white">{peakDay?.label ?? '--'}</p>
+          <p className="mt-1 text-sm tabular-nums text-fuchsia-100/80">{formatMoney(peakDay?.gross ?? 0)}</p>
         </div>
       </div>
 
       {/* Charts */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Weekly Payout by Location */}
-        <div className="flex flex-col rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-700">Weekly payout by location</h2>
-          <p className="mb-4 mt-1 text-sm text-slate-500">
-            Previous week (Mon–Sun) tips payable per location.
-          </p>
+        <div className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-lg shadow-black/20 backdrop-blur">
+          <h2 className="mb-4 text-base font-semibold text-slate-100">Weekly payout by location</h2>
           <div className="min-h-[280px] flex-1">
             {payoutChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={280}>
@@ -219,22 +249,22 @@ export default function Dashboard() {
                   margin={{ top: 12, right: 12, left: 0, bottom: 24 }}
                   barCategoryGap="20%"
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.35)" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" vertical={false} />
                   <XAxis
                     dataKey="name"
-                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
                     interval={0}
                     angle={payoutChartData.length > 4 ? -25 : 0}
                     textAnchor={payoutChartData.length > 4 ? 'end' : 'middle'}
                   />
                   <YAxis
-                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
                     tickFormatter={(v) => formatMoney(v)}
                     width={52}
                   />
                   <Tooltip
                     content={<ChartTooltip formatter={formatMoney} />}
-                    cursor={{ fill: 'rgba(148,163,184,0.08)' }}
+                    cursor={{ fill: 'rgba(148,163,184,0.12)' }}
                   />
                   <Bar
                     dataKey="payout"
@@ -247,10 +277,10 @@ export default function Dashboard() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/50">
-                <p className="text-center text-sm text-slate-500">
+              <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/[0.02]">
+                <p className="text-center text-sm text-slate-400">
                   No payout data. Load from{' '}
-                  <Link to="/weekly-payout" className="font-medium text-indigo-600 hover:underline">Weekly Payout</Link>.
+                  <Link to="/weekly-payout" className="font-medium text-indigo-300 hover:text-indigo-200">Weekly Payout</Link>.
                 </p>
               </div>
             )}
@@ -258,11 +288,8 @@ export default function Dashboard() {
         </div>
 
         {/* Daily gross tips */}
-        <div className="flex flex-col rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-700">Daily gross tips (previous week)</h2>
-          <p className="mb-4 mt-1 text-sm text-slate-500">
-            AM + PM gross tips by day for the previous week (Mon–Sun), all locations.
-          </p>
+        <div className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-lg shadow-black/20 backdrop-blur">
+          <h2 className="mb-4 text-base font-semibold text-slate-100">Daily gross tips</h2>
           <div className="min-h-[280px] flex-1">
             {dailyChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={280}>
@@ -276,13 +303,13 @@ export default function Dashboard() {
                       <stop offset="100%" stopColor="rgb(16 185 129)" stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.35)" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" vertical={false} />
                   <XAxis
                     dataKey="label"
-                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
                   />
                   <YAxis
-                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
                     tickFormatter={(v) => formatMoney(v)}
                     width={52}
                   />
@@ -310,10 +337,10 @@ export default function Dashboard() {
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/50">
-                <p className="text-center text-sm text-slate-500">
+              <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/[0.02]">
+                <p className="text-center text-sm text-slate-400">
                   No data. Enter in{' '}
-                  <Link to="/daily-tips" className="font-medium text-indigo-600 hover:underline">Daily Tips</Link>.
+                  <Link to="/daily-tips" className="font-medium text-indigo-300 hover:text-indigo-200">Daily Tips</Link>.
                 </p>
               </div>
             )}
@@ -321,37 +348,66 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Location contribution */}
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-lg shadow-black/20 backdrop-blur">
+        <h2 className="mb-4 text-base font-semibold text-slate-100">Location contribution</h2>
+        <div className="space-y-3">
+          {locationContribution.length > 0 ? (
+            locationContribution.map((item) => (
+              <div key={item.name} className="space-y-1.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-slate-200">{item.name}</span>
+                  <span className="tabular-nums text-slate-300">
+                    {formatMoney(item.payout)} ({formatPercent(item.share)})
+                  </span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-violet-400"
+                    style={{ width: `${Math.max(item.share, 3)}%` }}
+                  />
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-6 text-center text-sm text-slate-400">
+              No location contribution data.
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Quick links */}
-      <div className="rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
-        <h2 className="mb-4 text-base font-semibold text-slate-700">Quick links</h2>
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-lg shadow-black/20 backdrop-blur">
+        <h2 className="mb-4 text-base font-semibold text-slate-100">Quick links</h2>
         <div className="flex flex-wrap gap-3">
           <Link
             to="/daily-tips"
-            className="rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+            className="rounded-lg border border-indigo-400/30 bg-indigo-500/15 px-4 py-2.5 text-sm font-medium text-indigo-200 transition hover:bg-indigo-500/25"
           >
             Daily Tips
           </Link>
           <Link
             to="/weekly-payout"
-            className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100"
+            className="rounded-lg border border-amber-400/30 bg-amber-500/15 px-4 py-2.5 text-sm font-medium text-amber-200 transition hover:bg-amber-500/25"
           >
             Weekly Payout
           </Link>
           <Link
             to="/weekly-tardiness"
-            className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
+            className="rounded-lg border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/15"
           >
             Weekly Tardiness
           </Link>
           <Link
             to="/production-pool"
-            className="rounded-lg border border-violet-100 bg-violet-50 px-4 py-2.5 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-100"
+            className="rounded-lg border border-violet-400/30 bg-violet-500/15 px-4 py-2.5 text-sm font-medium text-violet-200 transition hover:bg-violet-500/25"
           >
             Production Pool
           </Link>
           <Link
             to="/time-entries"
-            className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
+            className="rounded-lg border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/15"
           >
             Time Entries
           </Link>
