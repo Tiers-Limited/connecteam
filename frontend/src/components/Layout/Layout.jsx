@@ -8,8 +8,7 @@ const navItems = [
   { to: '/', label: 'Dashboard' },
   { to: '/daily-tips', label: 'Daily Tips' },
   { to: '/production-pool', label: 'Production Pool' },
-  { to: '/weekly-payout', label: 'Weekly Payout' },
-  { to: '/weekly-tardiness', label: 'Weekly Tardiness' },
+  { to: '/weekly-payout', label: 'Weekly Payout Workflow' },
   { to: '/payout-reports', label: 'Reports' },
   { to: '/daily-tips-history', label: 'Tip History' },
 ];

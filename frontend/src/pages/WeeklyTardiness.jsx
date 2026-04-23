@@ -68,7 +68,7 @@ function toFilenamePart(value, fallback = "all-locations") {
   return normalized || fallback;
 }
 
-export default function WeeklyTardiness() {
+export default function WeeklyTardiness({ embedded = false, stepTitle = null }) {
   const { selectedLocationId, setSelectedLocationId, locations } = useApp();
   const defaultRange = getDefaultDateRange();
   const [startDate, setStartDate] = useState(defaultRange.start);
@@ -208,12 +208,13 @@ export default function WeeklyTardiness() {
   const currentPage = Math.min(Math.max(1, page), totalPages);
   const start = (currentPage - 1) * pageSize;
   const paginatedRows = employeeRows.slice(start, start + pageSize);
+  const pageTitle = stepTitle || "Weekly Tardiness";
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-slate-800">Weekly Tardiness</h1>
+        {!embedded && <h1 className="text-2xl font-bold text-slate-800">{pageTitle}</h1>}
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-slate-600">
@@ -583,28 +584,28 @@ export default function WeeklyTardiness() {
                 </div>
               )}
 
-              <div className="overflow-x-auto">
+              <div className="relative z-0 max-h-[75vh] overflow-auto">
                 <table className="w-full min-w-[600px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-200">
-                      <th className="whitespace-nowrap pb-3 pr-4 text-left font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky left-0 top-0 z-[2] whitespace-nowrap bg-white pb-3 pr-4 text-left font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Employee
                       </th>
                       {dateColumns.map((col) => (
                         <th
                           key={col.dateKey}
-                          className="whitespace-nowrap pb-3 px-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                          className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 px-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
                         >
                           {col.label}
                         </th>
                       ))}
-                      <th className="whitespace-nowrap pb-3 pl-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pl-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Total
                       </th>
-                      <th className="whitespace-nowrap pb-3 pl-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pl-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Working hours
                       </th>
-                      <th className="whitespace-nowrap pb-3 pl-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pl-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Break hours
                       </th>
                     </tr>
@@ -627,7 +628,7 @@ export default function WeeklyTardiness() {
                           key={`${rec.employeeName}-${start + i}`}
                           className="hover:bg-slate-50/70 transition-colors"
                         >
-                          <td className="py-2.5 pr-4 font-medium text-slate-700">
+                          <td className="sticky left-0 z-[1] bg-white py-2.5 pr-4 font-medium text-slate-700">
                             {rec.employeeName}
                           </td>
                           {dateColumns.map((col) => {
@@ -715,7 +716,7 @@ export default function WeeklyTardiness() {
                   {formatDate(rangeEnd)})
                 </h2>
               </div>
-              <div className="px-6 py-4 overflow-x-auto">
+              <div className="px-6 py-4 max-h-[50vh] overflow-auto">
                 <table className="w-full min-w-[400px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-100">

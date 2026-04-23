@@ -151,7 +151,7 @@ function dailyTipsBreakdownExportBasename(locationName, dateStr) {
   return `daily-tips-${loc}-${date}`;
 }
 
-export default function DailyTips() {
+export default function DailyTips({ embedded = false, stepTitle = null }) {
   const {
     selectedLocationId,
     locations,
@@ -819,10 +819,12 @@ export default function DailyTips() {
     </svg>
   );
 
+  const pageTitle = stepTitle || "Daily Tips";
+
   if (locationsLoading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-800">Daily Tips</h1>
+        {!embedded && <h1 className="text-2xl font-bold text-slate-800">{pageTitle}</h1>}
         <div className="rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
           <p className="text-slate-600">Loading locations…</p>
         </div>
@@ -833,7 +835,7 @@ export default function DailyTips() {
   if (!locations?.length) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-800">Daily Tips</h1>
+        {!embedded && <h1 className="text-2xl font-bold text-slate-800">{pageTitle}</h1>}
         <div className="rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
           <p className="text-slate-600">
             No locations found. Add a location in Settings to continue.
@@ -871,7 +873,7 @@ export default function DailyTips() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-slate-800">Daily Tips</h1>
+      {!embedded && <h1 className="text-2xl font-bold text-slate-800">{pageTitle}</h1>}
       <p className="text-slate-600">
         {shiftDescriptionForLocation(saveLocation?.name)}
         Choose location and date in the form, enter gross tips, and save.{" "}
@@ -1037,29 +1039,29 @@ export default function DailyTips() {
               </p>
             ) : (
               <>
-                <div className="overflow-x-auto">
+                <div className="relative z-0 max-h-[75vh] overflow-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-200 text-left">
-                        <th className="pb-2 font-medium text-slate-700">
+                        <th className="sticky top-0 z-[1] bg-white pb-2 font-medium text-slate-700">
                           Date
                         </th>
-                        <th className="pb-2 font-medium text-slate-700">
+                        <th className="sticky top-0 z-[1] bg-white pb-2 font-medium text-slate-700">
                           Location
                         </th>
-                        <th className="pb-2 font-medium text-slate-700">
+                        <th className="sticky top-0 z-[1] bg-white pb-2 font-medium text-slate-700">
                           Added by
                         </th>
-                        <th className="pb-2 text-right font-medium text-slate-700">
+                        <th className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700">
                           AM gross ($)
                         </th>
-                        <th className="pb-2 text-right font-medium text-slate-700">
+                        <th className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700">
                           PM gross ($)
                         </th>
-                        <th className="pb-2 text-right font-medium text-slate-700">
+                        <th className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700">
                           4% pool ($)
                         </th>
-                        <th className="pb-2 text-right font-medium text-slate-700">
+                        <th className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700">
                           Actions
                         </th>
                       </tr>
@@ -1494,11 +1496,11 @@ export default function DailyTips() {
         ) : manualRows.length === 0 ? (
           <p className="text-sm text-slate-500">No manual entries for this date.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="relative z-0 max-h-[65vh] overflow-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left">
-                  <th className="pb-2 font-medium text-slate-700">Employee</th>
+                  <th className="sticky left-0 top-0 z-[2] bg-white pb-2 font-medium text-slate-700">Employee</th>
                   <th className="pb-2 font-medium text-slate-700">
                     Clock in
                   </th>
@@ -1519,7 +1521,7 @@ export default function DailyTips() {
                       </th>
                     </>
                   )}
-                  <th className="pb-2 text-right font-medium text-slate-700">
+                  <th className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700">
                     Actions
                   </th>
                 </tr>
@@ -1535,7 +1537,7 @@ export default function DailyTips() {
                   const pm = Number(row.pmHours) || 0;
                   return (
                     <tr key={row._id}>
-                      <td className="py-2 font-medium text-slate-800">
+                      <td className="sticky left-0 z-[1] bg-white py-2 font-medium text-slate-800">
                         {empName}
                       </td>
                       <td className="py-2 tabular-nums text-slate-600">
@@ -1890,69 +1892,69 @@ export default function DailyTips() {
             )}
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="relative z-0 max-h-[65vh] overflow-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200">
-                  <th className="pb-2 text-left font-medium text-slate-700">
+                  <th className="sticky left-0 top-0 z-[2] bg-white pb-2 text-left font-medium text-slate-700">
                     Employee
                   </th>
-                  <th className="pb-2 text-left font-medium text-slate-700">
+                  <th className="sticky top-0 z-[1] bg-white pb-2 text-left font-medium text-slate-700">
                     Clock In
                   </th>
-                  <th className="pb-2 text-left font-medium text-slate-700">
+                  <th className="sticky top-0 z-[1] bg-white pb-2 text-left font-medium text-slate-700">
                     Clock Out
                   </th>
-                  <th className="pb-2 text-left font-medium text-slate-700">
+                  <th className="sticky top-0 z-[1] bg-white pb-2 text-left font-medium text-slate-700">
                     Break In
                   </th>
-                  <th className="pb-2 text-left font-medium text-slate-700">
+                  <th className="sticky top-0 z-[1] bg-white pb-2 text-left font-medium text-slate-700">
                     Break Out
                   </th>
                   <th
-                    className="pb-2 text-right font-medium text-slate-700"
+                    className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700"
                     title="Connecteam manual breaks that overlap first clock-in through last clock-out (deducted from worked hours for tips)."
                   >
                     Break (hrs)
                   </th>
                   {showShiftSplit ? (
                     <>
-                      <th className="pb-2 text-right font-medium text-slate-700">
+                      <th className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700">
                         AM hrs
                       </th>
-                      <th className="pb-2 text-right font-medium text-slate-700">
+                      <th className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700">
                         PM hrs
                       </th>
-                      <th className="pb-2 text-right font-medium text-slate-700">
+                      <th className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700">
                         AM tips
                       </th>
-                      <th className="pb-2 text-right font-medium text-slate-700">
+                      <th className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700">
                         PM tips
                       </th>
                     </>
                   ) : (
                     <>
-                      <th className="pb-2 text-right font-medium text-slate-700">
+                      <th className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700">
                         Hours
                       </th>
-                      <th className="pb-2 text-right font-medium text-slate-700">
+                      <th className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700">
                         Tips
                       </th>
                     </>
                   )}
-                  <th className="pb-2 text-right font-medium text-slate-700">
+                  <th className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700">
                     Net tips
                   </th>
                   <th
-                    className="pb-2 text-right font-medium text-slate-700"
+                    className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700"
                     title="Equal share of Deduct & Redistribute pool (same role as Weekly Payout)"
                   >
                     MR
                   </th>
-                  <th className="pb-2 text-right font-medium text-slate-700">
+                  <th className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700">
                     Total
                   </th>
-                  <th className="pb-2 text-right font-medium text-slate-700">
+                  <th className="sticky top-0 z-[1] bg-white pb-2 text-right font-medium text-slate-700">
                     Adjust
                   </th>
                 </tr>
@@ -1963,7 +1965,7 @@ export default function DailyTips() {
                     key={a.employeeId ?? a.employeeName}
                     className="hover:bg-slate-50"
                   >
-                    <td className="py-2 font-medium text-slate-800">
+                    <td className="sticky left-0 z-[1] bg-white py-2 font-medium text-slate-800">
                       {a.employeeName}
                     </td>
                     <td className="py-2 tabular-nums text-slate-600">
