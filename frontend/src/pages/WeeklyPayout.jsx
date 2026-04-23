@@ -51,7 +51,7 @@ function breakMinutesFromRow(row) {
   return 0;
 }
 
-export default function WeeklyPayout() {
+export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
   const { selectedLocationId, setSelectedLocationId, locations } = useApp();
   const defaultRange = getDefaultDateRange();
   const [startDate, setStartDate] = useState(defaultRange.start);
@@ -234,13 +234,14 @@ export default function WeeklyPayout() {
   const currentPage = Math.min(Math.max(1, page), totalPages);
   const start = (currentPage - 1) * pageSize;
   const paginatedPayouts = payouts.slice(start, start + pageSize);
+  const pageTitle = stepTitle || "Weekly Staff Payout";
 
   if (!selectedLocationId) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-slate-800">
-          Weekly Staff Payout
-        </h1>
+        {!embedded && (
+          <h1 className="text-2xl font-bold text-slate-800">{pageTitle}</h1>
+        )}
         <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm p-6 shadow-sm">
           <p className="text-slate-500">
             Select a location to view weekly payout.
@@ -279,9 +280,7 @@ export default function WeeklyPayout() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">
-            Weekly Staff Payout
-          </h1>
+          {!embedded && <h1 className="text-2xl font-bold text-slate-800">{pageTitle}</h1>}
           <p className="mt-1 text-sm text-slate-500">
             Phase 2: Weekly aggregation → Tardiness deduction → Weekly after
             tardiness
@@ -469,72 +468,72 @@ export default function WeeklyPayout() {
                 </div>
               )}
 
-              <div className="overflow-x-auto">
+              <div className="relative z-0 max-h-[75vh] overflow-auto">
                 <table className="w-full min-w-[1200px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-200">
-                      <th className="w-12 whitespace-nowrap pb-3 pr-2 text-center font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky left-0 top-0 z-[3] w-20 min-w-[5rem] max-w-[5rem] whitespace-nowrap bg-white pb-3 pr-2 text-center font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Action
                       </th>
-                      <th className="whitespace-nowrap pb-3 pr-4 text-left font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky left-20 top-0 z-[2] whitespace-nowrap bg-white pb-3 pr-4 text-left font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Employee
                       </th>
-                      <th className="whitespace-nowrap pb-3 pr-4 text-left font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-left font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Location
                       </th>
                       {weekDateColumns.map((col) => (
                         <th
                           key={col.dateKey}
-                          className="whitespace-nowrap pb-3 pr-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                          className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
                           title={`Tips for ${col.label}`}
                         >
                           {col.label}
                         </th>
                       ))}
                       <th
-                        className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                        className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
                         title="Σ Daily Tips (Mon–Sun), basis for deductions"
                       >
                         Weekly Gross Tips
                       </th>
                       <th
-                        className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                        className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
                         title="Total working hours for the week (from Weekly Tardiness / Connecteam); used for redistribution"
                       >
                         Working hours
                       </th>
                       <th
-                        className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                        className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
                         title="Manual break time from Connecteam for the range"
                       >
                         Break hours
                       </th>
-                      <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Weekly Tardiness (min)
                       </th>
-                      <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Tardiness %
                       </th>
-                      <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Tardiness Deduction
                       </th>
-                      <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Weekly After Tardiness
                       </th>
-                      <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Manual Deduction
                       </th>
-                      <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
                         Net Weekly Tips
                       </th>
                       <th
-                        className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                        className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
                         title="Tips received from others (eligible: ≤5 min tardiness, worked hours > 0)"
                       >
                         Tardiness Redistribution
                       </th>
                       <th
-                        className="whitespace-nowrap pb-3 pl-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                        className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pl-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
                         title="Net tips + redistribution"
                       >
                         Final Weekly Tips Payable
@@ -547,7 +546,7 @@ export default function WeeklyPayout() {
                         key={p.employeeId}
                         className="hover:bg-slate-50/70 transition-colors"
                       >
-                        <td className="w-12 py-3 pr-2 text-center">
+                        <td className="sticky left-0 z-[2] w-20 min-w-[5rem] max-w-[5rem] bg-white py-3 pr-2 text-center">
                           <button
                             type="button"
                             onClick={() => openDeductionModal(p)}
@@ -557,7 +556,7 @@ export default function WeeklyPayout() {
                             Edit
                           </button>
                         </td>
-                        <td className="py-3 pr-4 font-medium text-slate-700">
+                        <td className="sticky left-20 z-[1] bg-white py-3 pr-4 font-medium text-slate-700">
                           {p.employeeName}
                         </td>
                         <td className="py-3 pr-4 text-slate-500">

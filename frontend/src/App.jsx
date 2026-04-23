@@ -9,7 +9,7 @@ import Dashboard from './pages/Dashboard';
 import DailyTips from './pages/DailyTips';
 import DailyTipsHistory from './pages/DailyTipsHistory';
 import TimeEntries from './pages/TimeEntries';
-import WeeklyPayout from './pages/WeeklyPayout';
+import WeeklyPayoutWorkflow from './pages/WeeklyPayoutWorkflow';
 import PayoutReports from './pages/PayoutReports';
 import WeeklyTardiness from './pages/WeeklyTardiness';
 import ProductionPool from './pages/ProductionPool';
@@ -42,7 +42,7 @@ export default function App() {
               <Route path="time-entries" element={<TimeEntries />} />
               <Route path="daily-tips" element={<DailyTips />} />
               <Route path="daily-tips-history" element={<DailyTipsHistory />} />
-              <Route path="weekly-payout" element={<WeeklyPayout />} />
+              <Route path="weekly-payout" element={<WeeklyPayoutWorkflow />} />
               <Route path="weekly-tardiness" element={<WeeklyTardiness />} />
               <Route path="payout-reports" element={<PayoutReports />} />
               <Route path="production-pool" element={<ProductionPool />} />
