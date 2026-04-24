@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
   body {
@@ -9,7 +10,7 @@
 /* Production Pool tables scrollbar */
 .prodpool-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #818cf8 #0f172a;
+  scrollbar-color: #818cf8 #e2e8f0;
 }
 
 .prodpool-scroll::-webkit-scrollbar {
@@ -17,18 +18,30 @@
 }
 
 .prodpool-scroll::-webkit-scrollbar-track {
-  background: linear-gradient(90deg, #0f172a 0%, #111827 100%);
+  background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 100%);
   border-radius: 9999px;
 }
 
 .prodpool-scroll::-webkit-scrollbar-thumb {
   background: linear-gradient(90deg, #6366f1 0%, #a855f7 100%);
   border-radius: 9999px;
-  border: 2px solid #0f172a;
+  border: 2px solid #e2e8f0;
 }
 
 .prodpool-scroll::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(90deg, #818cf8 0%, #c084fc 100%);
+}
+
+.dark .prodpool-scroll {
+  scrollbar-color: #818cf8 #0f172a;
+}
+
+.dark .prodpool-scroll::-webkit-scrollbar-track {
+  background: linear-gradient(90deg, #0f172a 0%, #111827 100%);
+}
+
+.dark .prodpool-scroll::-webkit-scrollbar-thumb {
+  border-color: #0f172a;
 }
 
 /* Shared dark dropdown style for themed pages */

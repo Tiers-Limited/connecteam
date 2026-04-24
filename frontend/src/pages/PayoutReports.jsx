@@ -870,18 +870,18 @@ export default function PayoutReports() {
   );
 
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4 shadow-2xl sm:p-6">
-      <div className="pointer-events-none absolute -top-20 -right-10 h-56 w-56 rounded-full bg-indigo-500/25 blur-3xl" />
+    <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-100 via-white to-slate-50 p-4 shadow-2xl sm:p-6 dark:border-white/10 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+      <div className="pointer-events-none absolute -top-20 -right-10 h-56 w-56 rounded-full bg-indigo-500/15 blur-3xl dark:bg-indigo-500/25" />
       <div className="pointer-events-none absolute -bottom-24 -left-10 h-64 w-64 rounded-full bg-fuchsia-500/15 blur-3xl" />
 
       <div className="relative space-y-5 pb-2">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg backdrop-blur">
+        <div className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-lg backdrop-blur dark:border-white/10 dark:bg-white/5">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700 dark:text-indigo-300">
                 Corvia Analytics
               </p>
-              <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-white">
+              <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
                 Reports Studio
               </h1>
             </div>
@@ -895,10 +895,10 @@ export default function PayoutReports() {
           </div>
         </div>
 
-        <Card className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur">
+        <Card className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-xl backdrop-blur dark:border-white/10 dark:bg-white/5">
           <div className="grid gap-4 xl:grid-cols-12">
             <div className="xl:col-span-4">
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-300">
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 dark:text-slate-300">
                 Report Type
               </label>
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
@@ -911,56 +911,56 @@ export default function PayoutReports() {
                       onClick={() => setReportType(t.id)}
                       className={`group flex items-center justify-between rounded-xl border px-3 py-2 text-left transition ${
                         active
-                          ? `bg-white/10 shadow ring-2 ${REPORT_TYPE_STYLES[t.id].ring} border-transparent`
-                          : "border-white/15 bg-white/5 hover:border-white/30 hover:bg-white/10"
+                          ? `bg-indigo-50 shadow ring-2 ${REPORT_TYPE_STYLES[t.id].ring} border-transparent dark:bg-white/10`
+                          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-white/15 dark:bg-white/5 dark:hover:border-white/30 dark:hover:bg-white/10"
                       }`}
                     >
-                      <span className={`text-sm font-semibold ${active ? "text-white" : "text-slate-200"}`}>
+                      <span className={`text-sm font-semibold ${active ? "text-slate-900 dark:text-white" : "text-slate-700 dark:text-slate-200"}`}>
                         {t.label}
                       </span>
-                      <FiChevronRight className={`h-4 w-4 transition ${active ? "text-indigo-300" : "text-slate-400 group-hover:text-slate-200"}`} />
+                      <FiChevronRight className={`h-4 w-4 transition ${active ? "text-indigo-600 dark:text-indigo-300" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200"}`} />
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            <div className="xl:col-span-8 xl:border-l xl:border-white/15 xl:pl-5">
+            <div className="xl:col-span-8 xl:border-l xl:border-slate-200 xl:pl-5 dark:xl:border-white/15">
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {reportType === "daily_tips" ? (
                   <div>
-                    <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                    <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">
                       <FiCalendar className="h-3.5 w-3.5" /> Date
                     </label>
                     <input
                       type="date"
                       value={singleDate}
                       onChange={(e) => setSingleDate(e.target.value)}
-                      className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition [color-scheme:dark] focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-75"
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:ring-indigo-300/30 dark:[&::-webkit-calendar-picker-indicator]:invert dark:[&::-webkit-calendar-picker-indicator]:opacity-75 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
                     />
                   </div>
                 ) : (
                   <>
                     <div>
-                      <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                      <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">
                         <FiCalendar className="h-3.5 w-3.5" /> From
                       </label>
                       <input
                         type="date"
                         value={startDate}
                         onChange={(e) => setStartDate(e.target.value)}
-                        className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition [color-scheme:dark] focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-75"
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:ring-indigo-300/30 dark:[&::-webkit-calendar-picker-indicator]:invert dark:[&::-webkit-calendar-picker-indicator]:opacity-75 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
                       />
                     </div>
                     <div>
-                      <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                      <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">
                         <FiCalendar className="h-3.5 w-3.5" /> To
                       </label>
                       <input
                         type="date"
                         value={endDate}
                         onChange={(e) => setEndDate(e.target.value)}
-                        className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition [color-scheme:dark] focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-75"
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:ring-indigo-300/30 dark:[&::-webkit-calendar-picker-indicator]:invert dark:[&::-webkit-calendar-picker-indicator]:opacity-75 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
                       />
                     </div>
                   </>
@@ -968,13 +968,13 @@ export default function PayoutReports() {
 
                 {(reportType === "daily_tips" || reportType === "weekly_tardiness" || reportType === "tip_history") && (
                   <div>
-                    <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                    <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">
                       <FiMapPin className="h-3.5 w-3.5" /> Location
                     </label>
                     <select
                       value={singleLocationId}
                       onChange={(e) => setSingleLocationId(e.target.value)}
-                      className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30"
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:ring-indigo-300/30"
                     >
                       {activeLocations.map((loc) => (
                         <option key={loc._id} value={loc._id}>
@@ -989,13 +989,13 @@ export default function PayoutReports() {
               {reportType === "weekly_payout" && (
                 <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">
                       Location Scope
                     </label>
                     <select
                       value={geographicScope}
                       onChange={(e) => setGeographicScope(e.target.value)}
-                      className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30"
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:ring-indigo-300/30"
                     >
                       <option value="one_location">One location</option>
                       <option value="all_locations">All locations</option>
@@ -1004,13 +1004,13 @@ export default function PayoutReports() {
 
                   {geographicScope === "one_location" && (
                     <div>
-                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">
                         Location
                       </label>
                       <select
                         value={singleLocationId}
                         onChange={(e) => setSingleLocationId(e.target.value)}
-                        className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30"
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:ring-indigo-300/30"
                       >
                         {activeLocations.map((loc) => (
                           <option key={loc._id} value={loc._id}>
@@ -1022,7 +1022,7 @@ export default function PayoutReports() {
                   )}
 
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">
                       Employee Scope
                     </label>
                     <select
@@ -1031,7 +1031,7 @@ export default function PayoutReports() {
                         setEmployeeScope(e.target.value);
                         setSelectedEmployeeId("");
                       }}
-                      className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30"
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:ring-indigo-300/30"
                     >
                       <option value="all">All employees</option>
                       <option value="one_employee">One employee</option>
@@ -1040,14 +1040,14 @@ export default function PayoutReports() {
 
                   {employeeScope === "one_employee" && (
                     <div>
-                      <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+                      <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">
                         <FiUser className="h-3.5 w-3.5" /> Employee
                       </label>
                       <select
                         value={selectedEmployeeId}
                         onChange={(e) => setSelectedEmployeeId(e.target.value)}
                         disabled={loadingEmployees}
-                        className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30 disabled:opacity-60"
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 disabled:opacity-60 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:ring-indigo-300/30"
                       >
                         <option value="">
                           {loadingEmployees ? "Loading employees…" : "Select employee…"}
@@ -1073,7 +1073,7 @@ export default function PayoutReports() {
             type="button"
             disabled={!!exportLoadingKind}
             onClick={() => runExport("csv")}
-            className="inline-flex items-center gap-2 rounded-xl bg-slate-800 text-slate-100 shadow-lg ring-1 ring-white/15 transition hover:bg-slate-700"
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-200 text-slate-800 shadow-lg ring-1 ring-slate-300 transition hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-100 dark:ring-white/15 dark:hover:bg-slate-700"
           >
             <FiFileText className="h-4 w-4" />
             {exportLoadingKind === "csv" ? "Exporting…" : "Export CSV"}

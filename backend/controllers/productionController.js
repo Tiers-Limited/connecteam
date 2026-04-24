@@ -28,6 +28,13 @@ async function updateStaff(req, res, next) {
           error: 'allocationPercent must be a number between 0 and 100',
         });
       }
+      if (n > 0 && n < 5) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'allocationPercent looks too low. Use full percentages (for example 30, not 1 or 1.5).',
+        });
+      }
       update.allocationPercent = n;
     }
     if (typeof subjectToTardiness === 'boolean') {

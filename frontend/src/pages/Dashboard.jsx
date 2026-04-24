@@ -36,9 +36,9 @@ function ChartTooltip({ active, payload, label, formatter, labelFormatter }) {
   const value = payload[0]?.value;
   const displayLabel = labelFormatter ? labelFormatter(label, payload) : label;
   return (
-    <div className="rounded-lg border border-white/10 bg-slate-900/95 px-3 py-2 text-sm shadow-xl backdrop-blur">
-      {displayLabel && <div className="mb-0.5 font-medium text-slate-200">{displayLabel}</div>}
-      <div className="text-slate-300">{formatter ? formatter(value) : value}</div>
+    <div className="rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-sm shadow-xl backdrop-blur dark:border-white/10 dark:bg-slate-900/95">
+      {displayLabel && <div className="mb-0.5 font-medium text-slate-700 dark:text-slate-200">{displayLabel}</div>}
+      <div className="text-slate-600 dark:text-slate-300">{formatter ? formatter(value) : value}</div>
     </div>
   );
 }
@@ -51,21 +51,21 @@ function MultiSeriesTooltip({ active, payload, label, labelFormatter }) {
     .sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0));
 
   return (
-    <div className="rounded-lg border border-white/10 bg-slate-900/95 px-3 py-2 text-sm shadow-xl backdrop-blur">
-      {displayLabel && <div className="mb-1 font-medium text-slate-200">{displayLabel}</div>}
+    <div className="rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-sm shadow-xl backdrop-blur dark:border-white/10 dark:bg-slate-900/95">
+      {displayLabel && <div className="mb-1 font-medium text-slate-700 dark:text-slate-200">{displayLabel}</div>}
       <div className="space-y-1">
         {rows.length > 0 ? (
           rows.map((row) => (
             <div key={row.name} className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2 text-slate-300">
+              <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: row.color || '#94a3b8' }} />
                 {row.name}
               </span>
-              <span className="tabular-nums text-slate-100">{formatMoney(row.value)} gross tips</span>
+              <span className="tabular-nums text-slate-800 dark:text-slate-100">{formatMoney(row.value)} gross tips</span>
             </div>
           ))
         ) : (
-          <div className="text-slate-300">No gross tips</div>
+          <div className="text-slate-600 dark:text-slate-300">No gross tips</div>
         )}
       </div>
     </div>
@@ -75,46 +75,46 @@ function MultiSeriesTooltip({ active, payload, label, labelFormatter }) {
 function StatCard({ icon: Icon, label, value, hint, tone = 'indigo', actionHref, actionLabel }) {
   const toneStyles = {
     indigo: {
-      ring: 'border-indigo-300/20',
-      panel: 'from-indigo-500/20 via-indigo-500/8 to-transparent',
-      icon: 'text-indigo-200 bg-indigo-500/20',
-      text: 'text-indigo-100/80',
-      action: 'text-indigo-200 hover:text-indigo-100',
+      ring: 'border-indigo-200 dark:border-indigo-300/20',
+      panel: 'from-indigo-100 via-indigo-50 to-transparent dark:from-indigo-500/20 dark:via-indigo-500/8 dark:to-transparent',
+      icon: 'text-indigo-800 bg-indigo-100 dark:text-indigo-200 dark:bg-indigo-500/20',
+      text: 'text-indigo-700/80 dark:text-indigo-100/80',
+      action: 'text-indigo-700 hover:text-indigo-800 dark:text-indigo-200 dark:hover:text-indigo-100',
     },
     emerald: {
-      ring: 'border-emerald-300/20',
-      panel: 'from-emerald-500/20 via-emerald-500/8 to-transparent',
-      icon: 'text-emerald-200 bg-emerald-500/20',
-      text: 'text-emerald-100/80',
-      action: 'text-emerald-200 hover:text-emerald-100',
+      ring: 'border-emerald-200 dark:border-emerald-300/20',
+      panel: 'from-emerald-100 via-emerald-50 to-transparent dark:from-emerald-500/20 dark:via-emerald-500/8 dark:to-transparent',
+      icon: 'text-emerald-800 bg-emerald-100 dark:text-emerald-200 dark:bg-emerald-500/20',
+      text: 'text-emerald-700/80 dark:text-emerald-100/80',
+      action: 'text-emerald-700 hover:text-emerald-800 dark:text-emerald-200 dark:hover:text-emerald-100',
     },
     amber: {
-      ring: 'border-amber-300/20',
-      panel: 'from-amber-500/20 via-amber-500/8 to-transparent',
-      icon: 'text-amber-200 bg-amber-500/20',
-      text: 'text-amber-100/80',
-      action: 'text-amber-200 hover:text-amber-100',
+      ring: 'border-amber-200 dark:border-amber-300/20',
+      panel: 'from-amber-100 via-amber-50 to-transparent dark:from-amber-500/20 dark:via-amber-500/8 dark:to-transparent',
+      icon: 'text-amber-800 bg-amber-100 dark:text-amber-200 dark:bg-amber-500/20',
+      text: 'text-amber-700/80 dark:text-amber-100/80',
+      action: 'text-amber-700 hover:text-amber-800 dark:text-amber-200 dark:hover:text-amber-100',
     },
     violet: {
-      ring: 'border-violet-300/20',
-      panel: 'from-violet-500/20 via-violet-500/8 to-transparent',
-      icon: 'text-violet-200 bg-violet-500/20',
-      text: 'text-violet-100/80',
-      action: 'text-violet-200 hover:text-violet-100',
+      ring: 'border-violet-200 dark:border-violet-300/20',
+      panel: 'from-violet-100 via-violet-50 to-transparent dark:from-violet-500/20 dark:via-violet-500/8 dark:to-transparent',
+      icon: 'text-violet-800 bg-violet-100 dark:text-violet-200 dark:bg-violet-500/20',
+      text: 'text-violet-700/80 dark:text-violet-100/80',
+      action: 'text-violet-700 hover:text-violet-800 dark:text-violet-200 dark:hover:text-violet-100',
     },
   };
 
   const selected = toneStyles[tone] ?? toneStyles.indigo;
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border bg-slate-900/70 p-5 shadow-[0_12px_28px_rgba(2,6,23,0.45)] backdrop-blur ${selected.ring}`}
+      className={`relative overflow-hidden rounded-2xl border bg-white p-5 shadow-md backdrop-blur dark:bg-slate-900/70 dark:shadow-[0_12px_28px_rgba(2,6,23,0.45)] ${selected.ring}`}
     >
       <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${selected.panel}`} />
       <div className="relative">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-300">{label}</p>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-white">{value}</p>
+            <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500 dark:text-slate-300">{label}</p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900 dark:text-white">{value}</p>
           </div>
           <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${selected.icon}`}>
             <Icon className="h-5 w-5" />
@@ -135,34 +135,36 @@ function StatCard({ icon: Icon, label, value, hint, tone = 'indigo', actionHref,
 function InsightCard({ label, value, detail, tone = 'slate' }) {
   const tones = {
     cyan: {
-      ring: 'border-cyan-300/20',
-      panel: 'from-cyan-500/18 via-cyan-500/8 to-transparent',
-      text: 'text-cyan-100/80',
+      ring: 'border-cyan-200 dark:border-cyan-300/20',
+      panel: 'from-cyan-100 via-cyan-50 to-transparent dark:from-cyan-500/18 dark:via-cyan-500/8 dark:to-transparent',
+      text: 'text-cyan-800 dark:text-cyan-100/80',
     },
     emerald: {
-      ring: 'border-emerald-300/20',
-      panel: 'from-emerald-500/18 via-emerald-500/8 to-transparent',
-      text: 'text-emerald-100/80',
+      ring: 'border-emerald-200 dark:border-emerald-300/20',
+      panel: 'from-emerald-100 via-emerald-50 to-transparent dark:from-emerald-500/18 dark:via-emerald-500/8 dark:to-transparent',
+      text: 'text-emerald-800 dark:text-emerald-100/80',
     },
     fuchsia: {
-      ring: 'border-fuchsia-300/20',
-      panel: 'from-fuchsia-500/18 via-fuchsia-500/8 to-transparent',
-      text: 'text-fuchsia-100/80',
+      ring: 'border-fuchsia-200 dark:border-fuchsia-300/20',
+      panel: 'from-fuchsia-100 via-fuchsia-50 to-transparent dark:from-fuchsia-500/18 dark:via-fuchsia-500/8 dark:to-transparent',
+      text: 'text-fuchsia-800 dark:text-fuchsia-100/80',
     },
     slate: {
-      ring: 'border-white/12',
+      ring: 'border-slate-200 dark:border-white/12',
       panel: 'from-white/10 via-white/[0.04] to-transparent',
-      text: 'text-slate-300',
+      text: 'text-slate-700 dark:text-slate-300',
     },
   };
   const selected = tones[tone] ?? tones.slate;
 
   return (
-    <div className={`relative overflow-hidden rounded-2xl border bg-slate-900/60 p-5 shadow-[0_10px_24px_rgba(2,6,23,0.35)] ${selected.ring}`}>
+    <div className={`relative overflow-hidden rounded-2xl border bg-white p-5 shadow-md dark:bg-slate-900/60 dark:shadow-[0_10px_24px_rgba(2,6,23,0.35)] ${selected.ring}`}>
       <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${selected.panel}`} />
-      <p className="text-xs font-medium uppercase tracking-[0.11em] text-slate-300">{label}</p>
-      <p className="mt-2 text-lg font-semibold text-white">{value}</p>
-      {detail && <p className={`mt-1 text-sm ${selected.text}`}>{detail}</p>}
+      <div className="relative">
+        <p className="text-xs font-medium uppercase tracking-[0.11em] text-slate-600 dark:text-slate-300">{label}</p>
+        <p className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">{value}</p>
+        {detail && <p className={`mt-1 text-sm ${selected.text}`}>{detail}</p>}
+      </div>
     </div>
   );
 }
@@ -193,7 +195,7 @@ function DashboardSkeleton() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {[0, 1].map((i) => (
-          <div key={i} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-lg shadow-black/20 backdrop-blur">
+          <div key={i} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-black/10 backdrop-blur dark:border-white/10 dark:bg-white/[0.03] dark:shadow-black/20">
             <SkeletonBox className="mb-1 h-6 w-56 rounded-md" />
             <div className="flex h-[280px] items-end justify-around gap-2 px-2 pb-8 pt-4">
               {[40, 65, 45, 80, 55, 70].map((h, j) => (
@@ -204,7 +206,7 @@ function DashboardSkeleton() {
         ))}
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-lg shadow-black/20 backdrop-blur">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-black/10 backdrop-blur dark:border-white/10 dark:bg-white/[0.03] dark:shadow-black/20">
         <SkeletonBox className="mb-4 h-6 w-28 rounded-md" />
         <div className="flex flex-wrap gap-3">
           {[1, 2, 3, 4, 5].map((i) => <SkeletonBox key={i} className="h-10 w-28 rounded-lg" />)}
@@ -320,10 +322,10 @@ export default function Dashboard() {
     <div className="space-y-8">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Overview</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-100">Dashboard</h1>
+          <p className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Overview</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Dashboard</h1>
         </div>
-        {refreshing && <span className="text-xs text-slate-400">Updating…</span>}
+        {refreshing && <span className="text-xs text-slate-500 dark:text-slate-400">Updating…</span>}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -381,12 +383,12 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="flex flex-col rounded-2xl border border-white/12 bg-slate-900/65 p-5 shadow-[0_12px_28px_rgba(2,6,23,0.45)] backdrop-blur">
+        <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-md backdrop-blur dark:border-white/12 dark:bg-slate-900/65 dark:shadow-[0_12px_28px_rgba(2,6,23,0.45)]">
           <div className="mb-4 flex items-center gap-2">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/20 text-indigo-200">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200">
               <FiBarChart2 className="h-4 w-4" />
             </span>
-            <h2 className="text-base font-semibold text-slate-100">Weekly payout by location</h2>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Weekly payout by location</h2>
           </div>
           <div className="min-h-[280px] flex-1">
             {payoutChartData.length > 0 ? (
@@ -400,7 +402,7 @@ export default function Dashboard() {
                       verticalAlign="bottom"
                       align="center"
                       wrapperStyle={{ paddingTop: 8 }}
-                      formatter={(value) => <span className="text-xs text-slate-300">{value}</span>}
+                      formatter={(value) => <span className="text-xs text-slate-600 dark:text-slate-300">{value}</span>}
                     />
                     <Pie
                       data={payoutChartData}
@@ -424,34 +426,34 @@ export default function Dashboard() {
                     const share = totalPayout ? ((Number(item.payout) || 0) / totalPayout) * 100 : 0;
                     const color = seriesPalette[idx % seriesPalette.length];
                     return (
-                      <div key={item.name} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-3 py-1.5 text-xs">
-                        <span className="flex items-center gap-2 text-slate-200">
+                      <div key={item.name} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs dark:border-white/10 dark:bg-white/[0.02]">
+                        <span className="flex items-center gap-2 text-slate-700 dark:text-slate-200">
                           <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: color }} />
                           {item.name}
                         </span>
-                        <span className="tabular-nums text-slate-300">{share.toFixed(1)}%</span>
+                        <span className="tabular-nums text-slate-600 dark:text-slate-300">{share.toFixed(1)}%</span>
                       </div>
                     );
                   })}
                 </div>
               </>
             ) : (
-              <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/[0.02]">
-                <p className="text-center text-sm text-slate-400">
+              <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 dark:border-white/15 dark:bg-white/[0.02]">
+                <p className="text-center text-sm text-slate-500 dark:text-slate-400">
                   No payout data. Load from{' '}
-                  <Link to="/weekly-payout" className="font-medium text-indigo-300 hover:text-indigo-200">Weekly Payout</Link>.
+                  <Link to="/weekly-payout" className="font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-300 dark:hover:text-indigo-200">Weekly Payout</Link>.
                 </p>
               </div>
             )}
           </div>
         </div>
 
-        <div className="flex flex-col rounded-2xl border border-white/12 bg-slate-900/65 p-5 shadow-[0_12px_28px_rgba(2,6,23,0.45)] backdrop-blur">
+        <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-md backdrop-blur dark:border-white/12 dark:bg-slate-900/65 dark:shadow-[0_12px_28px_rgba(2,6,23,0.45)]">
           <div className="mb-4 flex items-center gap-2">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-200">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200">
               <FiActivity className="h-4 w-4" />
             </span>
-            <h2 className="text-base font-semibold text-slate-100">Daily gross tips</h2>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Daily gross tips</h2>
           </div>
           <div className="min-h-[280px] flex-1">
             {dailySeriesData.length > 0 && locationSeries.length > 0 ? (
@@ -463,10 +465,10 @@ export default function Dashboard() {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" vertical={false} />
                   <XAxis
                     dataKey="label"
-                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                    tick={{ fontSize: 11, fill: '#64748b' }}
                   />
                   <YAxis
-                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                    tick={{ fontSize: 11, fill: '#64748b' }}
                     tickFormatter={(v) => formatMoney(v)}
                     width={52}
                   />
@@ -484,7 +486,7 @@ export default function Dashboard() {
                     verticalAlign="top"
                     align="left"
                     wrapperStyle={{ paddingBottom: 8 }}
-                    formatter={(value) => <span className="text-xs text-slate-300">{value}</span>}
+                    formatter={(value) => <span className="text-xs text-slate-600 dark:text-slate-300">{value}</span>}
                   />
                   {locationSeries.map((series, idx) => {
                     const color = seriesPalette[idx % seriesPalette.length];
@@ -507,10 +509,10 @@ export default function Dashboard() {
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/[0.02]">
-                <p className="text-center text-sm text-slate-400">
+              <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 dark:border-white/15 dark:bg-white/[0.02]">
+                <p className="text-center text-sm text-slate-500 dark:text-slate-400">
                   No data. Enter in{' '}
-                  <Link to="/daily-tips" className="font-medium text-indigo-300 hover:text-indigo-200">Daily Tips</Link>.
+                  <Link to="/daily-tips" className="font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-300 dark:hover:text-indigo-200">Daily Tips</Link>.
                 </p>
               </div>
             )}
@@ -518,19 +520,19 @@ export default function Dashboard() {
         </div>
       </div>
 
-        <div className="rounded-2xl border border-white/12 bg-slate-900/65 p-5 shadow-[0_12px_28px_rgba(2,6,23,0.45)] backdrop-blur">
-          <h2 className="mb-4 text-base font-semibold text-slate-100">Location contribution</h2>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-md backdrop-blur dark:border-white/12 dark:bg-slate-900/65 dark:shadow-[0_12px_28px_rgba(2,6,23,0.45)]">
+          <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-slate-100">Location contribution</h2>
           <div className="space-y-3">
             {locationContribution.length > 0 ? (
               locationContribution.map((item) => (
                 <div key={item.name} className="space-y-1.5">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-slate-200">{item.name}</span>
-                    <span className="tabular-nums text-slate-300">
+                    <span className="font-medium text-slate-800 dark:text-slate-200">{item.name}</span>
+                    <span className="tabular-nums text-slate-600 dark:text-slate-300">
                       {formatMoney(item.payout)} ({formatPercent(item.share)})
                     </span>
                   </div>
-                  <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-2.5 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-violet-400"
                       style={{ width: `${Math.max(item.share, 3)}%` }}
@@ -539,7 +541,7 @@ export default function Dashboard() {
                 </div>
               ))
             ) : (
-              <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-6 text-center text-sm text-slate-400">
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500 dark:border-white/15 dark:bg-white/[0.02] dark:text-slate-400">
                 No location contribution data.
               </div>
             )}
