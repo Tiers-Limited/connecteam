@@ -67,25 +67,38 @@ async function getDashboardSummary() {
   const startOfPrevWeek = new Date(Date.UTC(y, mo - 1, day, 0, 0, 0, 0));
   const prevWeekEnd = new Date(Date.UTC(y, mo - 1, day + 6, 23, 59, 59, 999));
 
-  const dailyTips = await DailyTipInput.aggregate([
-    {
-      $match: {
-        date: { $gte: startOfPrevWeek, $lte: prevWeekEnd },
-      },
-    },
-    {
-      $group: {
-        _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-        totalGross: { $sum: { $add: ['$amGrossTips', '$pmGrossTips'] } },
-      },
-    },
-    { $sort: { _id: 1 } },
-  ]);
+  const dailyTipRows = await DailyTipInput.find({
+    date: { $gte: startOfPrevWeek, $lte: prevWeekEnd },
+  })
+    .select('locationId date amGrossTips pmGrossTips')
+    .lean();
 
-  const dailyTipsLast7 = dailyTips.map((d) => ({
-    date: d._id,
-    totalGross: Math.round((d.totalGross || 0) * 100) / 100,
-  }));
+  const locationNameById = new Map(
+    locations.map((l) => [String(l._id), l.name || '—'])
+  );
+  const byDate = new Map();
+  for (const row of dailyTipRows) {
+    const dateKey = toDateString(row.date);
+    if (!byDate.has(dateKey)) {
+      byDate.set(dateKey, { date: dateKey, totalGross: 0, byLocation: {} });
+    }
+    const rec = byDate.get(dateKey);
+    const gross = (Number(row.amGrossTips) || 0) + (Number(row.pmGrossTips) || 0);
+    const locationId = row.locationId ? String(row.locationId) : '';
+    const locationName = locationNameById.get(locationId) || '—';
+    rec.totalGross += gross;
+    rec.byLocation[locationName] = (Number(rec.byLocation[locationName]) || 0) + gross;
+  }
+
+  const dailyTipsLast7 = Array.from(byDate.values())
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((d) => ({
+      date: d.date,
+      totalGross: Math.round((d.totalGross || 0) * 100) / 100,
+      byLocation: Object.fromEntries(
+        Object.entries(d.byLocation || {}).map(([k, v]) => [k, Math.round((Number(v) || 0) * 100) / 100])
+      ),
+    }));
 
   const totalPayoutThisWeek = payoutByLocation.reduce((s, l) => s + l.totalPayable, 0);
 

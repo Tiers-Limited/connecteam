@@ -244,7 +244,7 @@ export default function ProductionPool() {
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 shadow-sm [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-amber-400/50 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-75"
             />
           </div>
           <div className="flex items-center gap-2">
@@ -255,7 +255,7 @@ export default function ProductionPool() {
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 shadow-sm [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-amber-400/50 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-75"
             />
           </div>
           <Button onClick={loadPayout} disabled={loading}>

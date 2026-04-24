@@ -15,7 +15,6 @@ import {
   getDateRangeColumns,
   columnsFromDayDateKeys,
 } from "../utils/dateUtils";
-import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -240,10 +239,10 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
     return (
       <div className="space-y-6">
         {!embedded && (
-          <h1 className="text-2xl font-bold text-slate-800">{pageTitle}</h1>
+          <h1 className="text-2xl font-bold text-slate-100">{pageTitle}</h1>
         )}
-        <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm p-6 shadow-sm">
-          <p className="text-slate-500">
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-6 shadow-sm backdrop-blur-sm">
+          <p className="text-slate-300">
             Select a location to view weekly payout.
           </p>
         </div>
@@ -280,9 +279,9 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          {!embedded && <h1 className="text-2xl font-bold text-slate-800">{pageTitle}</h1>}
+          {!embedded && <h1 className="text-2xl font-bold text-slate-100">{pageTitle}</h1>}
           {!embedded && (
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-300">
               Phase 2: Weekly aggregation → Tardiness deduction → Weekly after
               tardiness
             </p>
@@ -290,13 +289,13 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
         </div>
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-600">
+            <label className="text-sm font-medium text-slate-300">
               Location
             </label>
             <select
               value={selectedLocationId || ""}
               onChange={(e) => setSelectedLocationId(e.target.value || null)}
-              className="rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              className="dark-select rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 shadow-sm [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
             >
               {locations.map((loc) => (
                 <option key={loc._id} value={loc._id}>
@@ -306,25 +305,25 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-600">
+            <label className="text-sm font-medium text-slate-300">
               From date
             </label>
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 shadow-sm [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
             />
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-600">
+            <label className="text-sm font-medium text-slate-300">
               To date
             </label>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 shadow-sm [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
             />
           </div>
           <Button onClick={() => loadPayout(false)} disabled={loading}>
@@ -349,20 +348,20 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
 
       {/* Info card */}
       {!embedded && (
-        <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 backdrop-blur-sm border-l-4 border-l-indigo-400 p-5 shadow-sm">
+        <div className="rounded-xl border border-white/10 border-l-4 border-l-indigo-400 bg-white/[0.03] p-5 shadow-sm backdrop-blur-sm">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="font-medium text-slate-700">
+              <p className="font-medium text-slate-100">
                 {locationName} — {displayRangeStart} – {displayRangeEnd}
               </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Select <strong className="text-slate-600">From date</strong> and{" "}
-                <strong className="text-slate-600">To date</strong>, then click{" "}
-                <strong className="text-slate-600">Load payout</strong>. Tardiness
+              <p className="mt-1 text-sm text-slate-300">
+                Select <strong className="text-slate-100">From date</strong> and{" "}
+                <strong className="text-slate-100">To date</strong>, then click{" "}
+                <strong className="text-slate-100">Load payout</strong>. Tardiness
                 and working hours are pulled from Connecteam for the selected
                 range (working hours are net after manual breaks). Weekly Gross Tips = Σ Daily Tips in range. Tardiness: 0–5
                 min → 0%; &gt;5–10 min → 15%; &gt;10 min → 20%. Redistribution by{" "}
-                <strong className="text-slate-600">total working hours</strong>{" "}
+                <strong className="text-slate-100">total working hours</strong>{" "}
                 from Connecteam.
               </p>
             </div>
@@ -371,12 +370,10 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
       )}
 
       {!data && !loading && (
-        <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm p-8 shadow-sm text-center">
-          <p className="text-slate-500">
-            Select location and date range (From and To), then click{" "}
-            <strong className="text-slate-600">Load payout</strong> to fetch
-            data from Connecteam for that range. Ensure daily tips are entered
-            for the days in range (Phase 1).
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-8 text-center shadow-sm backdrop-blur-sm">
+          <p className="text-slate-300">
+            Select location and date range, then click{" "}
+            <strong className="text-slate-100">Load payout</strong>.
           </p>
         </div>
       )}
@@ -384,9 +381,9 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
       {data && (
         <>
           {/* Main table card */}
-          <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm shadow-sm overflow-hidden">
-            <div className="px-6 pt-5 pb-4 border-b border-slate-100">
-              <h2 className="text-base font-semibold text-slate-700">
+          <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] shadow-sm backdrop-blur-sm">
+            <div className="border-b border-white/10 px-6 pb-4 pt-5">
+              <h2 className="text-base font-semibold text-slate-100">
                 Weekly Staff Payout Table
               </h2>
             </div>
@@ -395,36 +392,28 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
               {totalRows > 0 &&
                 (data.redistributionPool != null ||
                   data.eligibleTotalHours != null) && (
-                  <div className="mb-4 rounded-lg border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm">
-                    <p className="font-medium text-slate-600">
+                  <div className="mb-4 rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-sm">
+                    <p className="font-medium text-slate-100">
                       Tardiness Redistribution (Staff Tips)
                     </p>
-                    <p className="mt-1 text-slate-500">
+                    <p className="mt-1 text-slate-300">
                       Redistribution pool:{" "}
-                      <strong className="text-slate-700">
+                      <strong className="text-slate-100">
                         {formatMoney(data.redistributionPool ?? 0)}
-                      </strong>{" "}
-                      (Σ tardiness deductions). Distributed to eligible staff
-                      (weekly tardiness ≤5 min, total working hours &gt; 0) by
-                      proportion of{" "}
-                      <strong className="text-slate-700">
-                        total working hours
-                      </strong>{" "}
-                      from Weekly Tardiness (Connecteam). Employees with a
-                      tardiness deduction receive $0.00 redistribution.
+                      </strong>
                     </p>
                   </div>
                 )}
 
               {data && (
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
                   <div className="flex flex-wrap items-center gap-3">
                     {totalRows > 0 && (
                       <>
-                        <span className="text-sm text-slate-500">
+                        <span className="text-sm text-slate-300">
                           {totalRows} employee{totalRows !== 1 ? "s" : ""}
                         </span>
-                        <label className="flex items-center gap-2 text-sm text-slate-500">
+                        <label className="flex items-center gap-2 text-sm text-slate-300">
                           Rows per page
                           <select
                             value={pageSize}
@@ -432,7 +421,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                               setPageSize(Number(e.target.value));
                               setPage(1);
                             }}
-                            className="rounded border border-slate-200 bg-white/90 px-2 py-1.5 text-sm text-slate-700"
+                            className="dark-select rounded border border-white/15 bg-white/5 px-2 py-1.5 text-sm text-slate-100 [color-scheme:dark]"
                           >
                             {PAGE_SIZES.map((n) => (
                               <option key={n} value={n}>
@@ -450,11 +439,11 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                         type="button"
                         onClick={() => setPage((p) => Math.max(1, p - 1))}
                         disabled={currentPage <= 1}
-                        className="rounded-lg border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                        className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-slate-200 transition hover:bg-white/10 disabled:opacity-40"
                       >
                         Previous
                       </button>
-                      <span className="min-w-[100px] text-center text-slate-500">
+                      <span className="min-w-[100px] text-center text-slate-300">
                         Page {currentPage} of {totalPages}
                       </span>
                       <button
@@ -463,7 +452,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                           setPage((p) => Math.min(totalPages, p + 1))
                         }
                         disabled={currentPage >= totalPages}
-                        className="rounded-lg border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                        className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-slate-200 transition hover:bg-white/10 disabled:opacity-40"
                       >
                         Next
                       </button>
@@ -472,110 +461,110 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                 </div>
               )}
 
-              <div className="relative z-0 max-h-[75vh] overflow-auto">
+              <div className="relative z-0 max-h-[75vh] overflow-auto pr-2 pb-2 [scrollbar-color:rgba(99,102,241,0.55)_rgba(15,23,42,0.7)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-400/60 [&::-webkit-scrollbar-thumb:hover]:bg-indigo-300/70">
                 <table className="w-full min-w-[1200px] text-sm">
                   <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="sticky left-0 top-0 z-[3] w-20 min-w-[5rem] max-w-[5rem] whitespace-nowrap bg-white pb-3 pr-2 text-center font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                    <tr className="border-b border-white/10">
+                      <th className="sticky left-0 top-0 z-[3] w-20 min-w-[5rem] max-w-[5rem] whitespace-nowrap bg-slate-900 px-2 pb-3 pt-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-200">
                         Action
                       </th>
-                      <th className="sticky left-20 top-0 z-[2] whitespace-nowrap bg-white pb-3 pr-4 text-left font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky left-20 top-0 z-[2] whitespace-nowrap bg-slate-900 px-4 pb-3 pt-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-200">
                         Employee
                       </th>
-                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-left font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pr-4 pt-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-200">
                         Location
                       </th>
                       {weekDateColumns.map((col) => (
                         <th
                           key={col.dateKey}
-                          className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                          className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pr-2 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200"
                           title={`Tips for ${col.label}`}
                         >
                           {col.label}
                         </th>
                       ))}
                       <th
-                        className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                        className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pr-4 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200"
                         title="Σ Daily Tips (Mon–Sun), basis for deductions"
                       >
                         Weekly Gross Tips
                       </th>
                       <th
-                        className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                        className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pr-4 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200"
                         title="Total working hours for the week (from Weekly Tardiness / Connecteam); used for redistribution"
                       >
                         Working hours
                       </th>
                       <th
-                        className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                        className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pr-4 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200"
                         title="Manual break time from Connecteam for the range"
                       >
                         Break hours
                       </th>
-                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pr-4 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200">
                         Weekly Tardiness (min)
                       </th>
-                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pr-4 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200">
                         Tardiness %
                       </th>
-                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pr-4 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200">
                         Tardiness Deduction
                       </th>
-                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pr-4 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200">
                         Weekly After Tardiness
                       </th>
-                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pr-4 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200">
                         Manual Deduction
                       </th>
-                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pr-4 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200">
                         Net Weekly Tips
                       </th>
                       <th
-                        className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pr-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                        className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pr-4 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200"
                         title="Tips received from others (eligible: ≤5 min tardiness, worked hours > 0)"
                       >
                         Tardiness Redistribution
                       </th>
                       <th
-                        className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pl-4 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                        className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pl-4 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200"
                         title="Net tips + redistribution"
                       >
                         Final Weekly Tips Payable
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-white/10">
                     {paginatedPayouts.map((p) => (
                       <tr
                         key={p.employeeId}
-                        className="hover:bg-slate-50/70 transition-colors"
+                        className="transition-colors hover:bg-white/[0.04]"
                       >
-                        <td className="sticky left-0 z-[2] w-20 min-w-[5rem] max-w-[5rem] bg-white py-3 pr-2 text-center">
+                        <td className="sticky left-0 z-[2] w-20 min-w-[5rem] max-w-[5rem] bg-slate-900 py-3 pr-2 text-center">
                           <button
                             type="button"
                             onClick={() => openDeductionModal(p)}
-                            className="rounded-lg border border-slate-200 bg-white/90 px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600"
+                            className="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-slate-200 shadow-sm transition hover:border-indigo-300/30 hover:bg-indigo-500/15 hover:text-indigo-100"
                             title="Tardiness & manual deduction"
                           >
                             Edit
                           </button>
                         </td>
-                        <td className="sticky left-20 z-[1] bg-white py-3 pr-4 font-medium text-slate-700">
+                        <td className="sticky left-20 z-[1] bg-slate-900 px-4 py-3 font-medium text-slate-100">
                           {p.employeeName}
                         </td>
-                        <td className="py-3 pr-4 text-slate-500">
+                        <td className="py-3 pr-4 text-slate-300">
                           {locationName}
                         </td>
                         {weekDateColumns.map((col, idx) => (
                           <td
                             key={col.dateKey}
-                            className="py-3 pr-2 text-right tabular-nums text-slate-600"
+                            className="py-3 pr-2 text-right tabular-nums text-slate-300"
                           >
                             {formatMoney((p.dailyTipsByDay || [])[idx] ?? 0)}
                           </td>
                         ))}
                         <td
-                          className="py-3 pr-4 text-right tabular-nums font-medium text-slate-700"
+                          className="py-3 pr-4 text-right font-medium tabular-nums text-slate-100"
                           title="Sum of Mon–Sun"
                         >
                           {formatMoney(
@@ -583,37 +572,37 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                           )}
                         </td>
                         <td
-                          className="py-3 pr-4 text-right tabular-nums text-slate-600"
+                          className="py-3 pr-4 text-right tabular-nums text-slate-300"
                           title="From Weekly Tardiness (Connecteam); used for redistribution"
                         >
                           {formatDurationHours(p.totalWorkingMinutes)}
                         </td>
                         <td
-                          className="py-3 pr-4 text-right tabular-nums text-slate-600"
+                          className="py-3 pr-4 text-right tabular-nums text-slate-300"
                           title="Manual break time from Connecteam"
                         >
                           {formatDurationHours(breakMinutesFromRow(p))}
                         </td>
-                        <td className="py-3 pr-4 text-right tabular-nums text-slate-600">
+                        <td className="py-3 pr-4 text-right tabular-nums text-slate-300">
                           {p.weeklyTardinessMinutes ?? 0}
                         </td>
-                        <td className="py-3 pr-4 text-right tabular-nums text-slate-600">
+                        <td className="py-3 pr-4 text-right tabular-nums text-slate-300">
                           {p.tardinessPercent ?? 0}%
                         </td>
-                        <td className="py-3 pr-4 text-right tabular-nums text-amber-600">
+                        <td className="py-3 pr-4 text-right tabular-nums text-amber-300">
                           {formatMoney(p.tardinessDeduction)}
                         </td>
-                        <td className="py-3 pr-4 text-right tabular-nums font-medium text-slate-700">
+                        <td className="py-3 pr-4 text-right font-medium tabular-nums text-slate-100">
                           {formatMoney(p.weeklyAfterTardiness)}
                         </td>
-                        <td className="py-3 pr-4 text-right tabular-nums text-slate-600">
+                        <td className="py-3 pr-4 text-right tabular-nums text-slate-300">
                           {formatMoney(p.manualDeduction)}
                         </td>
-                        <td className="py-3 pr-4 text-right tabular-nums text-slate-600">
+                        <td className="py-3 pr-4 text-right tabular-nums text-slate-300">
                           {formatMoney(p.netWeeklyTips)}
                         </td>
                         <td
-                          className="py-3 pr-4 text-right tabular-nums text-emerald-500"
+                          className="py-3 pr-4 text-right tabular-nums text-emerald-300"
                           title={
                             (p.weeklyTardinessMinutes ?? 0) > 5
                               ? "Not eligible (tardiness deduction applied)"
@@ -624,7 +613,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                         >
                           {formatMoney(p.tardinessRedistribution ?? 0)}
                         </td>
-                        <td className="py-3 pl-4 text-right tabular-nums font-semibold text-slate-800">
+                        <td className="py-3 pl-4 text-right font-semibold tabular-nums text-slate-100">
                           {formatMoney(p.finalWeeklyTipsPayable ?? 0)}
                         </td>
                       </tr>
@@ -634,10 +623,10 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
               </div>
 
               {totalRows === 0 && (
-                <div className="py-10 text-center text-slate-500">
+                <div className="py-10 text-center text-slate-300">
                   {data?.emptyReason === "no_employees_for_location" ? (
                     <>
-                      <p className="font-medium text-slate-600">
+                      <p className="font-medium text-slate-100">
                         No employees found for this location.
                       </p>
                       <p className="mt-2 text-sm">
@@ -670,31 +659,31 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
               aria-labelledby="deduction-modal-title"
             >
               <div
-                className="w-full max-w-md rounded-2xl border border-slate-200/80 bg-white/90 backdrop-blur-md p-6 shadow-xl"
+                className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/90 p-6 shadow-xl backdrop-blur-md"
                 onClick={(e) => e.stopPropagation()}
               >
                 <h2
                   id="deduction-modal-title"
-                  className="text-lg font-semibold text-slate-800"
+                  className="text-lg font-semibold text-slate-100"
                 >
                   Tardiness & manual deduction — {modalEmployee.employeeName}
                 </h2>
-                <p className="mt-1 text-sm text-slate-400">
+                <p className="mt-1 text-sm text-slate-300">
                   Tardiness comes from the Weekly Tardiness page (load there
                   first). Reason required if manual deduction &gt; 0.
                 </p>
                 <div className="mt-5 space-y-4">
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-600">
+                    <label className="mb-1 block text-sm font-medium text-slate-300">
                       Weekly tardiness (minutes)
                     </label>
-                    <p className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-600">
+                    <p className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
                       {modalEmployee.weeklyTardinessMinutes ?? 0} min (from
                       Weekly Tardiness)
                     </p>
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-600">
+                    <label className="mb-1 block text-sm font-medium text-slate-300">
                       Manual deduction ($)
                     </label>
                     <input
@@ -703,11 +692,11 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                       step="0.01"
                       value={editManualAmount}
                       onChange={(e) => setEditManualAmount(e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                      className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-600">
+                    <label className="mb-1 block text-sm font-medium text-slate-300">
                       Reason{" "}
                       <span className="text-slate-400">
                         (required if amount &gt; 0)
@@ -718,7 +707,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                       placeholder="e.g. Uniform, equipment"
                       value={editManualReason}
                       onChange={(e) => setEditManualReason(e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                      className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
                     />
                   </div>
                 </div>
@@ -726,7 +715,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="rounded-lg border border-slate-200 bg-white/80 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                    className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-white/10"
                   >
                     Cancel
                   </button>

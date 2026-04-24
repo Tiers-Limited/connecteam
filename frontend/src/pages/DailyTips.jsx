@@ -928,7 +928,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                   type="date"
                   value={saveDate}
                   onChange={(e) => setSaveDate(e.target.value)}
-                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100"
+                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-70"
                 />
               </div>
               <div>
@@ -1019,7 +1019,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               </p>
             ) : (
               <>
-                <div className="relative z-0 max-h-[75vh] overflow-auto">
+                <div className="relative z-0 max-h-[75vh] overflow-auto pr-2 pb-2 [scrollbar-color:rgba(99,102,241,0.55)_rgba(15,23,42,0.7)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-400/60 [&::-webkit-scrollbar-thumb:hover]:bg-indigo-300/70">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-white/10 text-left">
@@ -1155,7 +1155,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
       )}
 
       {activeSubTab === "breakdown" && (
-        <div className="space-y-4 rounded-lg border border-white/10 border-t-0 bg-white/[0.03] px-4 py-4 shadow-sm sm:border-t sm:rounded-t-none">
+        <div className="space-y-4 rounded-xl border border-white/10 border-t-0 bg-gradient-to-br from-white/[0.04] via-white/[0.03] to-transparent px-4 py-4 shadow-sm sm:border-t sm:rounded-t-none">
           <div className="flex flex-col gap-4 border-b border-white/10 pb-4">
             <div className="flex flex-wrap items-end gap-4">
               <div>
@@ -1182,7 +1182,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                   type="date"
                   value={viewerDate}
                   onChange={(e) => setViewerDate(e.target.value)}
-                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100"
+                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-70"
                 />
               </div>
               <Button
@@ -1219,17 +1219,9 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 )}
               </Button>
             </div>
+
             {breakdownView?.locationId && (
-              <p className="text-xs text-slate-300">
-                Active row:{" "}
-                <strong className="text-slate-100">
-                  {breakdownLocation?.name ?? "—"}
-                </strong>{" "}
-                — {breakdownView.dateStr}
-              </p>
-            )}
-            {breakdownView?.locationId && (
-              <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm">
+              <div className="rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2.5 text-sm shadow-sm">
                 {loadingCalculation && !breakdownSavedTips ? (
                   <span className="flex items-center gap-2 text-slate-300">
                     {spinner}
@@ -1298,7 +1290,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
 
           {breakdownView?.locationId && (
             <>
-          <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-3">
+          <div className="rounded-xl border border-white/12 bg-white/[0.06] px-4 py-3 shadow-sm">
             <h2 className="mb-2 text-sm font-semibold text-slate-100">
               Manual clock times (Connecteam employees)
             </h2>
@@ -1396,7 +1388,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               onChange={(e) =>
                 setManualForm((f) => ({ ...f, clockIn: e.target.value }))
               }
-              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100"
+              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
             />
           </div>
           <div>
@@ -1409,7 +1401,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               onChange={(e) =>
                 setManualForm((f) => ({ ...f, clockOut: e.target.value }))
               }
-              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100"
+              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
             />
           </div>
           <Button type="submit" disabled={manualSaving}>
@@ -1462,32 +1454,34 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
         ) : manualRows.length === 0 ? (
           <p className="text-sm text-slate-300">No manual entries for this date.</p>
         ) : (
-          <div className="relative z-0 max-h-[65vh] overflow-auto">
+          <div className="relative z-0 max-h-[65vh] overflow-auto pr-2 pb-2 [scrollbar-color:rgba(99,102,241,0.55)_rgba(15,23,42,0.7)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-400/60 [&::-webkit-scrollbar-thumb:hover]:bg-indigo-300/70">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/10 text-left">
-                  <th className="sticky left-0 top-0 z-[2] bg-slate-900 py-2 pl-3 font-medium text-slate-200">Employee</th>
-                  <th className="py-2 font-medium text-slate-200">
+                  <th className="sticky left-0 top-0 z-[2] bg-slate-900 px-3 py-3 font-medium text-slate-200">
+                    Employee
+                  </th>
+                  <th className="sticky top-0 z-[1] bg-slate-900 px-3 py-3 font-medium text-slate-200">
                     Clock in
                   </th>
-                  <th className="py-2 font-medium text-slate-200">
+                  <th className="sticky top-0 z-[1] bg-slate-900 px-3 py-3 font-medium text-slate-200">
                     Clock out
                   </th>
                   {isBreakdownTheCove ? (
-                    <th className="py-2 text-right font-medium text-slate-200">
+                    <th className="sticky top-0 z-[1] bg-slate-900 px-3 py-3 text-right font-medium text-slate-200">
                       Hours
                     </th>
                   ) : (
                     <>
-                      <th className="py-2 text-right font-medium text-slate-200">
+                      <th className="sticky top-0 z-[1] bg-slate-900 px-3 py-3 text-right font-medium text-slate-200">
                         AM hrs
                       </th>
-                      <th className="py-2 text-right font-medium text-slate-200">
+                      <th className="sticky top-0 z-[1] bg-slate-900 px-3 py-3 text-right font-medium text-slate-200">
                         PM hrs
                       </th>
                     </>
                   )}
-                  <th className="sticky top-0 z-[1] bg-slate-900 py-2 text-right font-medium text-slate-200">
+                  <th className="sticky top-0 z-[1] bg-slate-900 px-3 py-3 text-right font-medium text-slate-200">
                     Actions
                   </th>
                 </tr>
@@ -1503,30 +1497,30 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                   const pm = Number(row.pmHours) || 0;
                   return (
                     <tr key={row._id}>
-                      <td className="sticky left-0 z-[1] bg-slate-900 py-2 pl-3 font-medium text-slate-100">
+                      <td className="sticky left-0 z-[1] bg-slate-900 px-3 py-2.5 font-medium text-slate-100">
                         {empName}
                       </td>
-                      <td className="py-2 tabular-nums text-slate-300">
+                      <td className="px-3 py-2.5 tabular-nums text-slate-300">
                         {formatClockLabel(row.clockIn)}
                       </td>
-                      <td className="py-2 tabular-nums text-slate-300">
+                      <td className="px-3 py-2.5 tabular-nums text-slate-300">
                         {formatClockLabel(row.clockOut)}
                       </td>
                       {isBreakdownTheCove ? (
-                        <td className="py-2 text-right tabular-nums text-slate-300">
+                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
                           {(am + pm).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                       ) : (
                         <>
-                          <td className="py-2 text-right tabular-nums text-slate-300">
+                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
                             {am.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                           </td>
-                          <td className="py-2 text-right tabular-nums text-slate-300">
+                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
                             {pm.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                           </td>
                         </>
                       )}
-                      <td className="py-2 text-right">
+                      <td className="px-3 py-2.5 text-right">
                         <button
                           type="button"
                           className="text-xs font-medium text-red-600 hover:text-red-700"
@@ -1629,7 +1623,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
             )}
           </div>
 
-          <div className="relative z-0 max-h-[65vh] overflow-auto">
+          <div className="relative z-0 max-h-[65vh] overflow-auto pr-2 pb-2 [scrollbar-color:rgba(99,102,241,0.55)_rgba(15,23,42,0.7)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-400/60 [&::-webkit-scrollbar-thumb:hover]:bg-indigo-300/70">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/10">

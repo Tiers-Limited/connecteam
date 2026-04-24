@@ -13,59 +13,76 @@ export default function WeeklyPayoutWorkflow() {
   const [activeStep, setActiveStep] = useState(0);
   const isFirst = activeStep === 0;
   const isLast = activeStep === STEPS.length - 1;
-  const progress = ((activeStep + 1) / STEPS.length) * 100;
+  const stepCurve = [
+    { x: 14, y: 48 },
+    { x: 50, y: 48 },
+    { x: 86, y: 48 },
+  ];
+  const lineStartX = stepCurve[0].x;
+  const lineEndX = stepCurve[stepCurve.length - 1].x;
+  const activeX = stepCurve[activeStep]?.x ?? lineStartX;
+  const filledLineWidth = Math.max(0, Math.min(lineEndX - lineStartX, activeX - lineStartX));
+  const stepColors = {
+    active: "from-indigo-500 to-violet-500 border-indigo-300/50 text-white",
+    complete: "from-emerald-500 to-cyan-500 border-emerald-300/50 text-white",
+    idle: "from-slate-700 to-slate-800 border-white/15 text-slate-100",
+  };
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-white/10 bg-gradient-to-r from-indigo-500/15 via-slate-900/70 to-violet-500/15 p-5 shadow-xl shadow-black/20 backdrop-blur">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold text-slate-100">
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 shadow-lg shadow-black/20 backdrop-blur">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-xl font-semibold text-slate-100">
             Weekly Payout Workflow
           </h1>
-          <span className="rounded-full border border-indigo-300/35 bg-indigo-500/15 px-3 py-1 text-xs font-semibold tracking-wide text-indigo-200">
-            STEP {activeStep + 1} OF {STEPS.length}
+          <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-medium tracking-wide text-slate-300">
+            Step {activeStep + 1} / {STEPS.length}
           </span>
         </div>
-        <p className="mt-2 text-sm text-slate-300">
-          Complete each step in sequence to generate the final weekly payout.
-        </p>
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+        <div className="relative mt-4 h-[150px] w-full">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-indigo-400 via-cyan-300 to-violet-400 transition-all duration-300"
-            style={{ width: `${progress}%` }}
+            className="absolute h-[2px] border-t-2 border-dashed border-slate-500/50"
+            style={{
+              left: `${lineStartX}%`,
+              right: `${100 - lineEndX}%`,
+              top: `${stepCurve[0].y}%`,
+            }}
           />
-        </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <div
+            className="absolute h-[2px] border-t-2 border-dashed border-indigo-300 transition-all duration-300"
+            style={{
+              left: `${lineStartX}%`,
+              top: `${stepCurve[0].y}%`,
+              width: `${filledLineWidth}%`,
+            }}
+          />
+
           {STEPS.map((step, idx) => {
             const isActive = idx === activeStep;
             const isCompleted = idx < activeStep;
+            const tone = isActive
+              ? stepColors.active
+              : isCompleted
+                ? stepColors.complete
+                : stepColors.idle;
+            const pos = stepCurve[idx] ?? { x: 50, y: 50 };
+
             return (
               <button
                 key={step.id}
                 type="button"
                 onClick={() => setActiveStep(idx)}
-                className={`group rounded-xl border px-3 py-2 text-left text-sm transition ${
-                  isActive
-                    ? "border-indigo-300/60 bg-indigo-500/20 text-indigo-100 shadow-lg shadow-indigo-900/20"
-                    : isCompleted
-                      ? "border-emerald-300/50 bg-emerald-500/15 text-emerald-200"
-                      : "border-white/10 bg-white/5 text-slate-300 hover:border-white/20 hover:bg-white/10"
-                }`}
+                className="group absolute -translate-x-1/2 -translate-y-1/2 text-left"
+                style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
               >
-                <span className="flex items-center gap-2">
-                  <span
-                    className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                      isActive
-                        ? "bg-indigo-300/30 text-indigo-100"
-                        : isCompleted
-                          ? "bg-emerald-300/30 text-emerald-100"
-                          : "bg-white/10 text-slate-300"
-                    }`}
-                  >
-                    {idx + 1}
-                  </span>
-                  <span className="font-medium">{step.label}</span>
-                </span>
+                <div
+                  className={`mx-auto flex h-12 w-12 items-center justify-center rounded-full border bg-gradient-to-br text-sm font-bold shadow-lg shadow-black/30 transition-transform group-hover:scale-105 ${tone}`}
+                >
+                  {idx + 1}
+                </div>
+                <p className="mt-2 whitespace-nowrap text-xs font-semibold tracking-wide text-slate-200">
+                  {step.label}
+                </p>
               </button>
             );
           })}
