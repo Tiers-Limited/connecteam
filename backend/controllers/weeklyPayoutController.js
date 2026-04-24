@@ -49,7 +49,9 @@ async function getPayout(req, res, next) {
       new Date(endDate + 'T12:00:00') >= new Date(startDate + 'T12:00:00');
     const weekStartStr = useDateRange ? startDate : weekStartToYYYYMMDD(weekStart);
 
-    if (!refresh) {
+    // For explicit date-range requests (From/To), always compute fresh data so
+    // stale cached employee lists cannot appear in Weekly Payout.
+    if (!refresh && !useDateRange) {
       const cached = await WeeklyPayoutCache.findOne({
         locationId,
         weekStart: weekStartStr,

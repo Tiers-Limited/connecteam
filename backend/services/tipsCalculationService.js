@@ -1250,6 +1250,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
     .lean();
 
   const tardinessMap = new Map();
+  const tardinessRecordEmployeeIdSet = new Set();
   const workingMinutesMap = new Map();
   const breakMinutesMap = new Map();
   const dailyBreakdownByEmployeeId = new Map();
@@ -1261,6 +1262,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
       if (!eid) continue;
       const emp = t.employeeId;
       if (!emp || (emp && !emp.name)) continue;
+      tardinessRecordEmployeeIdSet.add(eid);
       tardinessMap.set(eid, t.totalTardinessMinutes ?? 0);
       workingMinutesMap.set(eid, Number(t.totalWorkingMinutes) || 0);
       breakMinutesMap.set(eid, Number(t.totalBreakMinutes) || 0);
@@ -1447,6 +1449,17 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
     }
   }
 
+  // Date-range payout should only include employees that are present in:
+  // - Daily Tips audits for the selected range, or
+  // - persisted Weekly Tardiness records for the same range.
+  // This prevents unrelated active/location employees from appearing as all-zero rows.
+  if (useDateRange) {
+    employees = employees.filter((emp) => {
+      const id = String(emp?._id || "");
+      return auditEmployeeIdSet.has(id) || tardinessRecordEmployeeIdSet.has(id);
+    });
+  }
+
   // Cache which days have adjustments (so legacy audits can be recomputed once).
   const adjustmentsByDateStr = new Set();
   if (dateStrs.length > 0) {
@@ -1536,7 +1549,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
     employeeWeeklyHours.set(emp._id.toString(), weeklyWorkedHours);
   }
 
-  const rows = [];
+  let rows = [];
   let totalRedistributionPool = 0;
 
   for (const emp of employees) {
@@ -1578,6 +1591,28 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
       workingHoursForRedistribution,
       eligibleForRedistribution: tardinessMinutes <= 5 && workingHoursForRedistribution > 0,
       dailyBreakdown,
+    });
+  }
+
+  // For date-range payout, hide "hours-only" rows that have no payout impact.
+  // This avoids showing employees that are not present in the actionable
+  // weekly payout result (all zero tips/tardiness/deductions/payable).
+  if (useDateRange) {
+    rows = rows.filter((r) => {
+      const hasGrossTips = Number(r.weeklyGrossTips || 0) > 0;
+      const hasTardiness = Number(r.weeklyTardinessMinutes || 0) > 0;
+      const hasTardinessDeduction = Number(r.tardinessDeduction || 0) > 0;
+      const hasManualDeduction = Number(r.manualDeduction || 0) > 0;
+      const hasNetTips = Number(r.netWeeklyTips || 0) > 0;
+      const hasPayable = Number(r.finalWeeklyTipsPayable || 0) > 0;
+      return (
+        hasGrossTips ||
+        hasTardiness ||
+        hasTardinessDeduction ||
+        hasManualDeduction ||
+        hasNetTips ||
+        hasPayable
+      );
     });
   }
 

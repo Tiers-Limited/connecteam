@@ -936,7 +936,7 @@ export default function PayoutReports() {
                       type="date"
                       value={singleDate}
                       onChange={(e) => setSingleDate(e.target.value)}
-                      className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30"
+                      className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition [color-scheme:dark] focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-75"
                     />
                   </div>
                 ) : (
@@ -949,7 +949,7 @@ export default function PayoutReports() {
                         type="date"
                         value={startDate}
                         onChange={(e) => setStartDate(e.target.value)}
-                        className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30"
+                        className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition [color-scheme:dark] focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-75"
                       />
                     </div>
                     <div>
@@ -960,7 +960,7 @@ export default function PayoutReports() {
                         type="date"
                         value={endDate}
                         onChange={(e) => setEndDate(e.target.value)}
-                        className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30"
+                        className="w-full rounded-xl border border-white/15 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-100 shadow-sm outline-none transition [color-scheme:dark] focus:border-indigo-400 focus:ring-2 focus:ring-indigo-300/30 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-75"
                       />
                     </div>
                   </>

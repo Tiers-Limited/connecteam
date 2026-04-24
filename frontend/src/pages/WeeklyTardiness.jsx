@@ -9,7 +9,6 @@ import {
   getDateRangeColumns,
   formatDate,
 } from "../utils/dateUtils";
-import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -213,16 +212,16 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        {!embedded && <h1 className="text-2xl font-bold text-slate-800">{pageTitle}</h1>}
+        {!embedded && <h1 className="text-2xl font-bold text-slate-100">{pageTitle}</h1>}
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-600">
+            <label className="text-sm font-medium text-slate-300">
               Location
             </label>
             <select
               value={selectedLocationId || ""}
               onChange={(e) => setSelectedLocationId(e.target.value || null)}
-              className="rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              className="dark-select rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 shadow-sm [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
             >
               <option value="">All locations</option>
               {locations.map((loc) => (
@@ -233,25 +232,25 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-600">
+            <label className="text-sm font-medium text-slate-300">
               From date
             </label>
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 shadow-sm [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
             />
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-600">
+            <label className="text-sm font-medium text-slate-300">
               To date
             </label>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 shadow-sm [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
             />
           </div>
           <Button onClick={loadTardiness} disabled={loading}>
@@ -288,24 +287,24 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
       </div>
 
       {!embedded && (
-        <p className="text-slate-500">
+        <p className="text-slate-300">
           {selectedLocationId && location
             ? `${location.name} — `
             : "All locations — "}
-          Select <strong className="text-slate-600">From date</strong> and{" "}
-          <strong className="text-slate-600">To date</strong>, then click{" "}
-          <strong className="text-slate-600">Load from Connecteam</strong>.
+          Select <strong className="text-slate-100">From date</strong> and{" "}
+          <strong className="text-slate-100">To date</strong>, then click{" "}
+          <strong className="text-slate-100">Load from Connecteam</strong>.
           Tardiness = minutes late (clock-in after scheduled start). Data from
           Connecteam.
         </p>
       )}
 
       {!data && !loading && (
-        <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm p-8 shadow-sm text-center">
-          <p className="text-slate-500">
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-8 text-center shadow-sm backdrop-blur-sm">
+          <p className="text-slate-300">
             Select date range (From and To) and optionally a location, then
             click{" "}
-            <strong className="text-slate-600">Load from Connecteam</strong> to
+            <strong className="text-slate-100">Load from Connecteam</strong> to
             fetch tardiness data for those days.
           </p>
         </div>
@@ -314,20 +313,20 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
       {data && (
         <>
           {/* Main tardiness table */}
-          <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm shadow-sm overflow-hidden">
-            <div className="px-6 pt-5 pb-4 border-b border-slate-100">
-              <h2 className="text-base font-semibold text-slate-700">
+          <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] shadow-sm backdrop-blur-sm">
+            <div className="border-b border-white/10 px-6 pb-4 pt-5">
+              <h2 className="text-base font-semibold text-slate-100">
                 Tardiness by employee (minutes late per day)
               </h2>
             </div>
             <div className="px-6 py-4">
               {totalRows > 0 && (
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
                   <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-sm text-slate-500">
+                    <span className="text-sm text-slate-300">
                       {totalRows} employee{totalRows !== 1 ? "s" : ""}
                     </span>
-                    <label className="flex items-center gap-2 text-sm text-slate-500">
+                    <label className="flex items-center gap-2 text-sm text-slate-300">
                       Rows per page
                       <select
                         value={pageSize}
@@ -335,7 +334,7 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
                           setPageSize(Number(e.target.value));
                           setPage(1);
                         }}
-                        className="rounded border border-slate-200 bg-white/90 px-2 py-1 text-sm text-slate-700"
+                        className="dark-select rounded border border-white/15 bg-white/5 px-2 py-1 text-sm text-slate-100 [color-scheme:dark]"
                       >
                         {PAGE_SIZES.map((n) => (
                           <option key={n} value={n}>
@@ -350,11 +349,11 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
                       type="button"
                       onClick={() => setPage((p) => Math.max(1, p - 1))}
                       disabled={currentPage <= 1}
-                      className="rounded-lg border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                      className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-slate-200 transition hover:bg-white/10 disabled:opacity-40"
                     >
                       Previous
                     </button>
-                    <span className="min-w-[100px] text-center text-slate-500">
+                    <span className="min-w-[100px] text-center text-slate-300">
                       Page {currentPage} of {totalPages}
                     </span>
                     <button
@@ -363,7 +362,7 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
                         setPage((p) => Math.min(totalPages, p + 1))
                       }
                       disabled={currentPage >= totalPages}
-                      className="rounded-lg border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                      className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-slate-200 transition hover:bg-white/10 disabled:opacity-40"
                     >
                       Next
                     </button>
@@ -371,33 +370,33 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
                 </div>
               )}
 
-              <div className="relative z-0 max-h-[75vh] overflow-auto">
+              <div className="relative z-0 max-h-[75vh] overflow-auto pr-2 pb-2 [scrollbar-color:rgba(99,102,241,0.55)_rgba(15,23,42,0.7)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-400/60 [&::-webkit-scrollbar-thumb:hover]:bg-indigo-300/70">
                 <table className="w-full min-w-[600px] text-sm">
                   <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="sticky left-0 top-0 z-[2] whitespace-nowrap bg-white pb-3 pr-4 text-left font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                    <tr className="border-b border-white/10">
+                      <th className="sticky left-0 top-0 z-[2] whitespace-nowrap bg-slate-900 px-4 pb-3 pt-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-200">
                         Employee
                       </th>
                       {dateColumns.map((col) => (
                         <th
                           key={col.dateKey}
-                          className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 px-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                          className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 px-2 pb-3 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200"
                         >
                           {col.label}
                         </th>
                       ))}
-                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pl-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pl-2 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200">
                         Total
                       </th>
-                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pl-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pl-2 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200">
                         Working hours
                       </th>
-                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white pb-3 pl-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-slate-900 pb-3 pl-2 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200">
                         Break hours
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-white/10">
                     {paginatedRows.map((rec, i) => {
                       const rowTotal = dateColumns.reduce((sum, col) => {
                         const dayRec = rec.byDate[col.dateKey];
@@ -413,9 +412,9 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
                       return (
                         <tr
                           key={`${rec.employeeName}-${start + i}`}
-                          className="hover:bg-slate-50/70 transition-colors"
+                          className="transition-colors hover:bg-white/[0.04]"
                         >
-                          <td className="sticky left-0 z-[1] bg-white py-2.5 pr-4 font-medium text-slate-700">
+                          <td className="sticky left-0 z-[1] bg-slate-900 px-4 py-2.5 font-medium text-slate-100">
                             {rec.employeeName}
                           </td>
                           {dateColumns.map((col) => {
@@ -439,16 +438,16 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
                                 className="py-2.5 px-2 text-right tabular-nums align-top"
                               >
                                 <span className="inline-block text-right">
-                                  <span className="block text-slate-500 font-medium">
+                                  <span className="block font-medium text-slate-300">
                                     {dayLocation}
                                   </span>
                                   {isLate ? (
                                     <>
-                                      <span className="block text-slate-400 text-xs">
+                                      <span className="block text-xs text-slate-400">
                                         {dayRec.scheduledTime ?? "–"} →{" "}
                                         {dayRec.clockIn ?? "–"}
                                       </span>
-                                      <span className="font-medium text-amber-600">
+                                      <span className="font-medium text-amber-300">
                                         {minutes} min
                                       </span>
                                     </>
@@ -459,10 +458,10 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
                               </td>
                             );
                           })}
-                          <td className="py-2.5 pl-2 text-right tabular-nums font-semibold text-slate-700">
+                          <td className="py-2.5 pl-2 text-right font-semibold tabular-nums text-slate-100">
                             {rowTotal}
                           </td>
-                          <td className="py-2.5 pl-2 text-right tabular-nums text-slate-600">
+                          <td className="py-2.5 pl-2 text-right tabular-nums text-slate-300">
                             {formatDurationProfessional(
                               getMinutesByEmployee(
                                 data?.totalWorkingMinutesByEmployee || {},
@@ -470,7 +469,7 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
                               ),
                             )}
                           </td>
-                          <td className="py-2.5 pl-2 text-right tabular-nums text-slate-600">
+                          <td className="py-2.5 pl-2 text-right tabular-nums text-slate-300">
                             {formatDurationProfessional(
                               getMinutesByEmployee(
                                 data?.totalBreakMinutesByEmployee || {},
@@ -496,41 +495,41 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
 
           {/* Summary totals card */}
           {dateColumns.length > 0 && (
-            <div className="rounded-xl border border-slate-200/70 bg-white/60 backdrop-blur-sm shadow-sm overflow-hidden">
-              <div className="px-6 pt-5 pb-4 border-b border-slate-100">
-                <h2 className="text-base font-semibold text-slate-700">
+            <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] shadow-sm backdrop-blur-sm">
+              <div className="border-b border-white/10 px-6 pb-4 pt-5">
+                <h2 className="text-base font-semibold text-slate-100">
                   Total tardiness ({formatDate(rangeStart)} –{" "}
                   {formatDate(rangeEnd)})
                 </h2>
               </div>
-              <div className="px-6 py-4 max-h-[50vh] overflow-auto">
+              <div className="max-h-[50vh] overflow-auto px-6 py-4 pr-2 pb-2 [scrollbar-color:rgba(99,102,241,0.55)_rgba(15,23,42,0.7)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-400/60 [&::-webkit-scrollbar-thumb:hover]:bg-indigo-300/70">
                 <table className="w-full min-w-[400px] text-sm">
                   <thead>
-                    <tr className="border-b border-slate-100">
+                    <tr className="border-b border-white/10">
                       {dateColumns.map((col) => (
                         <th
                           key={col.dateKey}
-                          className="whitespace-nowrap pb-3 px-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide"
+                          className="whitespace-nowrap px-2 pb-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-200"
                         >
                           {col.label}
                         </th>
                       ))}
-                      <th className="whitespace-nowrap pb-3 pl-2 text-right font-semibold text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="whitespace-nowrap pb-3 pl-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-200">
                         Total
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="divide-x divide-slate-100">
+                    <tr className="divide-x divide-white/10">
                       {dateColumns.map((col) => (
                         <td
                           key={col.dateKey}
-                          className="py-3 px-2 text-right tabular-nums text-slate-700"
+                          className="px-2 py-3 text-right tabular-nums text-slate-100"
                         >
                           {totalsByDate[col.dateKey] ?? 0} min
                         </td>
                       ))}
-                      <td className="py-3 pl-2 text-right tabular-nums font-semibold text-slate-800">
+                      <td className="py-3 pl-2 text-right font-semibold tabular-nums text-slate-100">
                         {rangeTotal} min
                       </td>
                     </tr>
