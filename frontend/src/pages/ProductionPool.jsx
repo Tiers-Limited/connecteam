@@ -35,14 +35,13 @@ function getDefaultDateRange() {
   return { start: toLocalDateString(mon), end: toLocalDateString(sun) };
 }
 
-// Glass card shell (dark theme)
 function LightCard({ children, className = "", title }) {
   return (
     <div
-      className={`rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm shadow-xl px-6 py-5 ${className}`}
+      className={`rounded-2xl border border-slate-200 bg-white/90 backdrop-blur-sm shadow-xl px-6 py-5 dark:border-white/10 dark:bg-white/5 ${className}`}
     >
       {title && (
-        <h2 className="mb-4 text-base font-semibold text-slate-100">{title}</h2>
+        <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
       )}
       {children}
     </div>
@@ -226,36 +225,36 @@ export default function ProductionPool() {
   );
 
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4 shadow-2xl sm:p-6">
-      <div className="pointer-events-none absolute -top-24 -right-8 h-56 w-56 rounded-full bg-indigo-500/20 blur-3xl" />
+    <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-100 via-white to-slate-50 p-4 shadow-2xl sm:p-6 dark:border-white/10 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+      <div className="pointer-events-none absolute -top-24 -right-8 h-56 w-56 rounded-full bg-indigo-500/15 blur-3xl dark:bg-indigo-500/20" />
       <div className="pointer-events-none absolute -bottom-24 -left-8 h-64 w-64 rounded-full bg-fuchsia-500/10 blur-3xl" />
       <div className="relative space-y-6">
       {/* Header row */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-white">Production Pool</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">Production Pool</h1>
         </div>
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-300">
+            <label className="text-sm font-medium text-slate-600 dark:text-slate-300">
               From date
             </label>
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 shadow-sm [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-amber-400/50 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-75"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-300 dark:border-white/15 dark:bg-white/5 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:ring-amber-400/50 dark:[&::-webkit-calendar-picker-indicator]:invert dark:[&::-webkit-calendar-picker-indicator]:opacity-75 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
             />
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-300">
+            <label className="text-sm font-medium text-slate-600 dark:text-slate-300">
               To date
             </label>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 shadow-sm [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-amber-400/50 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-75"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-300 dark:border-white/15 dark:bg-white/5 dark:text-slate-100 dark:[color-scheme:dark] dark:focus:ring-amber-400/50 dark:[&::-webkit-calendar-picker-indicator]:invert dark:[&::-webkit-calendar-picker-indicator]:opacity-75 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
             />
           </div>
           <Button onClick={loadPayout} disabled={loading}>
@@ -271,85 +270,85 @@ export default function ProductionPool() {
             <div className="prodpool-scroll overflow-x-auto">
               <table className="w-full min-w-[900px] text-sm">
                 <thead>
-                  <tr className="border-b-2 border-white/10">
-                    <th className="sticky left-0 z-[3] w-12 min-w-[3rem] max-w-[3rem] whitespace-nowrap bg-slate-900 pb-3 pr-2 text-center font-semibold text-slate-300">
+                  <tr className="border-b-2 border-slate-200 dark:border-white/10">
+                    <th className="sticky left-0 z-[3] w-12 min-w-[3rem] max-w-[3rem] whitespace-nowrap bg-white pb-3 pr-2 text-center font-semibold text-slate-600 dark:bg-slate-900 dark:text-slate-300">
                       Action
                     </th>
-                    <th className="sticky left-12 z-[2] whitespace-nowrap bg-slate-900 pb-3 pr-4 text-left font-semibold text-slate-300">
+                    <th className="sticky left-12 z-[2] whitespace-nowrap bg-white pb-3 pr-4 text-left font-semibold text-slate-600 dark:bg-slate-900 dark:text-slate-300">
                       Employee
                     </th>
-                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-300">
+                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-600 dark:text-slate-300">
                       Allocation %
                     </th>
-                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-300">
+                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-600 dark:text-slate-300">
                       Gross Production Tips
                     </th>
-                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-300">
+                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-600 dark:text-slate-300">
                       Weekly Tardiness (min)
                     </th>
-                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-300">
+                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-600 dark:text-slate-300">
                       Tardiness %
                     </th>
-                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-300">
+                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-600 dark:text-slate-300">
                       Tardiness Deduction
                     </th>
-                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-300">
+                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-600 dark:text-slate-300">
                       Manual Deduction
                     </th>
-                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-300">
+                    <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-600 dark:text-slate-300">
                       Redistribution Received
                     </th>
-                    <th className="whitespace-nowrap pb-3 pl-4 text-right font-semibold text-slate-300">
+                    <th className="whitespace-nowrap pb-3 pl-4 text-right font-semibold text-slate-600 dark:text-slate-300">
                       Final Weekly Production Payout
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/10">
+                <tbody className="divide-y divide-slate-200 dark:divide-white/10">
                   {payouts.map((p) => (
                     <tr
                       key={p.productionStaffId}
-                      className="hover:bg-white/5 transition-colors"
+                      className="transition-colors hover:bg-slate-100/70 dark:hover:bg-white/5"
                     >
-                      <td className="sticky left-0 z-[2] w-12 min-w-[3rem] max-w-[3rem] bg-slate-900 py-3 pr-2 text-center">
+                      <td className="sticky left-0 z-[2] w-12 min-w-[3rem] max-w-[3rem] bg-white py-3 pr-2 text-center dark:bg-slate-900">
                         <button
                           type="button"
                           onClick={() => openModal(p)}
-                          className="rounded-lg border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-slate-200 shadow-sm transition hover:border-amber-300/60 hover:text-amber-300"
+                          className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition hover:border-amber-400 hover:text-amber-700 dark:border-white/15 dark:bg-white/5 dark:text-slate-200 dark:hover:border-amber-300/60 dark:hover:text-amber-300"
                           title="Edit allocation & manual deduction"
                         >
                           Edit
                         </button>
                       </td>
-                      <td className="sticky left-12 z-[1] bg-slate-900 py-3 pr-4 font-medium text-slate-100">
+                      <td className="sticky left-12 z-[1] bg-white py-3 pr-4 font-medium text-slate-900 dark:bg-slate-900 dark:text-slate-100">
                         {p.name}
                         {!p.subjectToTardiness && (
-                          <span className="ml-1.5 text-xs text-slate-400">
+                          <span className="ml-1.5 text-xs text-slate-500 dark:text-slate-400">
                             (exempt)
                           </span>
                         )}
                       </td>
-                      <td className="py-3 pr-4 text-right tabular-nums text-slate-200">
+                      <td className="py-3 pr-4 text-right tabular-nums text-slate-700 dark:text-slate-200">
                         {p.allocationPercent ?? 0}%
                       </td>
-                      <td className="py-3 pr-4 text-right tabular-nums font-medium text-slate-100">
+                      <td className="py-3 pr-4 text-right tabular-nums font-medium text-slate-900 dark:text-slate-100">
                         {formatMoney(p.weeklyGrossProductionTips)}
                       </td>
-                      <td className="py-3 pr-4 text-right tabular-nums text-slate-200">
+                      <td className="py-3 pr-4 text-right tabular-nums text-slate-700 dark:text-slate-200">
                         {p.weeklyTardinessMinutes ?? 0}
                       </td>
-                      <td className="py-3 pr-4 text-right tabular-nums text-slate-200">
+                      <td className="py-3 pr-4 text-right tabular-nums text-slate-700 dark:text-slate-200">
                         {p.tardinessPercent ?? 0}%
                       </td>
-                      <td className="py-3 pr-4 text-right tabular-nums text-amber-300">
+                      <td className="py-3 pr-4 text-right tabular-nums text-amber-700 dark:text-amber-300">
                         {formatMoney(p.tardinessDeduction)}
                       </td>
-                      <td className="py-3 pr-4 text-right tabular-nums text-slate-200">
+                      <td className="py-3 pr-4 text-right tabular-nums text-slate-700 dark:text-slate-200">
                         {formatMoney(p.manualDeduction)}
                       </td>
-                      <td className="py-3 pr-4 text-right tabular-nums text-emerald-300">
+                      <td className="py-3 pr-4 text-right tabular-nums text-emerald-700 dark:text-emerald-300">
                         {formatMoney(p.tardinessRedistribution ?? 0)}
                       </td>
-                      <td className="py-3 pl-4 text-right tabular-nums font-semibold text-white">
+                      <td className="py-3 pl-4 text-right tabular-nums font-semibold text-slate-950 dark:text-white">
                         {formatMoney(p.finalWeeklyProductionPayout ?? 0)}
                       </td>
                     </tr>
@@ -358,7 +357,7 @@ export default function ProductionPool() {
               </table>
             </div>
             {payouts.length === 0 && (
-              <p className="py-8 text-center text-slate-300">No data.</p>
+              <p className="py-8 text-center text-slate-600 dark:text-slate-300">No data.</p>
             )}
           </LightCard>
 
@@ -367,8 +366,8 @@ export default function ProductionPool() {
             <div className="prodpool-scroll overflow-x-auto">
               <table className="w-full min-w-[600px] text-sm">
                 <thead>
-                  <tr className="border-b-2 border-white/10">
-                    <th className="sticky left-0 z-[2] whitespace-nowrap border-r border-white/5 bg-slate-900/70 pb-3 pr-4 text-left font-semibold text-slate-300">
+                  <tr className="border-b-2 border-slate-200 dark:border-white/10">
+                    <th className="sticky left-0 z-[2] whitespace-nowrap border-r border-slate-200 bg-white/95 pb-3 pr-4 text-left font-semibold text-slate-600 dark:border-white/5 dark:bg-slate-900/70 dark:text-slate-300">
                       Location
                     </th>
                     {(data?.dateRange
@@ -380,41 +379,41 @@ export default function ProductionPool() {
                     ).map((col) => (
                       <th
                         key={col.dateKey}
-                        className="whitespace-nowrap pb-3 pr-3 text-right font-semibold text-slate-300"
+                        className="whitespace-nowrap pb-3 pr-3 text-right font-semibold text-slate-600 dark:text-slate-300"
                       >
                         {col.label}
                       </th>
                     ))}
-                    <th className="whitespace-nowrap pb-3 pl-3 text-right font-semibold text-slate-300">
+                    <th className="whitespace-nowrap pb-3 pl-3 text-right font-semibold text-slate-600 dark:text-slate-300">
                       Weekly total
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/10">
+                <tbody className="divide-y divide-slate-200 dark:divide-white/10">
                   {locationWisePool.map((row) => (
                     <tr
                       key={row.locationId}
-                      className="hover:bg-white/5 transition-colors"
+                      className="transition-colors hover:bg-slate-100/70 dark:hover:bg-white/5"
                     >
-                      <td className="sticky left-0 z-[1] border-r border-white/5 bg-slate-900/60 py-3 pr-4 font-medium text-slate-100">
+                      <td className="sticky left-0 z-[1] border-r border-slate-200 bg-white/95 py-3 pr-4 font-medium text-slate-900 dark:border-white/5 dark:bg-slate-900/60 dark:text-slate-100">
                         {row.locationName}
                       </td>
                       {(row.dailyByDay || []).map((val, i) => (
                         <td
                           key={i}
-                          className="py-3 pr-3 text-right tabular-nums text-slate-200"
+                          className="py-3 pr-3 text-right tabular-nums text-slate-700 dark:text-slate-200"
                         >
                           {formatMoney(val)}
                         </td>
                       ))}
-                      <td className="py-3 pl-3 text-right tabular-nums font-semibold text-slate-100">
+                      <td className="py-3 pl-3 text-right tabular-nums font-semibold text-slate-900 dark:text-slate-100">
                         {formatMoney(row.weeklyPool ?? 0)}
                       </td>
                     </tr>
                   ))}
                   {locationWisePool.length > 0 && (
-                    <tr className="border-t-2 border-white/10 bg-white/5 font-semibold">
-                      <td className="sticky left-0 z-[1] border-r border-white/5 bg-slate-800/70 py-3 pr-4 text-slate-100">Total</td>
+                    <tr className="border-t-2 border-slate-200 bg-slate-100/70 font-semibold dark:border-white/10 dark:bg-white/5">
+                      <td className="sticky left-0 z-[1] border-r border-slate-200 bg-slate-100 py-3 pr-4 text-slate-900 dark:border-white/5 dark:bg-slate-800/70 dark:text-slate-100">Total</td>
                       {(data?.dateRange
                         ? getDateRangeColumns(
                             data.dateRange.startDate,
@@ -424,7 +423,7 @@ export default function ProductionPool() {
                       ).map((_, i) => (
                         <td
                           key={i}
-                          className="py-3 pr-3 text-right tabular-nums text-slate-100"
+                          className="py-3 pr-3 text-right tabular-nums text-slate-900 dark:text-slate-100"
                         >
                           {formatMoney(
                             locationWisePool.reduce(
@@ -435,7 +434,7 @@ export default function ProductionPool() {
                           )}
                         </td>
                       ))}
-                      <td className="py-3 pl-3 text-right tabular-nums text-white">
+                      <td className="py-3 pl-3 text-right tabular-nums text-slate-950 dark:text-white">
                         {formatMoney(totalPoolFromLocations)}
                       </td>
                     </tr>
@@ -444,7 +443,7 @@ export default function ProductionPool() {
               </table>
             </div>
             {locationWisePool.length === 0 && (
-              <p className="py-6 text-center text-slate-300">No data.</p>
+              <p className="py-6 text-center text-slate-600 dark:text-slate-300">No data.</p>
             )}
           </LightCard>
         </>
@@ -452,7 +451,7 @@ export default function ProductionPool() {
 
       {!data && !loading && (
         <LightCard>
-          <p className="py-8 text-center text-slate-300">No data loaded.</p>
+          <p className="py-8 text-center text-slate-600 dark:text-slate-300">No data loaded.</p>
         </LightCard>
       )}
 
@@ -466,18 +465,18 @@ export default function ProductionPool() {
           aria-labelledby="production-modal-title"
         >
           <div
-            className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/95 p-6 shadow-2xl backdrop-blur-md"
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white/95 p-6 shadow-2xl backdrop-blur-md dark:border-white/10 dark:bg-slate-900/95"
             onClick={(e) => e.stopPropagation()}
           >
             <h2
               id="production-modal-title"
-              className="text-lg font-semibold text-white"
+              className="text-lg font-semibold text-slate-900 dark:text-white"
             >
               Allocation & deductions -- {modalRow.name}
             </h2>
             <div className="mt-5 space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-300">
+                <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
                   Allocation %
                 </label>
                 <input
@@ -487,7 +486,7 @@ export default function ProductionPool() {
                   step="0.1"
                   value={editAllocationPercent}
                   onChange={(e) => setEditAllocationPercent(e.target.value)}
-                  className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-300 dark:border-white/15 dark:bg-white/5 dark:text-slate-100 dark:focus:ring-amber-400/50"
                 />
               </div>
               <div className="flex items-center gap-2">
@@ -500,22 +499,22 @@ export default function ProductionPool() {
                 />
                 <label
                   htmlFor="subjectToTardiness"
-                  className="text-sm font-medium text-slate-300"
+                  className="text-sm font-medium text-slate-700 dark:text-slate-300"
                 >
                   Subject to tardiness (uncheck for senior/exempt)
                 </label>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-300">
+                <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
                   Weekly tardiness (min)
                 </label>
-                <p className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-200">
+                <p className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-white/15 dark:bg-white/5 dark:text-slate-200">
                   {modalRow.weeklyTardinessMinutes ?? 0} min (from Weekly
                   Tardiness)
                 </p>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-300">
+                <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
                   Manual deduction ($)
                 </label>
                 <input
@@ -524,13 +523,13 @@ export default function ProductionPool() {
                   step="0.01"
                   value={editManualAmount}
                   onChange={(e) => setEditManualAmount(e.target.value)}
-                  className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-300 dark:border-white/15 dark:bg-white/5 dark:text-slate-100 dark:focus:ring-amber-400/50"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-300">
+                <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
                   Reason{" "}
-                  <span className="text-slate-400">
+                  <span className="text-slate-500 dark:text-slate-400">
                     (required if amount &gt; 0)
                   </span>
                 </label>
@@ -539,7 +538,7 @@ export default function ProductionPool() {
                   placeholder="e.g. Uniform, equipment"
                   value={editManualReason}
                   onChange={(e) => setEditManualReason(e.target.value)}
-                  className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-300 dark:border-white/15 dark:bg-white/5 dark:text-slate-100 dark:focus:ring-amber-400/50"
                 />
               </div>
             </div>
@@ -547,7 +546,7 @@ export default function ProductionPool() {
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-white/15 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10"
               >
                 Cancel
               </button>
