@@ -18,6 +18,7 @@ import {
 import {
   formatCsvNumeric,
 } from "../utils/reportUtils";
+import { FiInbox } from "react-icons/fi";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 
@@ -44,6 +45,22 @@ function LightCard({ children, className = "", title }) {
         <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
       )}
       {children}
+    </div>
+  );
+}
+
+function EmptyState({ title, message }) {
+  return (
+    <div className="py-6">
+      <div className="mx-auto flex max-w-md flex-col items-center gap-2 text-center">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-300/30 dark:bg-indigo-500/10 dark:text-indigo-300">
+          <FiInbox className="h-5 w-5" aria-hidden="true" />
+        </div>
+        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+          {title}
+        </p>
+        <p className="text-sm text-slate-600 dark:text-slate-300">{message}</p>
+      </div>
     </div>
   );
 }
@@ -357,7 +374,10 @@ export default function ProductionPool() {
               </table>
             </div>
             {payouts.length === 0 && (
-              <p className="py-8 text-center text-slate-600 dark:text-slate-300">No data.</p>
+              <EmptyState
+                title="No payout rows found"
+                message="No staff payout records are available for the selected date range."
+              />
             )}
           </LightCard>
 
@@ -443,7 +463,10 @@ export default function ProductionPool() {
               </table>
             </div>
             {locationWisePool.length === 0 && (
-              <p className="py-6 text-center text-slate-600 dark:text-slate-300">No data.</p>
+              <EmptyState
+                title="No location pool data"
+                message="No location-wise pool totals are available for the selected date range."
+              />
             )}
           </LightCard>
         </>
@@ -451,7 +474,10 @@ export default function ProductionPool() {
 
       {!data && !loading && (
         <LightCard>
-          <p className="py-8 text-center text-slate-600 dark:text-slate-300">No data loaded.</p>
+          <EmptyState
+            title="No data loaded"
+            message="Select a valid date range and click Load payout to fetch production pool data."
+          />
         </LightCard>
       )}
 
