@@ -44,12 +44,12 @@
   border-color: #0f172a;
 }
 
-/* Shared dark dropdown style for themed pages */
-.dark-select {
+/* Shared dropdown style: force dark native menu only in dark mode */
+.dark .dark-select {
   color-scheme: dark;
 }
 
-.dark-select option {
+.dark .dark-select option {
   background-color: #0f172a;
   color: #e2e8f0;
 }

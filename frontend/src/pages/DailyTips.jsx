@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import { useApp } from "../context/AppContext";
 import {
@@ -24,6 +25,7 @@ import {
 import {
   formatCsvNumeric,
 } from "../utils/reportUtils";
+import { FiClock, FiFileText } from "react-icons/fi";
 import Button from "../components/ui/Button";
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -818,13 +820,14 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
   );
 
   const pageTitle = stepTitle || "Daily Tips";
+  const modalRoot = typeof document !== "undefined" ? document.body : null;
 
   if (locationsLoading) {
     return (
       <div className="space-y-6">
-        {!embedded && <h1 className="text-2xl font-bold text-slate-100">{pageTitle}</h1>}
+        {!embedded && <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{pageTitle}</h1>}
         <div className="rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
-          <p className="text-slate-300">Loading locations…</p>
+          <p className="text-slate-600 dark:text-slate-300">Loading locations…</p>
         </div>
       </div>
     );
@@ -833,9 +836,9 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
   if (!locations?.length) {
     return (
       <div className="space-y-6">
-        {!embedded && <h1 className="text-2xl font-bold text-slate-100">{pageTitle}</h1>}
+        {!embedded && <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{pageTitle}</h1>}
         <div className="rounded-xl border border-slate-200 bg-transparent p-5 shadow-sm">
-          <p className="text-slate-300">
+          <p className="text-slate-600 dark:text-slate-300">
             No locations found. Add a location in Settings to continue.
           </p>
         </div>
@@ -871,15 +874,15 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
 
   return (
     <div className="space-y-6">
-      {!embedded && <h1 className="text-2xl font-bold text-slate-100">{pageTitle}</h1>}
-      <div className="flex gap-1 border-b border-white/10">
+      {!embedded && <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{pageTitle}</h1>}
+      <div className="flex gap-1 border-b border-slate-200 dark:border-white/10">
         <button
           type="button"
           onClick={() => setActiveSubTab("save")}
           className={`rounded-t-lg px-4 py-2.5 text-sm font-medium transition-colors ${
             activeSubTab === "save"
-              ? "border border-b-0 border-white/15 bg-white/10 text-white"
-              : "text-slate-300 hover:bg-white/5"
+              ? "border border-b-0 border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/10 text-slate-900 dark:text-white"
+              : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5"
           }`}
         >
           Save tips
@@ -889,8 +892,8 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
           onClick={() => setActiveSubTab("breakdown")}
           className={`rounded-t-lg px-4 py-2.5 text-sm font-medium transition-colors ${
             activeSubTab === "breakdown"
-              ? "border border-b-0 border-white/15 bg-white/10 text-white"
-              : "text-slate-300 hover:bg-white/5"
+              ? "border border-b-0 border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/10 text-slate-900 dark:text-white"
+              : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5"
           }`}
         >
           Breakdown
@@ -899,19 +902,19 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
 
       {activeSubTab === "save" && (
         <div className="space-y-4">
-          <div className="rounded-lg border border-white/10 border-t-0 bg-white/[0.03] px-4 py-4 shadow-sm sm:border-t sm:rounded-t-none">
+          <div className="rounded-lg border border-slate-200 dark:border-white/10 border-t-0 bg-white/90 dark:bg-white/[0.03] px-4 py-4 shadow-sm sm:border-t sm:rounded-t-none">
             <form
               onSubmit={handleSubmit}
               className="flex flex-wrap items-end gap-4"
             >
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
                   Location
                 </label>
                 <select
                   value={saveLocationId || ""}
                   onChange={(e) => setSaveLocationId(e.target.value || null)}
-                  className="dark-select min-w-[160px] rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 [color-scheme:dark]"
+                  className="dark-select min-w-[160px] rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 dark:[color-scheme:dark]"
                 >
                   {locations.map((loc) => (
                     <option key={loc._id} value={loc._id}>
@@ -921,18 +924,18 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
                   Date
                 </label>
                 <input
                   type="date"
                   value={saveDate}
                   onChange={(e) => setSaveDate(e.target.value)}
-                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-70"
+                  className="rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 dark:[color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25 [&::-webkit-calendar-picker-indicator]:cursor-pointer dark:[&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-70"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
                   {isSaveTheCove ? "Gross Tips ($)" : "AM Gross Tips ($)"}
                 </label>
                 <input
@@ -943,7 +946,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                   onChange={(e) =>
                     setForm({ ...form, amGrossTips: e.target.value })
                   }
-                  className="w-28 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100"
+                  className="w-28 rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                   placeholder="0"
                 />
                 {formErrors.amGrossTips && (
@@ -954,7 +957,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               </div>
               {!isSaveTheCove && (
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-300">
+                  <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
                     PM Gross Tips ($)
                   </label>
                   <input
@@ -965,7 +968,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                     onChange={(e) =>
                       setForm({ ...form, pmGrossTips: e.target.value })
                     }
-                    className="w-28 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100"
+                    className="w-28 rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                     placeholder="0"
                   />
                   {formErrors.pmGrossTips && (
@@ -985,16 +988,16 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 )}
               </Button>
               {checkingExistingTipInput ? (
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-slate-500 dark:text-slate-400">
                   Checking existing tips…
                 </span>
               ) : null}
             </form>
           </div>
 
-          <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-4 shadow-sm">
+          <div className="rounded-lg border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-white/[0.03] px-4 py-4 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold text-slate-100">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Awaiting calculation (saved tips not yet calculated)
               </h2>
               <Button
@@ -1011,42 +1014,51 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               </Button>
             </div>
             {loadingPending ? (
-              <p className="text-sm text-slate-400">Loading…</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
             ) : pendingItems.length === 0 ? (
-              <p className="text-sm text-slate-400">
-                None pending — either nothing saved yet, or every saved day has
-                been calculated. Edit saved tips to recalculate.
-              </p>
+              <div className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-4 py-5">
+                <div className="mx-auto flex max-w-md flex-col items-center gap-2 text-center">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-300/30 dark:bg-indigo-500/10 dark:text-indigo-300">
+                    <FiClock className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    No pending calculations
+                  </p>
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                    Saved tips are already calculated. Update tips to trigger a new calculation cycle.
+                  </p>
+                </div>
+              </div>
             ) : (
               <>
-                <div className="relative z-0 max-h-[75vh] overflow-auto pr-2 pb-2 [scrollbar-color:rgba(99,102,241,0.55)_rgba(15,23,42,0.7)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-400/60 [&::-webkit-scrollbar-thumb:hover]:bg-indigo-300/70">
+                <div className="relative z-0 max-h-[75vh] overflow-auto pr-2 pb-2 [scrollbar-color:rgba(99,102,241,0.55)_#e2e8f0] dark:[scrollbar-color:rgba(99,102,241,0.55)_rgba(15,23,42,0.7)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-200 dark:[&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-400/60 [&::-webkit-scrollbar-thumb:hover]:bg-indigo-300/70">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-white/10 text-left">
-                        <th className="sticky top-0 z-[1] bg-slate-900 pb-2 font-medium text-slate-200">
+                      <tr className="border-b border-slate-200 dark:border-white/10 text-left">
+                        <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 font-medium text-slate-700 dark:text-slate-200">
                           Date
                         </th>
-                        <th className="sticky top-0 z-[1] bg-slate-900 pb-2 font-medium text-slate-200">
+                        <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 font-medium text-slate-700 dark:text-slate-200">
                           Location
                         </th>
-                        <th className="sticky top-0 z-[1] bg-slate-900 pb-2 font-medium text-slate-200">
+                        <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 font-medium text-slate-700 dark:text-slate-200">
                           Added by
                         </th>
-                        <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200">
+                        <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                           AM gross ($)
                         </th>
-                        <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200">
+                        <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                           PM gross ($)
                         </th>
-                        <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200">
+                        <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                           4% pool ($)
                         </th>
-                        <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200">
+                        <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                           Actions
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/10">
+                    <tbody className="divide-y divide-slate-200 dark:divide-white/10">
                       {pendingItems.map((row) => {
                         const loc =
                           typeof row.locationId === "object"
@@ -1060,31 +1072,31 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                         const ymd = rowDateYmd(row);
                         return (
                           <tr key={row._id}>
-                            <td className="py-2.5 font-medium text-slate-100">
+                            <td className="py-2.5 font-medium text-slate-900 dark:text-slate-100">
                               {ymd}
                             </td>
-                            <td className="py-2.5 text-slate-300">
+                            <td className="py-2.5 text-slate-600 dark:text-slate-300">
                               {loc?.name ?? "—"}
                             </td>
-                            <td className="py-2.5 text-slate-300">
+                            <td className="py-2.5 text-slate-600 dark:text-slate-300">
                               <div className="flex flex-col gap-0.5">
-                                <span className="text-slate-100">
+                                <span className="text-slate-900 dark:text-slate-100">
                                   {tipAddedByLabel(row)}
                                 </span>
                                 {(row.createdByRole || "").trim() ? (
-                                  <span className="text-xs capitalize text-slate-400">
+                                  <span className="text-xs capitalize text-slate-500 dark:text-slate-400">
                                     {String(row.createdByRole).trim()}
                                   </span>
                                 ) : null}
                               </div>
                             </td>
-                            <td className="py-2.5 text-right tabular-nums text-slate-100">
+                            <td className="py-2.5 text-right tabular-nums text-slate-900 dark:text-slate-100">
                               {Number(row.amGrossTips).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                             </td>
-                            <td className="py-2.5 text-right tabular-nums text-slate-300">
+                            <td className="py-2.5 text-right tabular-nums text-slate-600 dark:text-slate-300">
                               {rowCove ? "—" : Number(row.pmGrossTips).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                             </td>
-                            <td className="py-2.5 text-right tabular-nums text-slate-100">
+                            <td className="py-2.5 text-right tabular-nums text-slate-900 dark:text-slate-100">
                               $
                               {productionPoolAmount(
                                 row.amGrossTips,
@@ -1121,7 +1133,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3 text-sm text-slate-300">
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 dark:border-white/10 pt-3 text-sm text-slate-600 dark:text-slate-300">
                   <span>
                     Page {pendingPage} of{" "}
                     {Math.max(1, Math.ceil(pendingTotal / pendingLimit))} (
@@ -1155,17 +1167,17 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
       )}
 
       {activeSubTab === "breakdown" && (
-        <div className="space-y-4 rounded-xl border border-white/10 border-t-0 bg-gradient-to-br from-white/[0.04] via-white/[0.03] to-transparent px-4 py-4 shadow-sm sm:border-t sm:rounded-t-none">
-          <div className="flex flex-col gap-4 border-b border-white/10 pb-4">
+        <div className="space-y-4 rounded-xl border border-slate-200 dark:border-white/10 border-t-0 bg-gradient-to-br from-white/[0.04] via-white/[0.03] to-transparent px-4 py-4 shadow-sm sm:border-t sm:rounded-t-none">
+          <div className="flex flex-col gap-4 border-b border-slate-200 dark:border-white/10 pb-4">
             <div className="flex flex-wrap items-end gap-4">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
                   Location
                 </label>
                 <select
                   value={viewerLocationId || ""}
                   onChange={(e) => setViewerLocationId(e.target.value || null)}
-                  className="dark-select min-w-[160px] rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 [color-scheme:dark]"
+                  className="dark-select min-w-[160px] rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 dark:[color-scheme:dark]"
                 >
                   {locations.map((loc) => (
                     <option key={loc._id} value={loc._id}>
@@ -1175,14 +1187,14 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
                   Date
                 </label>
                 <input
                   type="date"
                   value={viewerDate}
                   onChange={(e) => setViewerDate(e.target.value)}
-                  className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-70"
+                  className="rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 dark:[color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25 [&::-webkit-calendar-picker-indicator]:cursor-pointer dark:[&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-70"
                 />
               </div>
               <Button
@@ -1221,15 +1233,15 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
             </div>
 
             {breakdownView?.locationId && (
-              <div className="rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2.5 text-sm shadow-sm">
+              <div className="rounded-xl border border-slate-200 dark:border-white/12 bg-slate-100/80 dark:bg-white/[0.06] px-3 py-2.5 text-sm shadow-sm">
                 {loadingCalculation && !breakdownSavedTips ? (
-                  <span className="flex items-center gap-2 text-slate-300">
+                  <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
                     {spinner}
                     Loading saved gross tips…
                   </span>
                 ) : breakdownSavedTips ? (
-                  <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-slate-300">
-                    <span className="font-semibold text-slate-100">
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-slate-600 dark:text-slate-300">
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">
                       Saved gross tips
                     </span>
                     {isBreakdownTheCove ? (
@@ -1265,7 +1277,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                       </>
                     )}
                     {loadingCalculation && (
-                      <span className="flex items-center gap-2 text-slate-300">
+                      <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
                         {spinner}
                         Calculating employee split…
                       </span>
@@ -1283,15 +1295,29 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
           </div>
 
           {!breakdownView?.locationId && (
-            <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
-              Select location and date, then load breakdown.
+            <div className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-4 py-5">
+              <div className="mx-auto flex max-w-md flex-col items-center gap-2 text-center">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-300/30 dark:bg-indigo-500/10 dark:text-indigo-300">
+                  <FiFileText className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                  Breakdown is not loaded
+                </p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Select location and date, then click{" "}
+                  <span className="font-semibold text-indigo-700 dark:text-indigo-300">
+                    Load breakdown
+                  </span>
+                  .
+                </p>
+              </div>
             </div>
           )}
 
           {breakdownView?.locationId && (
             <>
-          <div className="rounded-xl border border-white/12 bg-white/[0.06] px-4 py-3 shadow-sm">
-            <h2 className="mb-2 text-sm font-semibold text-slate-100">
+          <div className="rounded-xl border border-slate-200 dark:border-white/12 bg-slate-100/80 dark:bg-white/[0.06] px-4 py-3 shadow-sm">
+            <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
               Manual clock times (Connecteam employees)
             </h2>
             <form
@@ -1344,7 +1370,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               }}
             >
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-300">
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
               Employee
             </label>
             <select
@@ -1356,7 +1382,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 }))
               }
               disabled={breakdownEmployeesLoading || manualSaving}
-              className="dark-select min-w-[200px] max-w-xs rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 disabled:opacity-60 [color-scheme:dark]"
+              className="dark-select min-w-[200px] max-w-xs rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 disabled:opacity-60 dark:[color-scheme:dark]"
             >
               <option value="">
                 {breakdownEmployeesLoading
@@ -1379,7 +1405,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-300">
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
               Clock in
             </label>
             <input
@@ -1388,11 +1414,11 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               onChange={(e) =>
                 setManualForm((f) => ({ ...f, clockIn: e.target.value }))
               }
-              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
+              className="rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 dark:[color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-300">
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
               Clock out
             </label>
             <input
@@ -1401,7 +1427,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               onChange={(e) =>
                 setManualForm((f) => ({ ...f, clockOut: e.target.value }))
               }
-              className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100 [color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
+              className="rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 dark:[color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
             />
           </div>
           <Button type="submit" disabled={manualSaving}>
@@ -1411,7 +1437,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
             {manualForm.clockIn &&
               manualForm.clockOut &&
               breakdownLocation?.name && (
-                <p className="mb-4 text-xs text-slate-300">
+                <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
                   {(() => {
                     const { amHours, pmHours } = splitWorkedHoursForLocation(
                       manualForm.clockIn,
@@ -1450,43 +1476,43 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 </p>
               )}
         {manualLoading ? (
-          <p className="text-sm text-slate-300">Loading manual entries…</p>
+          <p className="text-sm text-slate-600 dark:text-slate-300">Loading manual entries…</p>
         ) : manualRows.length === 0 ? (
-          <p className="text-sm text-slate-300">No manual entries for this date.</p>
+          <p className="text-sm text-slate-600 dark:text-slate-300">No manual entries for this date.</p>
         ) : (
-          <div className="relative z-0 max-h-[65vh] overflow-auto pr-2 pb-2 [scrollbar-color:rgba(99,102,241,0.55)_rgba(15,23,42,0.7)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-400/60 [&::-webkit-scrollbar-thumb:hover]:bg-indigo-300/70">
+          <div className="relative z-0 max-h-[65vh] overflow-auto pr-2 pb-2 [scrollbar-color:rgba(99,102,241,0.55)_#e2e8f0] dark:[scrollbar-color:rgba(99,102,241,0.55)_rgba(15,23,42,0.7)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-200 dark:[&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-400/60 [&::-webkit-scrollbar-thumb:hover]:bg-indigo-300/70">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-white/10 text-left">
-                  <th className="sticky left-0 top-0 z-[2] bg-slate-900 px-3 py-3 font-medium text-slate-200">
+                <tr className="border-b border-slate-200 dark:border-white/10 text-left">
+                  <th className="sticky left-0 top-0 z-[2] bg-white dark:bg-slate-900 px-3 py-3 font-medium text-slate-700 dark:text-slate-200">
                     Employee
                   </th>
-                  <th className="sticky top-0 z-[1] bg-slate-900 px-3 py-3 font-medium text-slate-200">
+                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 px-3 py-3 font-medium text-slate-700 dark:text-slate-200">
                     Clock in
                   </th>
-                  <th className="sticky top-0 z-[1] bg-slate-900 px-3 py-3 font-medium text-slate-200">
+                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 px-3 py-3 font-medium text-slate-700 dark:text-slate-200">
                     Clock out
                   </th>
                   {isBreakdownTheCove ? (
-                    <th className="sticky top-0 z-[1] bg-slate-900 px-3 py-3 text-right font-medium text-slate-200">
+                    <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 px-3 py-3 text-right font-medium text-slate-700 dark:text-slate-200">
                       Hours
                     </th>
                   ) : (
                     <>
-                      <th className="sticky top-0 z-[1] bg-slate-900 px-3 py-3 text-right font-medium text-slate-200">
+                      <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 px-3 py-3 text-right font-medium text-slate-700 dark:text-slate-200">
                         AM hrs
                       </th>
-                      <th className="sticky top-0 z-[1] bg-slate-900 px-3 py-3 text-right font-medium text-slate-200">
+                      <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 px-3 py-3 text-right font-medium text-slate-700 dark:text-slate-200">
                         PM hrs
                       </th>
                     </>
                   )}
-                  <th className="sticky top-0 z-[1] bg-slate-900 px-3 py-3 text-right font-medium text-slate-200">
+                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 px-3 py-3 text-right font-medium text-slate-700 dark:text-slate-200">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/10">
+              <tbody className="divide-y divide-slate-200 dark:divide-white/10">
                 {manualRows.map((row) => {
                   const emp = row.employeeId;
                   const empName =
@@ -1497,25 +1523,25 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                   const pm = Number(row.pmHours) || 0;
                   return (
                     <tr key={row._id}>
-                      <td className="sticky left-0 z-[1] bg-slate-900 px-3 py-2.5 font-medium text-slate-100">
+                      <td className="sticky left-0 z-[1] bg-white dark:bg-slate-900 px-3 py-2.5 font-medium text-slate-900 dark:text-slate-100">
                         {empName}
                       </td>
-                      <td className="px-3 py-2.5 tabular-nums text-slate-300">
+                      <td className="px-3 py-2.5 tabular-nums text-slate-600 dark:text-slate-300">
                         {formatClockLabel(row.clockIn)}
                       </td>
-                      <td className="px-3 py-2.5 tabular-nums text-slate-300">
+                      <td className="px-3 py-2.5 tabular-nums text-slate-600 dark:text-slate-300">
                         {formatClockLabel(row.clockOut)}
                       </td>
                       {isBreakdownTheCove ? (
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
+                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-600 dark:text-slate-300">
                           {(am + pm).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                       ) : (
                         <>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
+                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-600 dark:text-slate-300">
                             {am.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
+                          <td className="px-3 py-2.5 text-right tabular-nums text-slate-600 dark:text-slate-300">
                             {pm.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                           </td>
                         </>
@@ -1545,26 +1571,16 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
       )}
 
       {calculation && !calculationError && (
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 shadow-sm">
-          <h2 className="mb-4 text-base font-semibold text-slate-100">
+        <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-white/[0.03] p-5 shadow-sm">
+          <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-slate-100">
             Daily calculation (audit)
           </h2>
 
-          {calculation.inputs?.redistributionPool > 0 && (
-            <div className="mb-3 rounded-lg border border-indigo-300/35 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-200">
-              Redistribution pool:{" "}
-              <strong className="text-indigo-100">
-                ${Number(calculation.inputs.redistributionPool).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
-              </strong>{" "}
-              (deducted from selected employee(s) and redistributed to others by worked hours)
-            </div>
-          )}
-
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-3">
-            <div className="flex flex-wrap items-center gap-4 text-sm text-slate-300">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-white/10 pb-3">
+            <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600 dark:text-slate-300">
               <span>
                 4% production pool:{" "}
-                <strong className="text-slate-100">
+                <strong className="text-slate-900 dark:text-slate-100">
                   ${productionDeductionDollars?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "0.00"}
                 </strong>
               </span>
@@ -1599,10 +1615,10 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
             </div>
             {totalRows > 0 && (
               <div className="flex flex-wrap items-center gap-3">
-                <span className="text-sm text-slate-400">
+                <span className="text-sm text-slate-500 dark:text-slate-400">
                   {totalRows} employee{totalRows !== 1 ? "s" : ""}
                 </span>
-                <label className="flex items-center gap-2 text-sm text-slate-300">
+                <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                   Rows per page
                   <select
                     value={pageSize}
@@ -1610,7 +1626,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                       setPageSize(Number(e.target.value));
                       setPage(1);
                     }}
-                    className="dark-select rounded border border-white/15 bg-white/5 px-2 py-1 text-sm text-slate-100 [color-scheme:dark]"
+                    className="dark-select rounded border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-2 py-1 text-sm text-slate-900 dark:text-slate-100 dark:[color-scheme:dark]"
                   >
                     {PAGE_SIZES.map((n) => (
                       <option key={n} value={n}>
@@ -1623,123 +1639,123 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
             )}
           </div>
 
-          <div className="relative z-0 max-h-[65vh] overflow-auto pr-2 pb-2 [scrollbar-color:rgba(99,102,241,0.55)_rgba(15,23,42,0.7)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-400/60 [&::-webkit-scrollbar-thumb:hover]:bg-indigo-300/70">
+          <div className="relative z-0 max-h-[65vh] overflow-auto pr-2 pb-2 [scrollbar-color:rgba(99,102,241,0.55)_#e2e8f0] dark:[scrollbar-color:rgba(99,102,241,0.55)_rgba(15,23,42,0.7)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-200 dark:[&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-400/60 [&::-webkit-scrollbar-thumb:hover]:bg-indigo-300/70">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-white/10">
-                  <th className="sticky left-0 top-0 z-[2] bg-slate-900 pb-2 pl-3 pt-2 text-left font-medium text-slate-200">
+                <tr className="border-b border-slate-200 dark:border-white/10">
+                  <th className="sticky left-0 top-0 z-[2] bg-white dark:bg-slate-900 pb-2 pl-3 pt-2 text-left font-medium text-slate-700 dark:text-slate-200">
                     Employee
                   </th>
-                  <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-left font-medium text-slate-200">
+                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-left font-medium text-slate-700 dark:text-slate-200">
                     Clock In
                   </th>
-                  <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-left font-medium text-slate-200">
+                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-left font-medium text-slate-700 dark:text-slate-200">
                     Clock Out
                   </th>
-                  <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-left font-medium text-slate-200">
+                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-left font-medium text-slate-700 dark:text-slate-200">
                     Break In
                   </th>
-                  <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-left font-medium text-slate-200">
+                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-left font-medium text-slate-700 dark:text-slate-200">
                     Break Out
                   </th>
                   <th
-                    className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200"
+                    className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200"
                     title="Connecteam manual breaks that overlap first clock-in through last clock-out (deducted from worked hours for tips)."
                   >
                     Break (hrs)
                   </th>
                   {showShiftSplit ? (
                     <>
-                      <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200">
+                      <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                         AM hrs
                       </th>
-                      <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200">
+                      <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                         PM hrs
                       </th>
-                      <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200">
+                      <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                         AM tips
                       </th>
-                      <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200">
+                      <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                         PM tips
                       </th>
                     </>
                   ) : (
                     <>
-                      <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200">
+                      <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                         Hours
                       </th>
-                      <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200">
+                      <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                         Tips
                       </th>
                     </>
                   )}
-                  <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200">
+                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                     Net tips
                   </th>
                   <th
-                    className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200"
+                    className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200"
                     title="Equal share of Deduct & Redistribute pool (same role as Weekly Payout)"
                   >
                     MR
                   </th>
-                  <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200">
+                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                     Total
                   </th>
-                  <th className="sticky top-0 z-[1] bg-slate-900 pb-2 text-right font-medium text-slate-200">
+                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                     Adjust
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/10">
+              <tbody className="divide-y divide-slate-200 dark:divide-white/10">
                 {pageAllocations.map((a) => (
                   <tr
                     key={a.employeeId ?? a.employeeName}
-                    className="hover:bg-white/5"
+                    className="hover:bg-slate-100 dark:hover:bg-white/5"
                   >
-                    <td className="sticky left-0 z-[1] bg-slate-900 py-2 pl-3 font-medium text-slate-100">
+                    <td className="sticky left-0 z-[1] bg-white dark:bg-slate-900 py-2 pl-3 font-medium text-slate-900 dark:text-slate-100">
                       {a.employeeName}
                     </td>
-                    <td className="py-2 tabular-nums text-slate-300">
+                    <td className="py-2 tabular-nums text-slate-600 dark:text-slate-300">
                       {formatClockLabel(a.clockIn)}
                     </td>
-                    <td className="py-2 tabular-nums text-slate-300">
+                    <td className="py-2 tabular-nums text-slate-600 dark:text-slate-300">
                       {formatClockLabel(a.clockOut)}
                     </td>
-                    <td className="py-2 tabular-nums text-slate-300">
+                    <td className="py-2 tabular-nums text-slate-600 dark:text-slate-300">
                       {formatClockLabel(a.breakClockIn)}
                     </td>
-                    <td className="py-2 tabular-nums text-slate-300">
+                    <td className="py-2 tabular-nums text-slate-600 dark:text-slate-300">
                       {formatClockLabel(a.breakClockOut)}
                     </td>
-                    <td className="py-2 text-right tabular-nums text-slate-300">
+                    <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
                       {formatAllocHours(a.connecteamBreakHours)}
                     </td>
                     {showShiftSplit ? (
                       <>
-                        <td className="py-2 text-right tabular-nums text-slate-300">
+                        <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
                           {a.amWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
-                        <td className="py-2 text-right tabular-nums text-slate-300">
+                        <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
                           {a.pmWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
-                        <td className="py-2 text-right tabular-nums text-slate-300">
+                        <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
                           ${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
-                        <td className="py-2 text-right tabular-nums text-slate-300">
+                        <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
                           ${displayedPmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                       </>
                     ) : (
                       <>
-                        <td className="py-2 text-right tabular-nums text-slate-300">
+                        <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
                           {a.amWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
-                        <td className="py-2 text-right tabular-nums text-slate-300">
+                        <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
                           ${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                       </>
                     )}
-                    <td className="py-2 text-right tabular-nums font-medium text-slate-200">
+                    <td className="py-2 text-right tabular-nums font-medium text-slate-700 dark:text-slate-200">
                       ${netTipsAfterDeductions(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                     </td>
                     <td
@@ -1751,14 +1767,14 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                     >
                       ${Number(a.redistributionShare ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                     </td>
-                    <td className="py-2 text-right font-medium tabular-nums text-slate-100">
+                    <td className="py-2 text-right font-medium tabular-nums text-slate-900 dark:text-slate-100">
                       ${(a.finalTips ?? a.totalTips)?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                     </td>
                     <td className="py-2 text-right">
                       <button
                         type="button"
                         onClick={() => openAdjustModal(a)}
-                        className="rounded-lg border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-medium text-slate-200 hover:bg-white/15"
+                        className="rounded-lg border border-slate-300 dark:border-white/20 bg-slate-100 dark:bg-white/10 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-white/15"
                         title="Cash advance & redistribute adjustments"
                       >
                         Adjust
@@ -1768,47 +1784,47 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 ))}
               </tbody>
               {normalizedTotals && (
-                <tfoot className="border-t-2 border-white/20">
-                  <tr className="bg-white/5 font-semibold">
-                    <td className="py-3 pl-2 text-slate-100">Total</td>
+                <tfoot className="border-t-2 border-slate-300 dark:border-white/20">
+                  <tr className="bg-slate-100 dark:bg-white/5 font-semibold">
+                    <td className="py-3 pl-2 text-slate-900 dark:text-slate-100">Total</td>
                     <td className="py-3" colSpan={2} />
                     <td className="py-3" />
                     <td className="py-3" />
-                    <td className="py-3 text-right tabular-nums text-slate-100">
+                    <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
                       {formatAllocHours(normalizedTotals.connecteamBreakHours)}
                     </td>
                     {showShiftSplit ? (
                       <>
-                        <td className="py-3 text-right tabular-nums text-slate-100">
+                        <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
                           {normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
-                        <td className="py-3 text-right tabular-nums text-slate-100">
+                        <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
                           {normalizedTotals.pmWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
-                        <td className="py-3 text-right tabular-nums text-slate-100">
+                        <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
                           ${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
-                        <td className="py-3 text-right tabular-nums text-slate-100">
+                        <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
                           ${normalizedTotals.pmTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                       </>
                     ) : (
                       <>
-                        <td className="py-3 text-right tabular-nums text-slate-100">
+                        <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
                           {normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
-                        <td className="py-3 text-right tabular-nums text-slate-100">
+                        <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
                           ${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                         </td>
                       </>
                     )}
-                    <td className="py-3 text-right tabular-nums text-slate-100">
+                    <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
                       ${normalizedTotals.netTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                     </td>
                     <td className="py-3 text-right tabular-nums text-emerald-300">
                       ${normalizedTotals.redistributionShare.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                     </td>
-                    <td className="py-3 text-right tabular-nums text-slate-100">
+                    <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
                       ${normalizedTotals.totalTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                     </td>
                     <td className="py-3" />
@@ -1819,40 +1835,40 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
           </div>
 
           {normalizedTotals && (
-            <div className="mt-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
-              <p className="mb-2 text-sm font-semibold text-slate-100">
+            <div className="mt-3 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 px-4 py-3">
+              <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Totals
               </p>
-              <div className="flex flex-wrap gap-6 text-sm text-slate-300">
+              <div className="flex flex-wrap gap-6 text-sm text-slate-600 dark:text-slate-300">
                 {showShiftSplit ? (
                   <>
                     <span>
                       AM hours:{" "}
-                      <strong className="text-slate-100">
+                      <strong className="text-slate-900 dark:text-slate-100">
                         {normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
                     </span>
                     <span>
                       PM hours:{" "}
-                      <strong className="text-slate-100">
+                      <strong className="text-slate-900 dark:text-slate-100">
                         {normalizedTotals.pmWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
                     </span>
                     <span>
                       Break (Connecteam):{" "}
-                      <strong className="text-slate-100">
+                      <strong className="text-slate-900 dark:text-slate-100">
                         {formatAllocHours(normalizedTotals.connecteamBreakHours)}
                       </strong>
                     </span>
                     <span>
                       AM tips:{" "}
-                      <strong className="text-slate-100">
+                      <strong className="text-slate-900 dark:text-slate-100">
                         ${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
                     </span>
                     <span>
                       PM tips:{" "}
-                      <strong className="text-slate-100">
+                      <strong className="text-slate-900 dark:text-slate-100">
                         ${normalizedTotals.pmTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
                     </span>
@@ -1861,19 +1877,19 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                   <>
                     <span>
                       Hours:{" "}
-                      <strong className="text-slate-100">
+                      <strong className="text-slate-900 dark:text-slate-100">
                         {normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
                     </span>
                     <span>
                       Break (Connecteam):{" "}
-                      <strong className="text-slate-100">
+                      <strong className="text-slate-900 dark:text-slate-100">
                         {formatAllocHours(normalizedTotals.connecteamBreakHours)}
                       </strong>
                     </span>
                     <span>
                       Tips:{" "}
-                      <strong className="text-slate-100">
+                      <strong className="text-slate-900 dark:text-slate-100">
                         ${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
                     </span>
@@ -1881,7 +1897,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 )}
                 <span>
                   Net tips (after deductions):{" "}
-                  <strong className="text-slate-100">
+                  <strong className="text-slate-900 dark:text-slate-100">
                     ${normalizedTotals.netTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                   </strong>
                 </span>
@@ -1893,7 +1909,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 </span>
                 <span>
                   Total (final):{" "}
-                  <strong className="text-slate-100">
+                  <strong className="text-slate-900 dark:text-slate-100">
                     ${normalizedTotals.totalTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                   </strong>
                 </span>
@@ -1902,23 +1918,23 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
           )}
 
           {totalRows > 0 && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 dark:border-white/10 pt-3">
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage <= 1}
-                className="rounded border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-slate-200 disabled:opacity-50 hover:bg-white/15"
+                className="rounded border border-slate-300 dark:border-white/20 bg-slate-100 dark:bg-white/10 px-3 py-1.5 text-sm text-slate-700 dark:text-slate-200 disabled:opacity-50 hover:bg-slate-200 dark:hover:bg-white/15"
               >
                 Previous
               </button>
-              <span className="text-sm text-slate-300">
+              <span className="text-sm text-slate-600 dark:text-slate-300">
                 Page {currentPage} of {totalPages}
               </span>
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage >= totalPages}
-                className="rounded border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-slate-200 disabled:opacity-50 hover:bg-white/15"
+                className="rounded border border-slate-300 dark:border-white/20 bg-slate-100 dark:bg-white/10 px-3 py-1.5 text-sm text-slate-700 dark:text-slate-200 disabled:opacity-50 hover:bg-slate-200 dark:hover:bg-white/15"
               >
                 Next
               </button>
@@ -1931,36 +1947,38 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
         </div>
       )}
 
-      {manualRemoveRow && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="manual-remove-title"
-        >
-          <div className="w-full max-w-md rounded-xl border border-white/10 bg-slate-900/95 p-5 shadow-2xl">
+      {manualRemoveRow &&
+        modalRoot &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-md"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="manual-remove-title"
+          >
+          <div className="w-full max-w-md rounded-xl border border-slate-200 dark:border-white/10 bg-white/95 dark:bg-white dark:bg-slate-900/95 p-5 shadow-2xl">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h3
                   id="manual-remove-title"
-                  className="text-base font-semibold text-slate-100"
+                  className="text-base font-semibold text-slate-900 dark:text-slate-100"
                 >
                   Remove manual entry?
                 </h3>
-                <p className="mt-2 text-sm text-slate-300">
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
                   This removes manual hours for{" "}
-                  <strong className="text-slate-100">
+                  <strong className="text-slate-900 dark:text-slate-100">
                     {typeof manualRemoveRow.employeeId === "object" &&
                     manualRemoveRow.employeeId?.name
                       ? manualRemoveRow.employeeId.name
                       : "this employee"}
                   </strong>{" "}
                   on{" "}
-                  <strong className="text-slate-100">
+                  <strong className="text-slate-900 dark:text-slate-100">
                     {breakdownView?.dateStr ?? "—"}
                   </strong>{" "}
                   at{" "}
-                  <strong className="text-slate-100">
+                  <strong className="text-slate-900 dark:text-slate-100">
                     {breakdownLocation?.name ?? "this location"}
                   </strong>
                   . Recalculate after removal if you already loaded tips.
@@ -1969,7 +1987,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               <button
                 type="button"
                 onClick={() => !manualRemoveSaving && setManualRemoveRow(null)}
-                className="rounded px-2 py-1 text-slate-300 hover:bg-white/10"
+                className="rounded px-2 py-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10"
                 aria-label="Close"
               >
                 ✕
@@ -2001,30 +2019,30 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               </Button>
             </div>
           </div>
-        </div>
-      )}
+          </div>,
+          modalRoot,
+        )}
 
-      {adjustModalOpen && adjustEmployee && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="w-full max-w-lg rounded-xl border border-white/10 bg-slate-900/95 p-5 shadow-2xl">
+      {adjustModalOpen &&
+        adjustEmployee &&
+        modalRoot &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-md"
+            role="dialog"
+            aria-modal="true"
+          >
+          <div className="w-full max-w-lg rounded-xl border border-slate-200 dark:border-white/10 bg-white/95 dark:bg-slate-900/95 p-5 shadow-2xl">
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-base font-semibold text-slate-100">
+                <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
                   Adjustments — {adjustEmployee.employeeName}
                 </h3>
-                <p className="mt-1 text-sm text-slate-300">
-                  Cash Advance is deducted only from this employee. Deduct &amp; Redistribute is deducted
-                  from this employee then redistributed across other employees based on worked hours.
-                </p>
               </div>
               <button
                 type="button"
                 onClick={() => setAdjustModalOpen(false)}
-                className="rounded px-2 py-1 text-slate-300 hover:bg-white/10"
+                className="rounded px-2 py-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10"
                 aria-label="Close"
               >
                 ✕
@@ -2033,7 +2051,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
                   Cash Advance deduction ($)
                 </label>
                 <input
@@ -2042,11 +2060,11 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                   step="0.01"
                   value={adjustCashAdvance}
                   onChange={(e) => setAdjustCashAdvance(e.target.value)}
-                  className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100"
+                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
                   Deduct &amp; Redistribute ($)
                 </label>
                 <input
@@ -2055,15 +2073,15 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                   step="0.01"
                   value={adjustRedistribute}
                   onChange={(e) => setAdjustRedistribute(e.target.value)}
-                  className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100"
+                  className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                 />
               </div>
             </div>
 
             <div className="mt-4">
-              <label className="mb-1 block text-xs font-medium text-slate-300">
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
                 Reason for Deduct &amp; Redistribute{" "}
-                <span className="font-normal text-slate-400">
+                <span className="font-normal text-slate-500 dark:text-slate-400">
                   (required if amount &gt; 0)
                 </span>
               </label>
@@ -2072,7 +2090,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 value={adjustRedistributeReason}
                 onChange={(e) => setAdjustRedistributeReason(e.target.value)}
                 placeholder="e.g. Shared register shortage"
-                className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-100"
+                className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
               />
             </div>
 
@@ -2090,11 +2108,15 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               </Button>
             </div>
           </div>
-        </div>
-      )}
+          </div>,
+          modalRoot,
+        )}
     </div>
   );
 }
+
+
+
 
 
 
