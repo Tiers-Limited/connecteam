@@ -91,6 +91,10 @@ router.post(
   body('employeeId').isMongoId(),
   body('locationId').isMongoId(),
   weekStartBody,
+  body('weekEnd')
+    .optional({ values: 'falsy' })
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('weekEnd must be YYYY-MM-DD'),
   body('totalTardinessMinutes').isFloat({ min: 0 }),
   validate,
   weeklyPayoutController.upsertTardiness

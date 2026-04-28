@@ -147,14 +147,28 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
     (p) => {
       setModalEmployee(p);
       const byDate = {};
+      let byDateTotal = 0;
+      let firstDateKey = "";
       (p.dailyBreakdown || []).forEach((d) => {
         const dateKey = String(d?.date || "").slice(0, 10);
         const mins = Number(d?.tardinessMinutes) || 0;
         if (dateKey && mins > 0) {
           byDate[dateKey] = String(mins);
+          byDateTotal += mins;
+          if (!firstDateKey) firstDateKey = dateKey;
         }
       });
-      setEditTardinessByDate(byDate);
+      const savedWeekly = Math.max(0, Number(p?.weeklyTardinessMinutes) || 0);
+      if (savedWeekly !== byDateTotal && firstDateKey) {
+        const adjusted = {};
+        Object.keys(byDate).forEach((k) => {
+          adjusted[k] = "0";
+        });
+        adjusted[firstDateKey] = String(savedWeekly);
+        setEditTardinessByDate(adjusted);
+      } else {
+        setEditTardinessByDate(byDate);
+      }
       setEditManualAmount(String(p.manualDeduction ?? 0));
       setEditManualReason(manualEdits[p.employeeId]?.reason ?? "");
     },
@@ -209,6 +223,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
         employeeId: modalEmployee.employeeId,
         locationId: selectedLocationId,
         weekStart: startDate.trim().slice(0, 10),
+        weekEnd: endDate.trim().slice(0, 10),
         totalTardinessMinutes: computedWeeklyTardiness,
       });
       await upsertManualDeduction({

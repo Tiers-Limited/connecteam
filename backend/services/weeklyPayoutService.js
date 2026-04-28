@@ -194,11 +194,12 @@ async function getTardiness(locationId, weekStart) {
   return WeeklyTardiness.find({ locationId, weekStart: ws }).populate('employeeId', 'name').lean();
 }
 
-async function upsertTardiness(employeeId, locationId, weekStart, totalTardinessMinutes) {
+async function upsertTardiness(employeeId, locationId, weekStart, totalTardinessMinutes, weekEnd = null) {
   const ws = toWeekStartUTC(weekStart);
+  const we = weekEnd ? toWeekEndUTC(weekEnd) : null;
   return WeeklyTardiness.findOneAndUpdate(
-    { employeeId, locationId, weekStart: ws },
-    { $set: { totalTardinessMinutes } },
+    { employeeId, locationId, weekStart: ws, weekEnd: we },
+    { $set: { totalTardinessMinutes, weekEnd: we } },
     { new: true, upsert: true }
   );
 }
