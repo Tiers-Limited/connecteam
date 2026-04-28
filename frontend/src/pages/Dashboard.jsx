@@ -218,11 +218,12 @@ function DashboardSkeleton() {
 
 export default function Dashboard() {
   const { locations, refreshLocations } = useApp();
+  const hasFreshCache = cachedSummary && Date.now() - cachedAt < CACHE_TTL_MS;
   const [summary, setSummary] = useState(() => {
     if (cachedSummary && Date.now() - cachedAt < CACHE_TTL_MS) return cachedSummary;
     return null;
   });
-  const [loading, setLoading] = useState(!cachedSummary);
+  const [loading, setLoading] = useState(!hasFreshCache);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -234,10 +235,14 @@ export default function Dashboard() {
         setSummary(cachedSummary);
         setLoading(false);
         setRefreshing(true);
+      } else {
+        setLoading(true);
       }
 
       try {
-        await refreshLocations();
+        // Keep dashboard fetch independent; location refresh failures should not
+        // leave dashboard stuck with empty data.
+        await refreshLocations().catch(() => {});
         const data = await getDashboardSummary();
         if (!cancelled) {
           setSummary(data);
@@ -272,18 +277,37 @@ export default function Dashboard() {
         })()
       : 'Previous week';
 
-  const payoutChartData = payoutByLocation.map((l) => ({ name: l.locationName, payout: l.totalPayable }));
+  const payoutByName = new Map(
+    payoutByLocation.map((l) => [
+      String(l?.locationName || '').trim(),
+      Number(l?.totalPayable) || 0,
+    ]),
+  );
   const dailyChartData = dailyTipsLast7.map((d) => ({
     date: d.date,
     label: new Date(d.date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
     gross: d.totalGross,
     byLocation: d.byLocation || {},
   }));
-  const locationSeries = Array.from(
+  const locationSeriesInDaily = Array.from(
     dailyChartData.reduce((set, row) => {
       Object.keys(row.byLocation || {}).forEach((name) => set.add(name));
       return set;
     }, new Set())
+  );
+  const allLocationNames = Array.from(
+    new Set([
+      ...((locations || []).map((l) => String(l?.name || '').trim()).filter(Boolean)),
+      ...Array.from(payoutByName.keys()).filter(Boolean),
+      ...locationSeriesInDaily.filter(Boolean),
+    ]),
+  );
+  const payoutChartData = allLocationNames.map((name) => ({
+    name,
+    payout: payoutByName.get(name) ?? 0,
+  }));
+  const locationSeries = allLocationNames.filter((name) =>
+    locationSeriesInDaily.includes(name),
   );
   const dailySeriesData = dailyChartData.map((row) => {
     const item = { date: row.date, label: row.label, gross: row.gross };
@@ -300,6 +324,9 @@ export default function Dashboard() {
     'rgb(250 204 21)',
     'rgb(168 85 247)',
   ];
+  const locationColorMap = new Map(
+    allLocationNames.map((name, idx) => [name, seriesPalette[idx % seriesPalette.length]]),
+  );
   const totalPayout = payoutChartData.reduce((sum, item) => sum + (Number(item.payout) || 0), 0);
   const totalDailyGross = dailyChartData.reduce((sum, item) => sum + (Number(item.gross) || 0), 0);
   const avgDailyGross = dailyChartData.length ? totalDailyGross / dailyChartData.length : 0;
@@ -416,7 +443,10 @@ export default function Dashboard() {
                       isAnimationActive={!refreshing}
                     >
                       {payoutChartData.map((_, idx) => (
-                        <Cell key={`payoutSlice-${idx}`} fill={seriesPalette[idx % seriesPalette.length]} />
+                        <Cell
+                          key={`payoutSlice-${idx}`}
+                          fill={locationColorMap.get(payoutChartData[idx]?.name) || seriesPalette[idx % seriesPalette.length]}
+                        />
                       ))}
                     </Pie>
                   </PieChart>
@@ -424,7 +454,7 @@ export default function Dashboard() {
                 <div className="mt-3 grid gap-1.5 sm:grid-cols-2">
                   {payoutChartData.map((item, idx) => {
                     const share = totalPayout ? ((Number(item.payout) || 0) / totalPayout) * 100 : 0;
-                    const color = seriesPalette[idx % seriesPalette.length];
+                    const color = locationColorMap.get(item.name) || seriesPalette[idx % seriesPalette.length];
                     return (
                       <div key={item.name} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs dark:border-white/10 dark:bg-white/[0.02]">
                         <span className="flex items-center gap-2 text-slate-700 dark:text-slate-200">
@@ -489,7 +519,7 @@ export default function Dashboard() {
                     formatter={(value) => <span className="text-xs text-slate-600 dark:text-slate-300">{value}</span>}
                   />
                   {locationSeries.map((series, idx) => {
-                    const color = seriesPalette[idx % seriesPalette.length];
+                    const color = locationColorMap.get(series) || seriesPalette[idx % seriesPalette.length];
                     return (
                       <Area
                         key={series}

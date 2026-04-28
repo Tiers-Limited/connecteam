@@ -52,12 +52,10 @@ export default function Layout() {
     navigate('/login');
   }
 
-  // Filter navigation items based on user role
   const getFilteredNavItems = () => {
     if (isAdmin) {
-      return navItems; // Admin sees all items
+      return navItems; 
     }
-    // Supervisor sees all items except 'daily-tips-history'
     return navItems.filter(item => item.to !== '/daily-tips-history');
   };
 
@@ -78,7 +76,7 @@ export default function Layout() {
             : 'border-slate-200 bg-white/85'
         }`}
       >
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+        <div className="mx-auto flex items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-2">
             <span className="inline-block h-2.5 w-2.5 rounded-full bg-gradient-to-br from-indigo-300 to-fuchsia-400 shadow-[0_0_14px_rgba(129,140,248,0.8)]" />
             <h1
@@ -214,7 +212,7 @@ export default function Layout() {
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+      <main className="mx-auto  px-4 py-6 sm:px-6">
         <Outlet />
       </main>
     </div>

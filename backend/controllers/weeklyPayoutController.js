@@ -114,6 +114,8 @@ async function upsertTardiness(req, res, next) {
     const { employeeId, locationId, weekStart } = req.body;
     const totalTardinessMinutes = Number(req.body.totalTardinessMinutes);
     const record = await weeklyPayoutService.upsertTardiness(employeeId, locationId, weekStart, totalTardinessMinutes);
+    const weekStartStr = weekStartToYYYYMMDD(weekStart);
+    await WeeklyPayoutCache.deleteOne({ locationId, weekStart: weekStartStr });
     res.json({ success: true, data: record });
   } catch (err) {
     next(err);

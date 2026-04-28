@@ -5,6 +5,7 @@ import { useApp } from "../context/AppContext";
 import {
   getWeeklyPayout,
   getManualDeductions,
+  upsertTardiness,
   upsertManualDeduction,
 } from "../services/weeklyPayoutService";
 import {
@@ -52,6 +53,17 @@ function breakMinutesFromRow(row) {
   return 0;
 }
 
+function formatTardinessDate(value) {
+  if (!value) return "—";
+  const raw = String(value).slice(0, 10);
+  const dt = new Date(`${raw}T12:00:00`);
+  if (Number.isNaN(dt.getTime())) return raw;
+  return dt.toLocaleDateString("en-CA", {
+    month: "short",
+    day: "2-digit",
+  });
+}
+
 export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
   const { selectedLocationId, setSelectedLocationId, locations } = useApp();
   const defaultRange = getDefaultDateRange();
@@ -64,6 +76,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [modalEmployee, setModalEmployee] = useState(null);
+  const [editTardinessByDate, setEditTardinessByDate] = useState({});
   const [editManualAmount, setEditManualAmount] = useState("");
   const [editManualReason, setEditManualReason] = useState("");
 
@@ -133,6 +146,15 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
   const openDeductionModal = useCallback(
     (p) => {
       setModalEmployee(p);
+      const byDate = {};
+      (p.dailyBreakdown || []).forEach((d) => {
+        const dateKey = String(d?.date || "").slice(0, 10);
+        const mins = Number(d?.tardinessMinutes) || 0;
+        if (dateKey && mins > 0) {
+          byDate[dateKey] = String(mins);
+        }
+      });
+      setEditTardinessByDate(byDate);
       setEditManualAmount(String(p.manualDeduction ?? 0));
       setEditManualReason(manualEdits[p.employeeId]?.reason ?? "");
     },
@@ -143,8 +165,38 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
     setModalEmployee(null);
   }, []);
 
+  const modalLateDays =
+    modalEmployee?.dailyBreakdown
+      ?.filter((d) => (Number(d?.tardinessMinutes) || 0) > 0)
+      .sort((a, b) =>
+        String(a?.date || "").slice(0, 10).localeCompare(String(b?.date || "").slice(0, 10)),
+      )
+      .map((d) => {
+        const dateKey = String(d?.date || "").slice(0, 10);
+        return {
+          dateKey,
+          dateLabel: formatTardinessDate(d?.date),
+          minutes: Number(d?.tardinessMinutes) || 0,
+        };
+      }) ?? [];
+
+  const computedWeeklyTardiness = modalLateDays.reduce((sum, day) => {
+    const raw = editTardinessByDate?.[day.dateKey];
+    const mins = Math.max(0, Number(raw) || 0);
+    return sum + mins;
+  }, 0);
+
   const handleSaveDeductions = useCallback(async () => {
     if (!modalEmployee || !selectedLocationId) return;
+    for (const day of modalLateDays) {
+      const val = editTardinessByDate?.[day.dateKey];
+      if (val == null || val === "") continue;
+      const mins = Number(val);
+      if (!Number.isFinite(mins) || mins < 0) {
+        toast.error(`Invalid tardiness minutes for ${day.dateLabel}.`);
+        return;
+      }
+    }
     const amt = parseFloat(editManualAmount) || 0;
     const reason = editManualReason.trim();
     if (amt > 0 && !reason) {
@@ -153,6 +205,12 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
     }
     setSaving(true);
     try {
+      await upsertTardiness({
+        employeeId: modalEmployee.employeeId,
+        locationId: selectedLocationId,
+        weekStart: startDate.trim().slice(0, 10),
+        totalTardinessMinutes: computedWeeklyTardiness,
+      });
       await upsertManualDeduction({
         employeeId: modalEmployee.employeeId,
         locationId: selectedLocationId,
@@ -162,7 +220,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
       });
       toast.success(`Saved for ${modalEmployee.employeeName}`);
       closeModal();
-      loadPayout();
+      loadPayout(true);
     } catch (e) {
       if (e.response?.data?.details)
         e.response.data.details.forEach((d) => toast.error(d.message));
@@ -173,6 +231,9 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
     modalEmployee,
     selectedLocationId,
     startDate,
+    editTardinessByDate,
+    modalLateDays,
+    computedWeeklyTardiness,
     editManualAmount,
     editManualReason,
     closeModal,
@@ -237,7 +298,6 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
   const paginatedPayouts = payouts.slice(start, start + pageSize);
   const pageTitle = stepTitle || "Weekly Staff Payout";
   const modalRoot = typeof document !== "undefined" ? document.body : null;
-
   if (!selectedLocationId) {
     return (
       <div className="space-y-6">
@@ -557,7 +617,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                           <button
                             type="button"
                             onClick={() => openDeductionModal(p)}
-                            className="rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm transition hover:border-indigo-300/30 hover:bg-indigo-500/15 hover:text-indigo-100"
+                            className="rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm transition hover:border-indigo-300/50 hover:bg-indigo-100 hover:text-indigo-700 dark:hover:border-indigo-300/30 dark:hover:bg-indigo-500/15 dark:hover:text-indigo-100"
                             title="Tardiness & manual deduction"
                           >
                             Edit
@@ -687,11 +747,57 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                 <div className="mt-5 space-y-4">
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
+                      Late days in selected range
+                    </label>
+                    {modalLateDays.length > 0 ? (
+                      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 p-3">
+                        <div
+                          className="grid gap-2"
+                          style={{
+                            gridTemplateColumns: `repeat(${modalLateDays.length}, minmax(80px, 1fr))`,
+                          }}
+                        >
+                          {modalLateDays.map((day) => (
+                            <div
+                              key={`head-${day.dateKey}`}
+                              className="text-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                            >
+                              {day.dateLabel}
+                            </div>
+                          ))}
+                          {modalLateDays.map((day) => (
+                            <input
+                              key={`value-${day.dateKey}`}
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={editTardinessByDate?.[day.dateKey] ?? String(day.minutes)}
+                              onChange={(e) =>
+                                setEditTardinessByDate((prev) => ({
+                                  ...prev,
+                                  [day.dateKey]: e.target.value,
+                                }))
+                              }
+                              className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-800 px-2 py-1.5 text-center text-sm tabular-nums text-slate-900 dark:text-slate-100 dark:[color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-500 dark:text-slate-400">
+                        No late dates in this selected range.
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
                       Weekly tardiness (minutes)
                     </label>
-                    <p className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-600 dark:text-slate-300">
-                      {modalEmployee.weeklyTardinessMinutes ?? 0} min (from
-                      Weekly Tardiness)
+                    <p className="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm font-medium tabular-nums text-slate-700 dark:text-slate-200">
+                      {computedWeeklyTardiness} min
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Auto-calculated from the editable late-day rows above.
                     </p>
                   </div>
                   <div>
