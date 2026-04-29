@@ -72,6 +72,7 @@ const dailyTipAuditSchema = new mongoose.Schema(
         },
       ],
     },
+    snapshot: mongoose.Schema.Types.Mixed,
   },
   { timestamps: true }
 );

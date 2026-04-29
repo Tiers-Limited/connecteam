@@ -232,8 +232,11 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
     useState(false);
   const [manualRemoveRow, setManualRemoveRow] = useState(null);
   const [manualRemoveSaving, setManualRemoveSaving] = useState(false);
+  const [progressPercent, setProgressPercent] = useState(0);
   /** Saved gross tips for active breakdown row (shown while calculation is loading). */
   const [breakdownSavedTips, setBreakdownSavedTips] = useState(null);
+  const progressTimerRef = useRef(null);
+  const progressResetRef = useRef(null);
 
   const saveLocation = locations.find((l) => l._id === saveLocationId);
   const breakdownLocation = locations.find(
@@ -343,6 +346,27 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
     [pendingPage, pendingLimit],
   );
 
+  const removePendingRowFromState = useCallback((locationId, dateStr) => {
+    const lid = String(locationId || "");
+    const ymd = String(dateStr || "").slice(0, 10);
+    if (!lid || !ymd) return;
+    setPendingItems((prev) => {
+      const next = prev.filter((row) => {
+        const rowLocId =
+          typeof row?.locationId === "object"
+            ? String(row.locationId?._id || "")
+            : String(row?.locationId || "");
+        const rowYmd = rowDateYmd(row);
+        return !(rowLocId === lid && rowYmd === ymd);
+      });
+      const removedCount = prev.length - next.length;
+      if (removedCount > 0) {
+        setPendingTotal((t) => Math.max(0, Number(t || 0) - removedCount));
+      }
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     loadPending();
   }, [loadPending]);
@@ -355,31 +379,6 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
       if (!silent) setLoadingCalculation(true);
       setCalculationError(null);
       try {
-        const tipInput = await getDailyTipInput(locationId, dateStr).catch(
-          () => null,
-        );
-        const bdLoc = locationsRef.current.find((l) => l._id === locationId);
-        const bdCove = locationIsTheCove(bdLoc);
-        if (!tipInput) {
-          setBreakdownSavedTips(null);
-          setCalculation(null);
-          setCalculationError(
-            "No saved tips for this location and date. Use Save tips first.",
-          );
-          setDailyTipsCache((prev) => ({
-            ...prev,
-            locationId,
-            date: dateStr,
-            calculation: null,
-            calculationError:
-              "No saved tips for this location and date. Use Save tips first.",
-          }));
-          return;
-        }
-        setBreakdownSavedTips({
-          amGrossTips: tipInput.amGrossTips,
-          pmGrossTips: tipInput.pmGrossTips,
-        });
         const calc = await getDailyTipCalculation(locationId, dateStr, {
           refresh: forceRefresh,
         }).catch((err) => {
@@ -394,24 +393,43 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
           };
         });
         if (calc?.error) {
+          setBreakdownSavedTips(null);
           setCalculation(null);
           setCalculationError(calc.error);
+          setDailyTipsCache((prev) => ({
+            ...prev,
+            locationId,
+            date: dateStr,
+            calculation: null,
+            calculationError: calc.error,
+          }));
         } else {
+          const bdLoc = locationsRef.current.find((l) => l._id === locationId);
+          const bdCove = locationIsTheCove(bdLoc);
+          const savedAm = Number(calc?.inputs?.amGrossTips ?? 0);
+          const savedPm = Number(calc?.inputs?.pmGrossTips ?? 0);
+          setBreakdownSavedTips({
+            amGrossTips: savedAm,
+            pmGrossTips: savedPm,
+          });
           setCalculation(calc || null);
           setCalculationError(null);
-          await loadPending();
+          removePendingRowFromState(locationId, dateStr);
+          if (forceRefresh) {
+            await loadPending();
+          }
+          setDailyTipsCache((prev) => ({
+            ...prev,
+            locationId,
+            date: dateStr,
+            form: {
+              amGrossTips: String(savedAm),
+              pmGrossTips: bdCove ? "" : String(savedPm),
+            },
+            calculation: calc || null,
+            calculationError: null,
+          }));
         }
-        setDailyTipsCache((prev) => ({
-          ...prev,
-          locationId,
-          date: dateStr,
-          form: {
-            amGrossTips: String(tipInput.amGrossTips),
-            pmGrossTips: bdCove ? "" : String(tipInput.pmGrossTips),
-          },
-          calculation: calc?.error ? null : calc || null,
-          calculationError: calc?.error || null,
-        }));
       } catch {
         setCalculation(null);
         setCalculationError("Failed to load calculation");
@@ -419,7 +437,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
         if (!silent) setLoadingCalculation(false);
       }
     },
-    [breakdownView, setDailyTipsCache, loadPending],
+    [breakdownView, setDailyTipsCache, loadPending, removePendingRowFromState],
   );
 
   useEffect(() => {
@@ -518,32 +536,6 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
       return ok ? f : { ...f, employeeId: "" };
     });
   }, [manualConnecteamSelectOptions]);
-
-  useEffect(() => {
-    if (!breakdownView?.locationId || activeSubTab !== "breakdown") {
-      setBreakdownSavedTips(null);
-      return;
-    }
-    let cancelled = false;
-    getDailyTipInput(breakdownView.locationId, breakdownView.dateStr)
-      .then((input) => {
-        if (cancelled) return;
-        if (input) {
-          setBreakdownSavedTips({
-            amGrossTips: input.amGrossTips,
-            pmGrossTips: input.pmGrossTips,
-          });
-        } else {
-          setBreakdownSavedTips(null);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setBreakdownSavedTips(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [breakdownView?.locationId, breakdownView?.dateStr, activeSubTab]);
 
   const handleCalculateAllPending = useCallback(async () => {
     setBatchCalculating(true);
@@ -795,32 +787,59 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
 
   const showShiftSplit = !isBreakdownTheCove;
 
-  const spinner = (
-    <svg
-      className="mr-2 h-4 w-4 animate-spin"
-      xmlns="http://www.w3.org/2000/svg"
-      fill="none"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-      />
-    </svg>
-  );
-
   const pageTitle = stepTitle || "Daily Tips";
   const modalRoot = typeof document !== "undefined" ? document.body : null;
+  const pageBusy =
+    checkingExistingTipInput ||
+    loadingPending ||
+    batchCalculating ||
+    loadingCalculation ||
+    saving ||
+    manualLoading ||
+    manualSaving ||
+    breakdownEmployeesLoading ||
+    manualRemoveSaving ||
+    adjustSaving;
+
+  useEffect(() => {
+    if (pageBusy) {
+      if (progressResetRef.current) {
+        clearTimeout(progressResetRef.current);
+        progressResetRef.current = null;
+      }
+      setProgressPercent((prev) => (prev > 8 ? prev : 8));
+      if (!progressTimerRef.current) {
+        progressTimerRef.current = setInterval(() => {
+          setProgressPercent((prev) => {
+            if (prev >= 92) return prev;
+            if (prev < 40) return Math.min(92, prev + 6);
+            if (prev < 70) return Math.min(92, prev + 3);
+            return Math.min(92, prev + 1);
+          });
+        }, 220);
+      }
+      return;
+    }
+
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+    if (progressPercent > 0) {
+      setProgressPercent(100);
+      progressResetRef.current = setTimeout(() => {
+        setProgressPercent(0);
+        progressResetRef.current = null;
+      }, 420);
+    }
+  }, [pageBusy, progressPercent]);
+
+  useEffect(() => {
+    return () => {
+      if (progressTimerRef.current) clearInterval(progressTimerRef.current);
+      if (progressResetRef.current) clearTimeout(progressResetRef.current);
+    };
+  }, []);
 
   if (locationsLoading) {
     return (
@@ -874,6 +893,20 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
 
   return (
     <div className="space-y-6">
+      {progressPercent > 0 && (
+        <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-white/[0.04] px-4 py-3 shadow-sm">
+          <div className="mb-2 flex items-center justify-between text-xs font-medium uppercase tracking-wide text-slate-600 dark:text-slate-300">
+            <span>Processing</span>
+            <span>{Math.round(progressPercent)}%</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
+            <div
+              className="h-full rounded-full bg-indigo-500 transition-[width] duration-200 ease-out"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        </div>
+      )}
       {!embedded && <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{pageTitle}</h1>}
       <div className="flex gap-1 border-b border-slate-200 dark:border-white/10">
         <button
@@ -980,7 +1013,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               )}
               <Button type="submit" disabled={saving || !saveLocationId}>
                 {saving ? (
-                  <>{spinner}{hasExistingTipInput ? "Updating…" : "Saving…"}</>
+                  hasExistingTipInput ? "Updating..." : "Saving..."
                 ) : hasExistingTipInput ? (
                   "Update"
                 ) : (
@@ -1007,7 +1040,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 onClick={() => void handleCalculateAllPending()}
               >
                 {batchCalculating ? (
-                  <>{spinner}Calculating…</>
+                  "Calculating..."
                 ) : (
                   "Calculate all pending (max 25)"
                 )}
@@ -1120,7 +1153,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                                   void refreshBreakdownCalculation(false, {
                                     locationId: id,
                                     dateStr: ymd,
-                                  }, true);
+                                  }, false);
                                 }}
                                 disabled={loadingCalculation}
                               >
@@ -1208,8 +1241,8 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                   };
                   setBreakdownView(v);
                   // Same as "Refresh calculation" / pending "Load calculation": full run so
-                  // audit snapshot bugs or stale snapshot state cannot block the first load.
-                  void refreshBreakdownCalculation(false, v, true);
+                  // Fast default load path uses the latest saved audit snapshot.
+                  void refreshBreakdownCalculation(false, v, false);
                 }}
               >
                 Load breakdown
@@ -1217,29 +1250,20 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => refreshBreakdownCalculation(false, undefined, true)}
+                onClick={() => refreshBreakdownCalculation(false, undefined, false)}
                 disabled={
                   loadingCalculation ||
                   !breakdownView?.locationId ||
                   !breakdownView?.dateStr
                 }
               >
-                {loadingCalculation ? (
-                  <>{spinner}Loading…</>
-                ) : (
-                  "Refresh calculation"
-                )}
+                Refresh calculation
               </Button>
             </div>
 
             {breakdownView?.locationId && (
               <div className="rounded-xl border border-slate-200 dark:border-white/12 bg-slate-100/80 dark:bg-white/[0.06] px-3 py-2.5 text-sm shadow-sm">
-                {loadingCalculation && !breakdownSavedTips ? (
-                  <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                    {spinner}
-                    Loading saved gross tips…
-                  </span>
-                ) : breakdownSavedTips ? (
+                {breakdownSavedTips ? (
                   <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-slate-600 dark:text-slate-300">
                     <span className="font-semibold text-slate-900 dark:text-slate-100">
                       Saved gross tips
@@ -1275,12 +1299,6 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                           </strong>
                         </span>
                       </>
-                    )}
-                    {loadingCalculation && (
-                      <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                        {spinner}
-                        Calculating employee split…
-                      </span>
                     )}
                   </div>
                 ) : (
@@ -2009,10 +2027,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 disabled={manualRemoveSaving}
               >
                 {manualRemoveSaving ? (
-                  <>
-                    {spinner}
-                    Removing…
-                  </>
+                  "Removing..."
                 ) : (
                   "Remove"
                 )}
@@ -2104,7 +2119,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 Cancel
               </Button>
               <Button type="button" onClick={saveAdjustments} disabled={adjustSaving}>
-                {adjustSaving ? <>{spinner}Saving &amp; recalculating…</> : "Save adjustments"}
+                {adjustSaving ? "Saving & recalculating..." : "Save adjustments"}
               </Button>
             </div>
           </div>

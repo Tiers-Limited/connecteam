@@ -8,6 +8,13 @@ const router = express.Router();
 router.get('/history', dailyTipController.getHistory);
 router.get('/pending-calculation', dailyTipController.getPendingCalculation);
 router.post('/calculate-all-pending', dailyTipController.calculateAllPending);
+router.get(
+  '/weekly-final-payable-summary',
+  query('startDate').matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('startDate must be YYYY-MM-DD'),
+  query('endDate').matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('endDate must be YYYY-MM-DD'),
+  validate,
+  dailyTipController.getWeeklyFinalPayableSummary,
+);
 
 router.get(
   '/:locationId/:date',

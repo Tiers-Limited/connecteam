@@ -139,25 +139,35 @@ async function calculateAllPending(req, res, next) {
     const max = Math.min(50, Math.max(1, parseInt(maxRaw, 10) || 25));
     const { items } = await dailyTipInputService.getPendingCalculationPaginated(1, max);
     const results = [];
-    for (const row of items) {
-      const locationId = row.locationId?._id || row.locationId;
-      const dateStr = ymdFromRowDate(row.date);
-      if (!locationId || !dateStr) {
-        results.push({ ok: false, error: 'Invalid row', rowId: row._id });
-        continue;
-      }
-      const result = await tipsCalculationService.getDailyTipCalculation(locationId, dateStr);
-      if (result.error) {
-        results.push({
-          locationId: String(locationId),
-          date: dateStr,
-          ok: false,
-          error: result.error,
-        });
-      } else {
-        results.push({ locationId: String(locationId), date: dateStr, ok: true });
+    const queue = [...items];
+    const concurrency = Math.min(5, queue.length || 1);
+    async function worker() {
+      while (queue.length > 0) {
+        const row = queue.shift();
+        if (!row) return;
+        const locationId = row.locationId?._id || row.locationId;
+        const dateStr = ymdFromRowDate(row.date);
+        if (!locationId || !dateStr) {
+          results.push({ ok: false, error: 'Invalid row', rowId: row._id });
+          continue;
+        }
+        const result = await tipsCalculationService.getDailyTipCalculation(
+          locationId,
+          dateStr
+        );
+        if (result.error) {
+          results.push({
+            locationId: String(locationId),
+            date: dateStr,
+            ok: false,
+            error: result.error,
+          });
+        } else {
+          results.push({ locationId: String(locationId), date: dateStr, ok: true });
+        }
       }
     }
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
     res.json({
       success: true,
       data: {
@@ -172,6 +182,22 @@ async function calculateAllPending(req, res, next) {
   }
 }
 
+async function getWeeklyFinalPayableSummary(req, res, next) {
+  try {
+    const { startDate, endDate } = req.query || {};
+    const data = await tipsCalculationService.getAllLocationsWeeklyFinalPayableSummary(
+      startDate,
+      endDate,
+    );
+    res.json({ success: true, data });
+  } catch (err) {
+    if (err.status === 400) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    next(err);
+  }
+}
+
 module.exports = {
   getByLocationAndDate,
   getCalculation,
@@ -181,4 +207,5 @@ module.exports = {
   getHistory,
   getPendingCalculation,
   calculateAllPending,
+  getWeeklyFinalPayableSummary,
 };

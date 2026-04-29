@@ -140,8 +140,15 @@ async function getManualDeductions(req, res, next) {
 
 async function upsertManualDeduction(req, res, next) {
   try {
-    const { employeeId, locationId, weekStart, amount, reason } = req.body;
-    const record = await weeklyPayoutService.upsertManualDeduction(employeeId, locationId, weekStart, amount, reason || '');
+    const { employeeId, locationId, weekStart, amount, additionalTips, reason } = req.body;
+    const record = await weeklyPayoutService.upsertManualDeduction(
+      employeeId,
+      locationId,
+      weekStart,
+      amount,
+      additionalTips,
+      reason || '',
+    );
     const weekStartStr = weekStartToYYYYMMDD(weekStart);
     await WeeklyPayoutCache.deleteOne({ locationId, weekStart: weekStartStr });
     res.json({ success: true, data: record });

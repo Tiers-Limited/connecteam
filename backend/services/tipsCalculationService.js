@@ -54,13 +54,20 @@ function splitWorkedHours(clockIn, clockOut, opts = {}) {
   const AM_END = timeToMinutes(bounds.AM_END);
   const PM_END = timeToMinutes(bounds.PM_END);
 
+  const DAY_MINUTES = 24 * 60;
+  const overlap = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
   let amMinutes = 0;
   let pmMinutes = 0;
-
-  for (let m = startMin; m < endMin; m++) {
-    const minuteOfDay = m % (24 * 60);
-    if (minuteOfDay >= AM_START && minuteOfDay < AM_END) amMinutes++;
-    else if (minuteOfDay >= AM_END && minuteOfDay < PM_END) pmMinutes++;
+  const dayStart = Math.floor(startMin / DAY_MINUTES) * DAY_MINUTES;
+  const dayEnd = Math.ceil(endMin / DAY_MINUTES) * DAY_MINUTES;
+  for (let d = dayStart; d < dayEnd; d += DAY_MINUTES) {
+    const segStart = Math.max(startMin, d);
+    const segEnd = Math.min(endMin, d + DAY_MINUTES);
+    if (segEnd <= segStart) continue;
+    const localStart = segStart - d;
+    const localEnd = segEnd - d;
+    amMinutes += overlap(localStart, localEnd, AM_START, AM_END);
+    pmMinutes += overlap(localStart, localEnd, AM_END, PM_END);
   }
 
   return {
@@ -117,15 +124,21 @@ function collectBreakIntervalsForEmployee(manualBreaks, connecteamsUserId, dateS
   return mergeIntervalsMs(raw);
 }
 
+const timeFormatterByTz = new Map();
 function localHourMinuteForTz(tsMs, timeZone) {
   const tz = (timeZone || 'UTC').trim() || 'UTC';
   try {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: tz,
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(new Date(tsMs));
+    let fmt = timeFormatterByTz.get(tz);
+    if (!fmt) {
+      fmt = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+      timeFormatterByTz.set(tz, fmt);
+    }
+    const parts = fmt.formatToParts(new Date(tsMs));
     const hour = Number(parts.find((p) => p.type === 'hour')?.value);
     const minute = Number(parts.find((p) => p.type === 'minute')?.value);
     if (Number.isNaN(hour) || Number.isNaN(minute)) return { hour: 0, minute: 0 };
@@ -203,15 +216,19 @@ function splitWorkedHoursDeducingManualBreaks(
 
   let amMinutes = 0;
   let pmMinutes = 0;
+  const mergedExclusions = mergeIntervalsMs(excludeIntervalsMs || []);
+  let ivIdx = 0;
   for (let t = workStartMs; t < workEndMs; t += 60 * 1000) {
-    let excluded = false;
-    for (const iv of excludeIntervalsMs || []) {
+    while (ivIdx < mergedExclusions.length && t >= mergedExclusions[ivIdx].end) {
+      ivIdx += 1;
+    }
+    if (ivIdx < mergedExclusions.length) {
+      const iv = mergedExclusions[ivIdx];
       if (t >= iv.start && t < iv.end) {
-        excluded = true;
-        break;
+        t = Math.max(t, iv.end - 60 * 1000);
+        continue;
       }
     }
-    if (excluded) continue;
     const { hour, minute } = localHourMinuteForTz(t, tz);
     const minuteOfDay = hour * 60 + minute;
     if (minuteOfDay >= AM_START && minuteOfDay < AM_END) amMinutes++;
@@ -430,7 +447,9 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   const tipInput = await DailyTipInput.findOne({
     locationId,
     date: { $gte: dateStart, $lte: dateEnd },
-  });
+  })
+    .select('locationId date amGrossTips pmGrossTips')
+    .lean();
   if (!tipInput) {
     return { error: 'No tip input for this location and date', locationId, date: dateStr };
   }
@@ -543,6 +562,65 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   }
 
   const employeeHours = new Map();
+  const connecteamsIds = new Set();
+  const employeeNames = new Set();
+  const subJobIds = new Set();
+  for (const [connecteamsUserId, row] of employeeFirstLast) {
+    if (connecteamsUserId) connecteamsIds.add(String(connecteamsUserId));
+    if (row.employeeName && String(row.employeeName).trim()) {
+      employeeNames.add(String(row.employeeName).trim());
+    }
+    if (row.subJobId && !row.jobTitle) subJobIds.add(String(row.subJobId));
+  }
+
+  const employeeFilterOr = [];
+  if (connecteamsIds.size > 0) {
+    employeeFilterOr.push({ connecteamsUserId: { $in: [...connecteamsIds] } });
+  }
+  if (employeeNames.size > 0) {
+    employeeFilterOr.push({ name: { $in: [...employeeNames] } });
+  }
+  const employeeDocs = employeeFilterOr.length
+    ? await Employee.find({
+        locationId,
+        isActive: true,
+        $or: employeeFilterOr,
+      })
+        .select('_id name connecteamsUserId')
+        .lean()
+    : [];
+  const employeeByConnecteamId = new Map();
+  const employeeByName = new Map();
+  for (const e of employeeDocs) {
+    const uid = String(e.connecteamsUserId || '').trim();
+    if (uid && !employeeByConnecteamId.has(uid)) {
+      employeeByConnecteamId.set(uid, e);
+    }
+    const nameKey = String(e.name || '').trim().toLowerCase();
+    if (nameKey && !employeeByName.has(nameKey)) {
+      employeeByName.set(nameKey, e);
+    }
+  }
+
+  const jobTitleBySubJobId = new Map();
+  if (subJobIds.size > 0) {
+    await Promise.all(
+      [...subJobIds].map(async (subJobId) => {
+        try {
+          const jobInfo = await connecteamsService.getJobInfo(subJobId);
+          if (jobInfo?.title) {
+            jobTitleBySubJobId.set(subJobId, jobInfo.title);
+          }
+        } catch (err) {
+          console.warn(
+            `[getDailyTipCalculation] Failed to fetch job info for ${subJobId}:`,
+            err.message
+          );
+        }
+      })
+    );
+  }
+
   for (const [connecteamsUserId, row] of employeeFirstLast) {
     const breakIntervals =
       connecteamManualBreaksForDay.length > 0 && row.firstInMs != null && row.lastOutMs != null
@@ -579,23 +657,17 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
           splitOpts
         )
       : splitWorkedHours(row.firstIn, row.lastOut, splitOpts);
-    let employee = await Employee.findOne({ connecteamsUserId, locationId }).lean();
+    let employee = employeeByConnecteamId.get(String(connecteamsUserId).trim()) || null;
     if (!employee && row.employeeName && String(row.employeeName).trim()) {
-      employee = await Employee.findOne({ locationId, name: String(row.employeeName).trim() }).lean();
+      employee =
+        employeeByName.get(String(row.employeeName).trim().toLowerCase()) || null;
     }
     const employeeId = employee?._id || null;
     const employeeName = employee?.name || row.employeeName;
     const mapKey = employeeId ? employeeId.toString() : `connecteam_${connecteamsUserId}`;
     let jobTitle = row.jobTitle;
-    if (row.subJobId) {
-      try {
-        const jobInfo = await connecteamsService.getJobInfo(row.subJobId);
-        if (jobInfo && jobInfo.title) {
-          jobTitle = jobInfo.title;
-        }
-      } catch (err) {
-        console.warn(`[getDailyTipCalculation] Failed to fetch job info for ${row.subJobId}:`, err.message);
-      }
+    if (row.subJobId && jobTitleBySubJobId.has(String(row.subJobId))) {
+      jobTitle = jobTitleBySubJobId.get(String(row.subJobId));
     }
     
     if (jobTitle) {
@@ -618,14 +690,26 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   }
 
   if (usedConnecteamApi && !options.preFetchedEntries && rawConnecteamEntries.length > 0) {
+    const bulkOps = [];
     for (const row of employeeHours.values()) {
-      if (row.employeeId && row.clockIn && row.clockOut) {
-        await TimeEntry.findOneAndUpdate(
-          { employeeId: row.employeeId, locationId, date: timeEntryDayStart },
-          { $set: { clockIn: row.clockIn, clockOut: row.clockOut, jobTitle: row.jobTitle, subJobId: row.subJobId } },
-          { upsert: true }
-        );
-      }
+      if (!row.employeeId || !row.clockIn || !row.clockOut) continue;
+      bulkOps.push({
+        updateOne: {
+          filter: { employeeId: row.employeeId, locationId, date: timeEntryDayStart },
+          update: {
+            $set: {
+              clockIn: row.clockIn,
+              clockOut: row.clockOut,
+              jobTitle: row.jobTitle,
+              subJobId: row.subJobId,
+            },
+          },
+          upsert: true,
+        },
+      });
+    }
+    if (bulkOps.length > 0) {
+      await TimeEntry.bulkWrite(bulkOps, { ordered: false });
     }
   }
 
@@ -804,6 +888,43 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     r.finalTips = finalTips;
   }
 
+  const mappedAdjustments = adjustments.map((a) => ({
+    employeeId: a.employeeId,
+    type: a.type,
+    amount: Number(a.amount) || 0,
+    reason: a.reason || '',
+  }));
+
+  const resultPayload = {
+    locationId,
+    date: dateStr,
+    inputs: {
+      amGrossTips: tipInput.amGrossTips,
+      pmGrossTips: tipInput.pmGrossTips,
+      productionDeductionAM,
+      productionDeductionPM,
+      distributableAM,
+      distributablePM,
+      manualAmTipsTotal: manualAMTipsTotal,
+      manualPmTipsTotal: manualPMTipsTotal,
+      adjustedDistributableAM,
+      adjustedDistributablePM,
+      distributable: isTheCove ? adjustedDistributableAM : null,
+      tipRate: isTheCove ? amTipRate : null,
+      redistributionPool,
+    },
+    totals: {
+      totalAMHours,
+      totalPMHours,
+      amTipRate,
+      pmTipRate,
+    },
+    employeeAllocations,
+    adjustments: mappedAdjustments,
+    audit: null,
+    fromSnapshot: false,
+  };
+
   const auditPayload = {
     locationId,
     date: dateStart,
@@ -854,6 +975,14 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         finalTips: a.finalTips,
       })),
     },
+    snapshot: {
+      locationId: resultPayload.locationId,
+      date: resultPayload.date,
+      inputs: resultPayload.inputs,
+      totals: resultPayload.totals,
+      employeeAllocations: resultPayload.employeeAllocations,
+      adjustments: resultPayload.adjustments,
+    },
   };
   try {
     await DailyTipAudit.findOneAndUpdate(
@@ -868,40 +997,8 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     console.warn('[getDailyTipCalculation] Audit or completion flag failed:', err.message);
   }
 
-  return {
-    locationId,
-    date: dateStr,
-    inputs: {
-      amGrossTips: tipInput.amGrossTips,
-      pmGrossTips: tipInput.pmGrossTips,
-      productionDeductionAM,
-      productionDeductionPM,
-      distributableAM,
-      distributablePM,
-      manualAmTipsTotal: manualAMTipsTotal,
-      manualPmTipsTotal: manualPMTipsTotal,
-      adjustedDistributableAM,
-      adjustedDistributablePM,
-      distributable: isTheCove ? adjustedDistributableAM : null,
-      tipRate: isTheCove ? amTipRate : null,
-      redistributionPool,
-    },
-    totals: {
-      totalAMHours,
-      totalPMHours,
-      amTipRate,
-      pmTipRate,
-    },
-    employeeAllocations,
-    adjustments: adjustments.map((a) => ({
-      employeeId: a.employeeId,
-      type: a.type,
-      amount: Number(a.amount) || 0,
-      reason: a.reason || '',
-    })),
-    audit: auditPayload,
-    fromSnapshot: false,
-  };
+  resultPayload.audit = auditPayload;
+  return resultPayload;
 }
 
 function normalizeTipEmployeeName(name) {
@@ -960,6 +1057,14 @@ async function getDailyTipCalculationSnapshot(locationId, date) {
   }).lean();
   if (!audit || !audit.financial) {
     return null;
+  }
+
+  if (audit.snapshot && Array.isArray(audit.snapshot.employeeAllocations)) {
+    return {
+      ...audit.snapshot,
+      audit,
+      fromSnapshot: true,
+    };
   }
 
   const locationDoc = await Location.findById(locationId).select('name').lean();
@@ -1390,7 +1495,13 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
 
   const manualDeductionsList = await ManualDeduction.find({ locationId: locationIdObj, weekStart });
   const manualMap = new Map();
-  manualDeductionsList.forEach((m) => manualMap.set(m.employeeId.toString(), { amount: m.amount, reason: m.reason }));
+  manualDeductionsList.forEach((m) =>
+    manualMap.set(m.employeeId.toString(), {
+      amount: Number(m.amount) || 0,
+      additionalTips: Number(m.additionalTips) || 0,
+      reason: m.reason,
+    })
+  );
 
   const dailyTipsByEmployee = new Map();
   const employeeWeeklyHours = new Map();
@@ -1568,8 +1679,11 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
     const weeklyAfterTardiness = roundMoney(weeklyGrossTips - tardinessDeductionAmount);
     totalRedistributionPool += tardinessDeductionAmount;
 
-    const manual = manualMap.get(id) || { amount: 0, reason: '' };
-    const weeklyAfterManual = Math.max(0, weeklyAfterTardiness - manual.amount);
+    const manual = manualMap.get(id) || { amount: 0, additionalTips: 0, reason: '' };
+    const weeklyAfterManual = Math.max(
+      0,
+      weeklyAfterTardiness - (Number(manual.amount) || 0) + (Number(manual.additionalTips) || 0)
+    );
     const netWeeklyTips = roundMoney(weeklyAfterManual);
 
     const dailyBreakdown = dailyBreakdownByEmployeeId.get(id) || [];
@@ -1583,6 +1697,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
       tardinessDeduction: tardinessDeductionAmount,
       weeklyAfterTardiness,
       manualDeduction: manual.amount,
+      additionalTips: manual.additionalTips,
       manualDeductionReason: manual.reason,
       netWeeklyTips,
       weeklyWorkedHours,
@@ -1603,6 +1718,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
       const hasTardiness = Number(r.weeklyTardinessMinutes || 0) > 0;
       const hasTardinessDeduction = Number(r.tardinessDeduction || 0) > 0;
       const hasManualDeduction = Number(r.manualDeduction || 0) > 0;
+      const hasAdditionalTips = Number(r.additionalTips || 0) > 0;
       const hasNetTips = Number(r.netWeeklyTips || 0) > 0;
       const hasPayable = Number(r.finalWeeklyTipsPayable || 0) > 0;
       return (
@@ -1610,6 +1726,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
         hasTardiness ||
         hasTardinessDeduction ||
         hasManualDeduction ||
+        hasAdditionalTips ||
         hasNetTips ||
         hasPayable
       );
@@ -1685,6 +1802,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
       tardinessDeduction: r.tardinessDeduction,
       weeklyAfterTardiness: r.weeklyAfterTardiness,
       manualDeduction: r.manualDeduction,
+      additionalTips: r.additionalTips,
       manualDeductionReason: r.manualDeductionReason,
       netWeeklyTips: r.netWeeklyTips,
       tardinessRedistribution: r.tardinessRedistribution,
@@ -1696,6 +1814,81 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
   };
 }
 
+async function getAllLocationsWeeklyFinalPayableSummary(startDate, endDate) {
+  const sd = String(startDate || '').trim().slice(0, 10);
+  const ed = String(endDate || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(sd) || !/^\d{4}-\d{2}-\d{2}$/.test(ed)) {
+    const err = new Error('startDate and endDate must be YYYY-MM-DD');
+    err.status = 400;
+    throw err;
+  }
+  if (new Date(`${ed}T12:00:00`) < new Date(`${sd}T12:00:00`)) {
+    const err = new Error('Invalid date range (end before start)');
+    err.status = 400;
+    throw err;
+  }
+
+  const activeLocations = await Location.find({ isActive: true })
+    .select('_id name')
+    .sort({ name: 1 })
+    .lean();
+
+  const byEmployeeMap = new Map();
+  for (const loc of activeLocations) {
+    const weekly = await getWeeklyPayout(String(loc._id), sd, {
+      startDate: sd,
+      endDate: ed,
+    }).catch(() => null);
+    const payouts = Array.isArray(weekly?.payouts) ? weekly.payouts : [];
+    for (const p of payouts) {
+      const employeeName = String(p?.employeeName || '').trim();
+      if (!employeeName) continue;
+      const key = employeeName.toLowerCase();
+      if (!byEmployeeMap.has(key)) {
+        byEmployeeMap.set(key, {
+          employeeName,
+          totalWorkingMinutes: 0,
+          totalFinalWeeklyTipsPayable: 0,
+        });
+      }
+      const row = byEmployeeMap.get(key);
+      row.totalWorkingMinutes += Number(p?.totalWorkingMinutes) || 0;
+      row.totalFinalWeeklyTipsPayable += Number(p?.finalWeeklyTipsPayable) || 0;
+    }
+  }
+
+  const byEmployee = Array.from(byEmployeeMap.values())
+    .map((row) => ({
+      employeeName: row.employeeName,
+      totalWorkingMinutes: Math.max(0, Number(row.totalWorkingMinutes) || 0),
+      totalFinalWeeklyTipsPayable: roundMoney(
+        Number(row.totalFinalWeeklyTipsPayable) || 0,
+      ),
+    }))
+    .sort((a, b) =>
+      a.employeeName.localeCompare(b.employeeName, undefined, { sensitivity: 'base' }),
+    );
+
+  const grandTotalFinalWeeklyTipsPayable = roundMoney(
+    byEmployee.reduce(
+      (sum, row) => sum + (Number(row.totalFinalWeeklyTipsPayable) || 0),
+      0,
+    ),
+  );
+  const grandTotalWorkingMinutes = byEmployee.reduce(
+    (sum, row) => sum + (Number(row.totalWorkingMinutes) || 0),
+    0,
+  );
+
+  return {
+    dateRange: { startDate: sd, endDate: ed },
+    byEmployee,
+    grandEmployeesCount: byEmployee.length,
+    grandTotalWorkingMinutes,
+    grandTotalFinalWeeklyTipsPayable,
+  };
+}
+
 module.exports = {
   splitWorkedHours,
   roundMoney,
@@ -1704,5 +1897,6 @@ module.exports = {
   getDailyTipCalculationSnapshot,
   getEmployeeDailyTipsForDate,
   getWeeklyPayout,
+  getAllLocationsWeeklyFinalPayableSummary,
   clearProductionStaffNamesCache,
 };
