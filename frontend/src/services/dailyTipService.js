@@ -43,3 +43,10 @@ export async function calculateAllPendingDailyTips(max = 25) {
   const { data } = await api.post('/daily-tips/calculate-all-pending', { max });
   return data.data;
 }
+
+export async function getWeeklyFinalPayableSummary(startDate, endDate) {
+  const { data } = await api.get('/daily-tips/weekly-final-payable-summary', {
+    params: { startDate, endDate },
+  });
+  return data.data;
+}

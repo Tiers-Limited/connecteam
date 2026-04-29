@@ -13,7 +13,11 @@ import {
   columnsFromDayDateKeys,
 } from "../utils/dateUtils";
 import { getWeeklyTardiness } from "../services/weeklyTardinessService";
-import { getDailyTipCalculation, getDailyTipsHistory } from "../services/dailyTipService";
+import {
+  getDailyTipCalculation,
+  getDailyTipsHistory,
+  getWeeklyFinalPayableSummary,
+} from "../services/dailyTipService";
 import {
   getWeeklyProductionPayout,
   getLocationWiseProductionPool,
@@ -102,6 +106,7 @@ function payoutToExportRow(p, locLabel, cols, forCsv = false) {
     fmtMoney(p.tardinessDeduction),
     fmtMoney(p.weeklyAfterTardiness),
     fmtMoney(p.manualDeduction),
+    fmtMoney(p.additionalTips ?? 0),
     fmtMoney(p.netWeeklyTips),
     fmtMoney(p.tardinessRedistribution ?? 0),
     fmtMoney(p.finalWeeklyTipsPayable ?? 0),
@@ -141,6 +146,13 @@ function sum(values) {
   return values.reduce((acc, n) => acc + (Number(n) || 0), 0);
 }
 
+function parseWeeklyPayoutEmployeeSelection(value) {
+  const raw = String(value || "");
+  if (raw.startsWith("id:")) return { employeeId: raw.slice(3), employeeName: "" };
+  if (raw.startsWith("name:")) return { employeeId: "", employeeName: raw.slice(5) };
+  return { employeeId: raw, employeeName: "" };
+}
+
 const weeklyReportHeaders = (dateCols) => [
   "Employee",
   "Location",
@@ -153,6 +165,7 @@ const weeklyReportHeaders = (dateCols) => [
   "Tardiness Deduction",
   "Weekly After Tardiness",
   "Manual Deduction",
+  "Additional Tips (+)",
   "Net Weekly Tips",
   "Tardiness Redistribution",
   "Final Weekly Tips Payable",
@@ -161,6 +174,7 @@ const weeklyReportHeaders = (dateCols) => [
 const REPORT_TYPES = [
   { id: "weekly_payout", label: "Weekly Payout" },
   { id: "weekly_tardiness", label: "Weekly Tardiness" },
+  { id: "weekly_final_payable_total", label: "Weekly Final Payable Total" },
   { id: "daily_tips", label: "Daily Tips" },
   { id: "tip_history", label: "Tip History" },
   { id: "production_pool", label: "Production Pool" },
@@ -176,6 +190,11 @@ const REPORT_TYPE_STYLES = {
     accent: "from-amber-500 via-orange-500 to-rose-500",
     ring: "ring-amber-300",
     icon: FiCalendar,
+  },
+  weekly_final_payable_total: {
+    accent: "from-fuchsia-500 via-violet-500 to-indigo-500",
+    ring: "ring-fuchsia-300",
+    icon: FiTrendingUp,
   },
   daily_tips: {
     accent: "from-emerald-500 via-teal-500 to-cyan-500",
@@ -212,8 +231,53 @@ export default function PayoutReports() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [employeeOptions, setEmployeeOptions] = useState([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [tardinessGeographicScope, setTardinessGeographicScope] = useState("one_location");
+  const [tardinessEmployeeScope, setTardinessEmployeeScope] = useState("all");
+  const [tardinessSelectedEmployee, setTardinessSelectedEmployee] = useState("");
+  const [tardinessEmployeeOptions, setTardinessEmployeeOptions] = useState([]);
+  const [loadingTardinessEmployees, setLoadingTardinessEmployees] = useState(false);
   const [exportLoadingKind, setExportLoadingKind] = useState(null);
   const firstActiveLocationId = activeLocations[0]?._id || "";
+  const weeklyPayoutEmployeeOptions = useMemo(() => {
+    const list = Array.isArray(employeeOptions) ? employeeOptions : [];
+    if (geographicScope === "all_locations") {
+      const byName = new Map();
+      for (const row of list) {
+        const name = String(row?.employeeName || "").trim();
+        if (!name) continue;
+        const key = name.toLowerCase();
+        if (!byName.has(key)) {
+          byName.set(key, {
+            value: `name:${name}`,
+            employeeName: name,
+            label: name,
+          });
+        }
+      }
+      return Array.from(byName.values()).sort((a, b) =>
+        a.employeeName.localeCompare(b.employeeName, undefined, { sensitivity: "base" }),
+      );
+    }
+    return list
+      .map((row) => {
+        const employeeId = String(row?.employeeId || "").trim();
+        const employeeName = String(row?.employeeName || "").trim();
+        const locationName = String(row?.locationName || "").trim();
+        if (!employeeName && !employeeId) return null;
+        return {
+          value: employeeId ? `id:${employeeId}` : `name:${employeeName}`,
+          employeeName,
+          label: employeeName || employeeId,
+          locationName,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) =>
+        (a.employeeName || "").localeCompare(b.employeeName || "", undefined, {
+          sensitivity: "base",
+        }),
+      );
+  }, [employeeOptions, geographicScope]);
 
   useEffect(() => {
     if (singleLocationId) return;
@@ -260,6 +324,76 @@ export default function PayoutReports() {
     };
   }, [reportType, employeeScope, startDate, endDate, geographicScope, singleLocationId]);
 
+  useEffect(() => {
+    if (reportType !== "weekly_tardiness" || tardinessEmployeeScope !== "one_employee") {
+      setTardinessEmployeeOptions([]);
+      setTardinessSelectedEmployee("");
+      return;
+    }
+    const sd = toFileDate(startDate);
+    const ed = toFileDate(endDate);
+    if (!sd || !ed || ed < sd) return;
+    let cancelled = false;
+    setLoadingTardinessEmployees(true);
+    getWeeklyTardiness(
+      sd,
+      tardinessGeographicScope === "one_location" ? singleLocationId || null : null,
+      false,
+      sd,
+      ed,
+    )
+      .then((result) => {
+        if (cancelled) return;
+        const options = Array.from(
+          new Set(
+            (result?.entries || [])
+              .map((r) => String(r?.employeeName || "").trim())
+              .filter(Boolean),
+          ),
+        ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+        setTardinessEmployeeOptions(options);
+      })
+      .catch(() => {
+        if (!cancelled) setTardinessEmployeeOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingTardinessEmployees(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    reportType,
+    tardinessEmployeeScope,
+    startDate,
+    endDate,
+    tardinessGeographicScope,
+    singleLocationId,
+  ]);
+
+  useEffect(() => {
+    if (employeeScope !== "one_employee") {
+      if (selectedEmployeeId) setSelectedEmployeeId("");
+      return;
+    }
+    if (!weeklyPayoutEmployeeOptions.length) {
+      if (selectedEmployeeId) setSelectedEmployeeId("");
+      return;
+    }
+    if (weeklyPayoutEmployeeOptions.some((o) => o.value === selectedEmployeeId)) return;
+    setSelectedEmployeeId(weeklyPayoutEmployeeOptions[0].value);
+  }, [employeeScope, weeklyPayoutEmployeeOptions, selectedEmployeeId]);
+
+  useEffect(() => {
+    if (tardinessEmployeeScope !== "one_employee") return;
+    if (!tardinessEmployeeOptions.length) {
+      if (tardinessSelectedEmployee) setTardinessSelectedEmployee("");
+      return;
+    }
+    if (tardinessEmployeeOptions.includes(tardinessSelectedEmployee)) return;
+    setTardinessSelectedEmployee(tardinessEmployeeOptions[0]);
+  }, [tardinessEmployeeScope, tardinessEmployeeOptions, tardinessSelectedEmployee]);
+
   const runWeeklyPayoutExport = useCallback(
     async (kind) => {
       const sd = toFileDate(startDate);
@@ -276,6 +410,7 @@ export default function PayoutReports() {
         toast.error("Select employee");
         return;
       }
+      const selectedEmployeeFilter = parseWeeklyPayoutEmployeeSelection(selectedEmployeeId);
 
       const scopeSummary =
         geographicScope === "all_locations"
@@ -288,7 +423,11 @@ export default function PayoutReports() {
         geographicScope,
         employeeScope,
         ...(geographicScope === "one_location" ? { singleLocationId } : {}),
-        ...(employeeScope === "one_employee" ? { employeeId: selectedEmployeeId } : {}),
+        ...(employeeScope === "one_employee"
+          ? selectedEmployeeFilter.employeeId
+            ? { employeeId: selectedEmployeeFilter.employeeId }
+            : { employeeName: selectedEmployeeFilter.employeeName }
+          : {}),
       };
 
       const reportData = await postWeeklyPayoutReport(body);
@@ -312,11 +451,17 @@ export default function PayoutReports() {
       const scopeSlug =
         geographicScope === "all_locations" ? "all-locations" : sanitizeExportSlug(oneLocationLabel);
       const empSlug =
-        employeeScope === "one_employee" ? `emp-${String(selectedEmployeeId).slice(0, 12)}` : "all-employees";
+        employeeScope === "one_employee"
+          ? `emp-${sanitizeExportSlug(
+              selectedEmployeeFilter.employeeName || selectedEmployeeFilter.employeeId,
+            )}`
+          : "all-employees";
       const fileBase = `weekly-payout-report-${scopeSlug}-${empSlug}-${sd}-${ed}`;
       const forCsv = kind === "csv";
       const allLocationsAllEmployees =
         geographicScope === "all_locations" && employeeScope !== "one_employee";
+      const allLocationsOneEmployee =
+        geographicScope === "all_locations" && employeeScope === "one_employee";
 
       if (allLocationsAllEmployees) {
         const groups = groupPayoutsByLocationDisplayOrder(payouts, activeLocations);
@@ -346,6 +491,7 @@ export default function PayoutReports() {
               forCsv ? formatCsvNumeric(sum(g.payouts.map((p) => p.tardinessDeduction)), { maxFractionDigits: 2 }) : formatMoney(sum(g.payouts.map((p) => p.tardinessDeduction))),
               forCsv ? formatCsvNumeric(sum(g.payouts.map((p) => p.weeklyAfterTardiness)), { maxFractionDigits: 2 }) : formatMoney(sum(g.payouts.map((p) => p.weeklyAfterTardiness))),
               forCsv ? formatCsvNumeric(sum(g.payouts.map((p) => p.manualDeduction)), { maxFractionDigits: 2 }) : formatMoney(sum(g.payouts.map((p) => p.manualDeduction))),
+              forCsv ? formatCsvNumeric(sum(g.payouts.map((p) => p.additionalTips ?? 0)), { maxFractionDigits: 2 }) : formatMoney(sum(g.payouts.map((p) => p.additionalTips ?? 0))),
               forCsv ? formatCsvNumeric(sum(g.payouts.map((p) => p.netWeeklyTips)), { maxFractionDigits: 2 }) : formatMoney(sum(g.payouts.map((p) => p.netWeeklyTips))),
               forCsv ? formatCsvNumeric(sum(g.payouts.map((p) => p.tardinessRedistribution)), { maxFractionDigits: 2 }) : formatMoney(sum(g.payouts.map((p) => p.tardinessRedistribution))),
               forCsv ? formatCsvNumeric(sum(g.payouts.map((p) => p.finalWeeklyTipsPayable)), { maxFractionDigits: 2 }) : formatMoney(sum(g.payouts.map((p) => p.finalWeeklyTipsPayable))),
@@ -359,6 +505,148 @@ export default function PayoutReports() {
           exportSectionedTableToPDF("", sections, `${fileBase}.pdf`, {
             headFillColor: PDF_HEAD_INDIGO,
             weeklyPayoutHeader: exportMeta.weeklyPayoutHeader,
+          });
+        }
+      } else if (allLocationsOneEmployee) {
+        const timelineRows = [];
+        cols.forEach((col, idx) => {
+          payouts.forEach((p) => {
+            const amount = Number((p.dailyTipsByDay || [])[idx] ?? 0);
+            if (amount <= 0) return;
+            timelineRows.push({
+              dateLabel: col.label,
+              dateKey: col.dateKey || String(idx),
+              locationName: p.locationName || "-",
+              amount,
+            });
+          });
+        });
+        timelineRows.sort((a, b) => {
+          if (a.dateKey !== b.dateKey) return String(a.dateKey).localeCompare(String(b.dateKey));
+          return String(a.locationName).localeCompare(String(b.locationName), undefined, {
+            sensitivity: "base",
+          });
+        });
+        const timelineHeaders = ["Date", "Tips", "Location"];
+        const timelineBody = timelineRows.map((r) => [
+          r.dateLabel,
+          forCsv ? formatCsvNumeric(r.amount, { maxFractionDigits: 2 }) : formatMoney(r.amount),
+          r.locationName,
+        ]);
+        const totalAmount = sum(timelineRows.map((r) => r.amount));
+        const totalWeeklyGrossTips = sum(
+          payouts.map((p) => p.weeklyGrossTips ?? p.dailyTipsMonToSun),
+        );
+        const totalWorkingMinutes = sum(payouts.map((p) => p.totalWorkingMinutes));
+        const totalBreakMinutes = sum(payouts.map((p) => breakMinutesFromPayout(p)));
+        const totalWeeklyTardinessMinutes = sum(
+          payouts.map((p) => p.weeklyTardinessMinutes),
+        );
+        const totalTardinessDeduction = sum(payouts.map((p) => p.tardinessDeduction));
+        const totalWeeklyAfterTardiness = sum(
+          payouts.map((p) => p.weeklyAfterTardiness),
+        );
+        const totalManualDeduction = sum(payouts.map((p) => p.manualDeduction));
+        const totalAdditionalTips = sum(payouts.map((p) => p.additionalTips ?? 0));
+        const totalNetWeeklyTips = sum(payouts.map((p) => p.netWeeklyTips));
+        const totalTardinessRedistribution = sum(
+          payouts.map((p) => p.tardinessRedistribution ?? 0),
+        );
+        const totalFinalWeeklyTipsPayable = sum(
+          payouts.map((p) => p.finalWeeklyTipsPayable ?? 0),
+        );
+        const mergedTardinessPercent =
+          totalWeeklyGrossTips > 0
+            ? `${((totalTardinessDeduction / totalWeeklyGrossTips) * 100).toFixed(2)}%`
+            : "0%";
+        timelineBody.push([
+          "Total",
+          forCsv
+            ? formatCsvNumeric(totalAmount, { maxFractionDigits: 2 })
+            : formatMoney(totalAmount),
+          "All locations",
+        ]);
+        timelineBody.push(["", "", ""]);
+        timelineBody.push([
+          "Weekly Gross Tips",
+          forCsv
+            ? formatCsvNumeric(totalWeeklyGrossTips, { maxFractionDigits: 2 })
+            : formatMoney(totalWeeklyGrossTips),
+          "",
+        ]);
+        timelineBody.push([
+          "Working hours",
+          formatDurationForReport(totalWorkingMinutes),
+          "",
+        ]);
+        timelineBody.push([
+          "Break hours",
+          formatDurationForReport(totalBreakMinutes),
+          "",
+        ]);
+        timelineBody.push([
+          "Weekly Tardiness (min)",
+          String(totalWeeklyTardinessMinutes),
+          "",
+        ]);
+        timelineBody.push(["Tardiness %", mergedTardinessPercent, ""]);
+        timelineBody.push([
+          "Tardiness Deduction",
+          forCsv
+            ? formatCsvNumeric(totalTardinessDeduction, { maxFractionDigits: 2 })
+            : formatMoney(totalTardinessDeduction),
+          "",
+        ]);
+        timelineBody.push([
+          "Weekly After Tardiness",
+          forCsv
+            ? formatCsvNumeric(totalWeeklyAfterTardiness, { maxFractionDigits: 2 })
+            : formatMoney(totalWeeklyAfterTardiness),
+          "",
+        ]);
+        timelineBody.push([
+          "Manual Deduction",
+          forCsv
+            ? formatCsvNumeric(totalManualDeduction, { maxFractionDigits: 2 })
+            : formatMoney(totalManualDeduction),
+          "",
+        ]);
+        timelineBody.push([
+          "Additional Tips (+)",
+          forCsv
+            ? formatCsvNumeric(totalAdditionalTips, { maxFractionDigits: 2 })
+            : formatMoney(totalAdditionalTips),
+          "",
+        ]);
+        timelineBody.push([
+          "Net Weekly Tips",
+          forCsv
+            ? formatCsvNumeric(totalNetWeeklyTips, { maxFractionDigits: 2 })
+            : formatMoney(totalNetWeeklyTips),
+          "",
+        ]);
+        timelineBody.push([
+          "Tardiness Redistribution",
+          forCsv
+            ? formatCsvNumeric(totalTardinessRedistribution, { maxFractionDigits: 2 })
+            : formatMoney(totalTardinessRedistribution),
+          "",
+        ]);
+        timelineBody.push([
+          "Final Weekly Tips Payable",
+          forCsv
+            ? formatCsvNumeric(totalFinalWeeklyTipsPayable, { maxFractionDigits: 2 })
+            : formatMoney(totalFinalWeeklyTipsPayable),
+          "",
+        ]);
+        if (kind === "csv") {
+          exportTableToCSV(timelineHeaders, timelineBody, `${fileBase}.csv`);
+        } else {
+          exportTableToPDF("", timelineHeaders, timelineBody, `${fileBase}.pdf`, {
+            headFillColor: PDF_HEAD_INDIGO,
+            weeklyPayoutHeader: exportMeta.weeklyPayoutHeader,
+            bodyFontSize: 8.5,
+            headFontSize: 8.5,
           });
         }
       } else {
@@ -383,6 +671,7 @@ export default function PayoutReports() {
             forCsv ? formatCsvNumeric(sum(payouts.map((p) => p.tardinessDeduction)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.tardinessDeduction))),
             forCsv ? formatCsvNumeric(sum(payouts.map((p) => p.weeklyAfterTardiness)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.weeklyAfterTardiness))),
             forCsv ? formatCsvNumeric(sum(payouts.map((p) => p.manualDeduction)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.manualDeduction))),
+            forCsv ? formatCsvNumeric(sum(payouts.map((p) => p.additionalTips ?? 0)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.additionalTips ?? 0))),
             forCsv ? formatCsvNumeric(sum(payouts.map((p) => p.netWeeklyTips)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.netWeeklyTips))),
             forCsv ? formatCsvNumeric(sum(payouts.map((p) => p.tardinessRedistribution)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.tardinessRedistribution))),
             forCsv ? formatCsvNumeric(sum(payouts.map((p) => p.finalWeeklyTipsPayable)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.finalWeeklyTipsPayable))),
@@ -391,7 +680,10 @@ export default function PayoutReports() {
         if (kind === "csv") {
           exportTableToCSV(hdr, rows, `${fileBase}.csv`);
         } else if (employeeScope === "one_employee") {
-          const employeeLabel = employeeOptions.find((e) => e.employeeId === selectedEmployeeId)?.employeeName || selectedEmployeeId;
+          const employeeLabel =
+            weeklyPayoutEmployeeOptions.find((o) => o.value === selectedEmployeeId)?.employeeName ||
+            selectedEmployeeFilter.employeeName ||
+            selectedEmployeeFilter.employeeId;
           exportSingleEmployeeWeeklyPayoutPDF({
             headers: hdr,
             rows,
@@ -417,7 +709,7 @@ export default function PayoutReports() {
       employeeScope,
       selectedEmployeeId,
       activeLocations,
-      employeeOptions,
+      weeklyPayoutEmployeeOptions,
     ],
   );
 
@@ -429,8 +721,30 @@ export default function PayoutReports() {
         toast.error("Invalid date range");
         return;
       }
-      const result = await getWeeklyTardiness(sd, singleLocationId || null, false, sd, ed);
-      const entries = result?.entries ?? [];
+      if (tardinessGeographicScope === "one_location" && !singleLocationId) {
+        toast.error("Select location");
+        return;
+      }
+      if (tardinessEmployeeScope === "one_employee" && !tardinessSelectedEmployee) {
+        toast.error("Select employee");
+        return;
+      }
+      const result = await getWeeklyTardiness(
+        sd,
+        tardinessGeographicScope === "one_location" ? singleLocationId || null : null,
+        false,
+        sd,
+        ed,
+      );
+      const entries = (result?.entries ?? []).filter((row) => {
+        if (
+          tardinessEmployeeScope === "one_employee" &&
+          String(row?.employeeName || "").trim() !== tardinessSelectedEmployee
+        ) {
+          return false;
+        }
+        return true;
+      });
       const dateColumns = getDateRangeColumns(sd, ed);
       const employeeMap = new Map();
       for (const row of entries) {
@@ -509,17 +823,29 @@ export default function PayoutReports() {
         formatDurationForReport(sum(employeeRows.map((rec) => Number(result?.totalWorkingMinutesByEmployee?.[rec.employeeName]) || 0))),
         formatDurationForReport(sum(employeeRows.map((rec) => Number(result?.totalBreakMinutesByEmployee?.[rec.employeeName]) || 0))),
       ]);
-      const locSlug = singleLocationId
+      const locSlug = tardinessGeographicScope === "one_location" && singleLocationId
         ? sanitizeExportSlug(activeLocations.find((l) => l._id === singleLocationId)?.name)
         : "all-locations";
-      const file = `weekly-tardiness-${locSlug}-${sd}-${ed}.${kind}`;
+      const empSlug =
+        tardinessEmployeeScope === "one_employee"
+          ? sanitizeExportSlug(tardinessSelectedEmployee)
+          : "all-employees";
+      const file = `weekly-tardiness-${locSlug}-${empSlug}-${sd}-${ed}.${kind}`;
       if (kind === "csv") {
         exportTableToCSV(headers, rows, file);
       } else {
         exportTableToPDF(`Weekly Tardiness ${sd} ${ed}`, headers, rows, file);
       }
     },
-    [startDate, endDate, singleLocationId, activeLocations],
+    [
+      startDate,
+      endDate,
+      singleLocationId,
+      activeLocations,
+      tardinessGeographicScope,
+      tardinessEmployeeScope,
+      tardinessSelectedEmployee,
+    ],
   );
 
   const runDailyTipsExport = useCallback(
@@ -655,6 +981,59 @@ export default function PayoutReports() {
       }
     },
     [singleDate, singleLocationId, activeLocations],
+  );
+
+  const runWeeklyFinalPayableTotalExport = useCallback(
+    async (kind) => {
+      const sd = toFileDate(startDate);
+      const ed = toFileDate(endDate);
+      if (!sd || !ed || ed < sd) {
+        toast.error("Invalid date range");
+        return;
+      }
+      const summary = await getWeeklyFinalPayableSummary(sd, ed);
+      const rowsByEmployee = Array.isArray(summary?.byEmployee)
+        ? summary.byEmployee
+        : [];
+      if (!rowsByEmployee.length) {
+        toast.error("No data for export");
+        return;
+      }
+
+      const headers = ["Employee", "Working hours", "Final Weekly Tip Payable"];
+      const rows = rowsByEmployee.map((row) => [
+        row.employeeName ?? "-",
+        formatDurationForReport(row.totalWorkingMinutes),
+        kind === "csv"
+          ? formatCsvNumeric(row.totalFinalWeeklyTipsPayable, {
+              maxFractionDigits: 2,
+            })
+          : formatMoney(row.totalFinalWeeklyTipsPayable),
+      ]);
+      rows.push([
+        "Total",
+        formatDurationForReport(summary?.grandTotalWorkingMinutes),
+        kind === "csv"
+          ? formatCsvNumeric(summary?.grandTotalFinalWeeklyTipsPayable, {
+              maxFractionDigits: 2,
+            })
+          : formatMoney(summary?.grandTotalFinalWeeklyTipsPayable),
+      ]);
+
+      const file = `weekly-final-payable-total-all-locations-${sd}-${ed}.${kind}`;
+      if (kind === "csv") {
+        exportTableToCSV(headers, rows, file);
+      } else {
+        exportTableToPDF(
+          `Weekly Final Payable Total (All Locations) ${sd} ${ed}`,
+          headers,
+          rows,
+          file,
+          { headFillColor: PDF_HEAD_INDIGO },
+        );
+      }
+    },
+    [startDate, endDate],
   );
 
   const runProductionPoolExport = useCallback(
@@ -849,6 +1228,8 @@ export default function PayoutReports() {
       try {
         if (reportType === "weekly_payout") await runWeeklyPayoutExport(kind);
         if (reportType === "weekly_tardiness") await runWeeklyTardinessExport(kind);
+        if (reportType === "weekly_final_payable_total")
+          await runWeeklyFinalPayableTotalExport(kind);
         if (reportType === "daily_tips") await runDailyTipsExport(kind);
         if (reportType === "tip_history") await runTipHistoryExport(kind);
         if (reportType === "production_pool") await runProductionPoolExport(kind);
@@ -862,6 +1243,7 @@ export default function PayoutReports() {
       reportType,
       runWeeklyPayoutExport,
       runWeeklyTardinessExport,
+      runWeeklyFinalPayableTotalExport,
       runDailyTipsExport,
       runTipHistoryExport,
       runProductionPoolExport,
@@ -966,7 +1348,7 @@ export default function PayoutReports() {
                   </>
                 )}
 
-                {(reportType === "daily_tips" || reportType === "weekly_tardiness" || reportType === "tip_history") && (
+                {(reportType === "daily_tips" || reportType === "tip_history") && (
                   <div>
                     <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">
                       <FiMapPin className="h-3.5 w-3.5" /> Location
@@ -1052,11 +1434,88 @@ export default function PayoutReports() {
                         <option value="">
                           {loadingEmployees ? "Loading employees…" : "Select employee…"}
                         </option>
-                        {employeeOptions.map((e) => (
-                          <option key={`${e.locationId}-${e.employeeId}`} value={e.employeeId}>
-                            {geographicScope === "all_locations"
-                              ? `${e.employeeName} — ${e.locationName}`
-                              : e.employeeName}
+                        {weeklyPayoutEmployeeOptions.map((e) => (
+                          <option key={e.value} value={e.value}>
+                            {e.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {reportType === "weekly_tardiness" && (
+                <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">
+                      Location Scope
+                    </label>
+                    <select
+                      value={tardinessGeographicScope}
+                      onChange={(e) => setTardinessGeographicScope(e.target.value)}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:ring-indigo-300/30"
+                    >
+                      <option value="one_location">One location</option>
+                      <option value="all_locations">All locations</option>
+                    </select>
+                  </div>
+
+                  {tardinessGeographicScope === "one_location" && (
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">
+                        Location
+                      </label>
+                      <select
+                        value={singleLocationId}
+                        onChange={(e) => setSingleLocationId(e.target.value)}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:ring-indigo-300/30"
+                      >
+                        {activeLocations.map((loc) => (
+                          <option key={loc._id} value={loc._id}>
+                            {loc.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">
+                      Employee Scope
+                    </label>
+                    <select
+                      value={tardinessEmployeeScope}
+                      onChange={(e) => {
+                        setTardinessEmployeeScope(e.target.value);
+                        setTardinessSelectedEmployee("");
+                      }}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:ring-indigo-300/30"
+                    >
+                      <option value="all">All employees</option>
+                      <option value="one_employee">One employee</option>
+                    </select>
+                  </div>
+
+                  {tardinessEmployeeScope === "one_employee" && (
+                    <div>
+                      <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300">
+                        <FiUser className="h-3.5 w-3.5" /> Employee
+                      </label>
+                      <select
+                        value={tardinessSelectedEmployee}
+                        onChange={(e) => setTardinessSelectedEmployee(e.target.value)}
+                        disabled={loadingTardinessEmployees}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 disabled:opacity-60 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:ring-indigo-300/30"
+                      >
+                        <option value="">
+                          {loadingTardinessEmployees
+                            ? "Loading employees…"
+                            : "Select employee…"}
+                        </option>
+                        {tardinessEmployeeOptions.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
                           </option>
                         ))}
                       </select>

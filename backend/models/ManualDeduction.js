@@ -21,6 +21,11 @@ const manualDeductionSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    additionalTips: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     reason: {
       type: String,
       required: true,

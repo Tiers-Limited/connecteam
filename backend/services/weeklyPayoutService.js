@@ -209,15 +209,17 @@ async function getManualDeductions(locationId, weekStart) {
   return ManualDeduction.find({ locationId, weekStart: ws }).populate('employeeId', 'name').lean();
 }
 
-async function upsertManualDeduction(employeeId, locationId, weekStart, amount, reason) {
+async function upsertManualDeduction(employeeId, locationId, weekStart, amount, additionalTips, reason) {
   const ws = toWeekStartUTC(weekStart);
-  if (amount === 0) {
+  const deductionAmount = Number(amount) || 0;
+  const addTips = Number(additionalTips) || 0;
+  if (deductionAmount === 0 && addTips === 0) {
     await ManualDeduction.deleteOne({ employeeId, locationId, weekStart: ws });
     return { removed: true };
   }
   return ManualDeduction.findOneAndUpdate(
     { employeeId, locationId, weekStart: ws },
-    { $set: { amount, reason } },
+    { $set: { amount: deductionAmount, additionalTips: addTips, reason } },
     { new: true, upsert: true }
   );
 }

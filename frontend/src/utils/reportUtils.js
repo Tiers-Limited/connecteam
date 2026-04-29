@@ -134,6 +134,8 @@ export function exportTableToCSV(headers, rows, filename) {
  */
 export function exportTableToPDF(title, headers, rows, filename, options = {}) {
   const headFillColor = options.headFillColor || [71, 85, 105];
+  const bodyFontSize = Number(options.bodyFontSize) || 7;
+  const headFontSize = Number(options.headFontSize) || bodyFontSize;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const meta = options.weeklyPayoutHeader;
   const startY =
@@ -148,8 +150,8 @@ export function exportTableToPDF(title, headers, rows, filename, options = {}) {
     head: [headers],
     body: rows,
     startY,
-    styles: { fontSize: 7 },
-    headStyles: { fillColor: headFillColor },
+    styles: { fontSize: bodyFontSize },
+    headStyles: { fillColor: headFillColor, fontSize: headFontSize },
     margin: { left: 14, right: 14 },
   });
   doc.save(filename || 'report.pdf');

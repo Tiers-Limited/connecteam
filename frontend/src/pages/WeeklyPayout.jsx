@@ -78,6 +78,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
   const [modalEmployee, setModalEmployee] = useState(null);
   const [editTardinessByDate, setEditTardinessByDate] = useState({});
   const [editManualAmount, setEditManualAmount] = useState("");
+  const [editAdditionalTips, setEditAdditionalTips] = useState("");
   const [editManualReason, setEditManualReason] = useState("");
 
   const loadPayout = useCallback(
@@ -169,7 +170,8 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
       } else {
         setEditTardinessByDate(byDate);
       }
-      setEditManualAmount(String(p.manualDeduction ?? 0));
+      setEditManualAmount(String(Math.max(0, Number(p.manualDeduction) || 0)));
+      setEditAdditionalTips(String(Math.max(0, Number(p.additionalTips) || 0)));
       setEditManualReason(manualEdits[p.employeeId]?.reason ?? "");
     },
     [manualEdits],
@@ -211,10 +213,15 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
         return;
       }
     }
-    const amt = parseFloat(editManualAmount) || 0;
+    const deductionAmt = parseFloat(editManualAmount) || 0;
+    const additionalTipsAmt = parseFloat(editAdditionalTips) || 0;
     const reason = editManualReason.trim();
-    if (amt > 0 && !reason) {
-      toast.error("Reason is required when manual deduction > 0");
+    if (deductionAmt < 0 || additionalTipsAmt < 0) {
+      toast.error("Manual deduction and additional tips must be 0 or more.");
+      return;
+    }
+    if ((deductionAmt > 0 || additionalTipsAmt > 0) && !reason) {
+      toast.error("Reason is required when manual adjustment is not zero.");
       return;
     }
     setSaving(true);
@@ -230,8 +237,9 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
         employeeId: modalEmployee.employeeId,
         locationId: selectedLocationId,
         weekStart: startDate.trim().slice(0, 10),
-        amount: amt,
-        reason: amt > 0 ? reason : "",
+        amount: deductionAmt,
+        additionalTips: additionalTipsAmt,
+        reason: deductionAmt !== 0 || additionalTipsAmt !== 0 ? reason : "",
       });
       toast.success(`Saved for ${modalEmployee.employeeName}`);
       closeModal();
@@ -250,6 +258,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
     modalLateDays,
     computedWeeklyTardiness,
     editManualAmount,
+    editAdditionalTips,
     editManualReason,
     closeModal,
     loadPayout,
@@ -282,6 +291,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
           if (id)
             next[id] = {
               amount: String(r.amount ?? 0),
+              additionalTips: String(r.additionalTips ?? 0),
               reason: r.reason || "",
             };
         });
@@ -550,7 +560,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                 </div>
               )}
 
-              <div className="relative z-0 max-h-[75vh] overflow-auto pr-2 pb-2 [scrollbar-color:rgba(99,102,241,0.55)_#e2e8f0] dark:[scrollbar-color:rgba(99,102,241,0.55)_rgba(15,23,42,0.7)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-200 dark:[&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-400/60 [&::-webkit-scrollbar-thumb:hover]:bg-indigo-300/70">
+              <div className="relative z-0 max-h-[75vh] overflow-auto pr-4 pb-4 [scrollbar-color:rgba(99,102,241,0.55)_#e2e8f0] dark:[scrollbar-color:rgba(99,102,241,0.55)_rgba(15,23,42,0.7)] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-slate-200 dark:[&::-webkit-scrollbar-track]:bg-slate-900/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-400/60 [&::-webkit-scrollbar-thumb:hover]:bg-indigo-300/70">
                 <table className="w-full min-w-[1200px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-white/10">
@@ -606,6 +616,9 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                         Manual Deduction
                       </th>
                       <th className="sticky top-0 z-[1] whitespace-nowrap bg-white dark:bg-slate-900 pb-3 pr-4 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-700 dark:text-slate-200">
+                        Additional Tips (+)
+                      </th>
+                      <th className="sticky top-0 z-[1] whitespace-nowrap bg-white dark:bg-slate-900 pb-3 pr-4 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-700 dark:text-slate-200">
                         Net Weekly Tips
                       </th>
                       <th
@@ -615,7 +628,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                         Tardiness Redistribution
                       </th>
                       <th
-                        className="sticky top-0 z-[1] whitespace-nowrap bg-white dark:bg-slate-900 pb-3 pl-4 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-700 dark:text-slate-200"
+                        className="sticky top-0 z-[1] whitespace-nowrap bg-white dark:bg-slate-900 pb-3 pl-4 pr-6 pt-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-700 dark:text-slate-200"
                         title="Net tips + redistribution"
                       >
                         Final Weekly Tips Payable
@@ -687,6 +700,9 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                         <td className="py-3 pr-4 text-right tabular-nums text-slate-600 dark:text-slate-300">
                           {formatMoney(p.manualDeduction)}
                         </td>
+                        <td className="py-3 pr-4 text-right tabular-nums text-emerald-700 dark:text-emerald-300">
+                          {formatMoney(p.additionalTips ?? 0)}
+                        </td>
                         <td className="py-3 pr-4 text-right tabular-nums text-slate-600 dark:text-slate-300">
                           {formatMoney(p.netWeeklyTips)}
                         </td>
@@ -702,7 +718,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                         >
                           {formatMoney(p.tardinessRedistribution ?? 0)}
                         </td>
-                        <td className="py-3 pl-4 text-right font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                        <td className="py-3 pl-4 pr-6 text-right font-semibold tabular-nums text-slate-900 dark:text-slate-100">
                           {formatMoney(p.finalWeeklyTipsPayable ?? 0)}
                         </td>
                       </tr>
@@ -827,6 +843,23 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                       onChange={(e) => setEditManualAmount(e.target.value)}
                       className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 dark:[color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
                     />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">
+                      Additional tips (+$)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editAdditionalTips}
+                      onChange={(e) => setEditAdditionalTips(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 dark:[color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
+                    />
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Adds tips only to this employee. Net manual adjustment =
+                      deduction - additional tips.
+                    </p>
                   </div>
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">

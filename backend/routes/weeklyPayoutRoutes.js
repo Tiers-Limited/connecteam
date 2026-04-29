@@ -112,9 +112,12 @@ router.post(
   body('locationId').isMongoId(),
   weekStartBody,
   body('amount').isFloat({ min: 0 }),
+  body('additionalTips').optional().isFloat({ min: 0 }),
   body('reason').custom((value, { req }) => {
-    if (Number(req.body?.amount) > 0 && !(value && String(value).trim())) {
-      throw new Error('Reason is required when amount > 0');
+    const amount = Number(req.body?.amount) || 0;
+    const additionalTips = Number(req.body?.additionalTips) || 0;
+    if ((amount > 0 || additionalTips > 0) && !(value && String(value).trim())) {
+      throw new Error('Reason is required when manual adjustment is not zero');
     }
     return true;
   }),
