@@ -8,6 +8,7 @@ const DEFAULT_TIMEZONE = 'America/Aruba';
 const CONNECTEAM_ENTRIES_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 const connecteamEntriesCache = new Map();
 const connecteamEntriesInFlight = new Map();
+const CONNECTEAM_JOB_FETCH_CONCURRENCY = 8;
 
 let connecteamCallCount = 0;
 
@@ -197,13 +198,33 @@ function getDateRangeBoundsUnixSeconds(startStr, endStr) {
   };
 }
 
-async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
+async function mapWithConcurrency(items, limit, worker) {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return [];
+  const safeLimit = Math.max(1, Number(limit) || 1);
+  const results = new Array(list.length);
+  let idx = 0;
+  const runners = Array.from({ length: Math.min(safeLimit, list.length) }).map(async () => {
+    while (true) {
+      const current = idx;
+      idx += 1;
+      if (current >= list.length) break;
+      results[current] = await worker(list[current], current);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
+async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locationKeysOverride = null) {
   if (!connecteamsApiKey) {
     throw new Error('CONNECTEAMS_API_KEY is not set');
   }
 
   connecteamCallCount = 0;
-  const locationKeys = LOCATIONS.map((l) => l.key);
+  const locationKeys = Array.isArray(locationKeysOverride) && locationKeysOverride.length > 0
+    ? locationKeysOverride
+    : LOCATIONS.map((l) => l.key);
   const firstUserFlow = { userId: null, userName: null, userFromApi: null, timeActivitiesResponse: null, jobIds: null, jobResponses: [] };
   const datesInRange = getDatesInRange(startDate, endDate);
   const dayBounds = getDateRangeBoundsUnixSeconds(startDate, endDate);
@@ -415,7 +436,7 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
   const jobIdToLocationKey = {};
   const jobIdToResolvedKey = {};
   const firstUserJobIdSet = firstUserFlow.jobIds ? new Set(firstUserFlow.jobIds) : null;
-  for (const jobId of uniqueJobIds) {
+  await mapWithConcurrency(uniqueJobIds, CONNECTEAM_JOB_FETCH_CONCURRENCY, async (jobId) => {
     try {
       const jobRes = await connecteamsFetch(`/jobs/v1/jobs/${encodeURIComponent(jobId)}`);
       if (firstUserJobIdSet && firstUserJobIdSet.has(jobId)) {
@@ -431,7 +452,7 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
       }
     } catch (_) {
     }
-  }
+  });
 
   const entries = [];
   for (const { shift, ukey, userInfo } of allShiftsWithUser) {
@@ -495,10 +516,14 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate) {
   return entries;
 }
 
-async function getTimeEntriesFromConnecteams(startDate, endDate) {
+async function getTimeEntriesFromConnecteams(startDate, endDate, locationKeysOverride = null) {
   const start = (startDate || '').toString().trim();
   const end = (endDate || '').toString().trim();
-  const key = `${start}_${end}`;
+  const locationPart =
+    Array.isArray(locationKeysOverride) && locationKeysOverride.length > 0
+      ? locationKeysOverride.slice().sort().join('|')
+      : 'all';
+  const key = `${start}_${end}_${locationPart}`;
 
   const cached = connecteamEntriesCache.get(key);
   if (cached && Date.now() - cached.ts < CONNECTEAM_ENTRIES_CACHE_TTL_MS) {
@@ -510,7 +535,7 @@ async function getTimeEntriesFromConnecteams(startDate, endDate) {
     return promise;
   }
 
-  promise = getTimeEntriesFromConnecteamsUncached(start, end)
+  promise = getTimeEntriesFromConnecteamsUncached(start, end, locationKeysOverride)
     .then((data) => {
       connecteamEntriesCache.set(key, { data, ts: Date.now() });
       return data;
@@ -568,7 +593,8 @@ async function getTardinessFromConnecteamsByDateRange(startDate, endDate, locati
   const start = (startDate || '').toString().trim().slice(0, 10);
   const end = (endDate || '').toString().trim().slice(0, 10);
   if (!start || !end) throw new Error('startDate and endDate are required (YYYY-MM-DD)');
-  const rawEntries = await getTimeEntriesFromConnecteams(start, end);
+  const locationKeys = locationKeyFilter ? [String(locationKeyFilter).toLowerCase().trim()] : null;
+  const rawEntries = await getTimeEntriesFromConnecteams(start, end, locationKeys);
   return buildTardinessPayload(rawEntries, locationKeyFilter);
 }
 
@@ -578,7 +604,8 @@ async function getWeeklyTardinessFromConnecteams(weekStart, locationKeyFilter = 
   const weekEndDate = getWeekEnd(weekStartDate);
   const endDate = toDateString(weekEndDate);
 
-  const rawEntries = await getTimeEntriesFromConnecteams(startDate, endDate);
+  const locationKeys = locationKeyFilter ? [String(locationKeyFilter).toLowerCase().trim()] : null;
+  const rawEntries = await getTimeEntriesFromConnecteams(startDate, endDate, locationKeys);
   return buildTardinessPayload(rawEntries, locationKeyFilter);
 }
 

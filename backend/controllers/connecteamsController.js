@@ -10,6 +10,23 @@ const WeeklyTardinessCache = require('../models/WeeklyTardinessCache');
 const { LOCATIONS } = require('../utils/constants');
 const { dateRangeToUtcBounds } = require('../utils/dateUtils');
 
+function payloadDateToYMD(v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'string') return v.trim().slice(0, 10);
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+  return String(v).slice(0, 10);
+}
+
+function payloadMatchesRange(payload, sd, ed) {
+  if (!payload || typeof payload !== 'object') return false;
+  if (payload.dateRange && payload.dateRange.startDate && payload.dateRange.endDate) {
+    return payload.dateRange.startDate === sd && payload.dateRange.endDate === ed;
+  }
+  const ws = payloadDateToYMD(payload.weekStart);
+  const we = payloadDateToYMD(payload.weekEnd);
+  return ws === sd && we === ed;
+}
+
 
 async function getWeeklyTardiness(req, res, next) {
   try {
@@ -40,12 +57,39 @@ async function getWeeklyTardiness(req, res, next) {
           error: 'startDate and endDate must be valid YYYY-MM-DD with endDate >= startDate',
         });
       }
+      const cacheLocationId =
+        locationId && String(locationId).trim() && mongoose.Types.ObjectId.isValid(locationId)
+          ? new mongoose.Types.ObjectId(locationId)
+          : null;
+      const shouldRefresh = refresh === 'true' || refresh === '1';
+      if (!shouldRefresh) {
+        const cached = await WeeklyTardinessCache.findOne({
+          weekStart: start,
+          locationId: cacheLocationId,
+        }).lean();
+        const payload = cached?.payload;
+        if (payload && payloadMatchesRange(payload, start, end)) {
+          return res.json({
+            success: true,
+            data: payload,
+            fromCache: true,
+          });
+        }
+      }
+
       const data = await connecteamsService.getTardinessFromConnecteamsByDateRange(start, end, locationKeyFilter);
-      // Persist to WeeklyTardiness with weekStart, weekEnd and dailyBreakdown (per-day working/tardiness minutes)
-      await weeklyPayoutService.persistTardinessFromPayload(data, start, end);
+      const payload = { ...data, dateRange: { startDate: start, endDate: end } };
+      WeeklyTardinessCache.findOneAndUpdate(
+        { weekStart: start, locationId: cacheLocationId },
+        { $set: { payload } },
+        { upsert: true, new: true }
+      ).catch(() => {});
+      weeklyPayoutService
+        .persistTardinessFromPayload(data, start, end)
+        .catch(() => {});
       return res.json({
         success: true,
-        data: { ...data, dateRange: { startDate: start, endDate: end } },
+        data: payload,
         fromCache: false,
       });
     }
@@ -100,14 +144,13 @@ async function getWeeklyTardiness(req, res, next) {
       locationKeyFilter
     );
 
-    await WeeklyTardinessCache.findOneAndUpdate(
+    res.json({ success: true, data, fromCache: false });
+    WeeklyTardinessCache.findOneAndUpdate(
       { weekStart: weekStartNorm, locationId: cacheLocationId },
       { $set: { payload: data } },
       { upsert: true, new: true }
-    );
-    await weeklyPayoutService.persistTardinessFromPayload(data, weekStartNorm);
-
-    res.json({ success: true, data, fromCache: false });
+    ).catch(() => {});
+    weeklyPayoutService.persistTardinessFromPayload(data, weekStartNorm).catch(() => {});
   } catch (err) {
     next(err);
   }

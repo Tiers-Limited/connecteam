@@ -1,10 +1,9 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import { useApp } from "../context/AppContext";
 import {
   getWeeklyPayout,
-  getManualDeductions,
   upsertTardiness,
   upsertManualDeduction,
 } from "../services/weeklyPayoutService";
@@ -17,7 +16,7 @@ import {
   getDateRangeColumns,
   columnsFromDayDateKeys,
 } from "../utils/dateUtils";
-import { FiCreditCard } from "react-icons/fi";
+import { FiCreditCard, FiLoader, FiZap } from "react-icons/fi";
 import Button from "../components/ui/Button";
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -71,7 +70,6 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
   const [endDate, setEndDate] = useState(defaultRange.end);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [manualEdits, setManualEdits] = useState({});
   const [saving, setSaving] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -80,6 +78,9 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
   const [editManualAmount, setEditManualAmount] = useState("");
   const [editAdditionalTips, setEditAdditionalTips] = useState("");
   const [editManualReason, setEditManualReason] = useState("");
+  const [progressPercent, setProgressPercent] = useState(0);
+  const progressTimerRef = useRef(null);
+  const progressResetRef = useRef(null);
 
   const loadPayout = useCallback(
     (refresh = false) => {
@@ -136,8 +137,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
     [selectedLocationId, startDate, endDate],
   );
 
-  const openDeductionModal = useCallback(
-    (p) => {
+  const openDeductionModal = useCallback((p) => {
       setModalEmployee(p);
       const byDate = {};
       let byDateTotal = 0;
@@ -164,10 +164,8 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
       }
       setEditManualAmount(String(Math.max(0, Number(p.manualDeduction) || 0)));
       setEditAdditionalTips(String(Math.max(0, Number(p.additionalTips) || 0)));
-      setEditManualReason(manualEdits[p.employeeId]?.reason ?? "");
-    },
-    [manualEdits],
-  );
+      setEditManualReason(String(p.manualDeductionReason || "").trim());
+    }, []);
 
   const closeModal = useCallback(() => {
     setModalEmployee(null);
@@ -265,32 +263,46 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
     return () => window.removeEventListener("keydown", onEscape);
   }, [modalEmployee, closeModal]);
 
+  const payoutBusy = loading || saving;
   useEffect(() => {
-    if (!selectedLocationId || !data?.payouts?.length) return;
-    const m = {};
-    data.payouts.forEach((p) => {
-      m[p.employeeId] = { amount: String(p.manualDeduction ?? 0), reason: "" };
-    });
-    setManualEdits(m);
-    const weekKey = (data?.dateRange?.startDate || startDate)
-      .trim()
-      .slice(0, 10);
-    getManualDeductions(selectedLocationId, weekKey)
-      .then((list) => {
-        const next = { ...m };
-        list.forEach((r) => {
-          const id = r.employeeId?._id || r.employeeId;
-          if (id)
-            next[id] = {
-              amount: String(r.amount ?? 0),
-              additionalTips: String(r.additionalTips ?? 0),
-              reason: r.reason || "",
-            };
-        });
-        setManualEdits(next);
-      })
-      .catch(() => {});
-  }, [selectedLocationId, startDate, data?.payouts, data?.dateRange]);
+    if (payoutBusy) {
+      if (progressResetRef.current) {
+        clearTimeout(progressResetRef.current);
+        progressResetRef.current = null;
+      }
+      setProgressPercent((prev) => (prev > 8 ? prev : 8));
+      if (!progressTimerRef.current) {
+        progressTimerRef.current = setInterval(() => {
+          setProgressPercent((prev) => {
+            if (prev >= 92) return prev;
+            if (prev < 40) return Math.min(92, prev + 6);
+            if (prev < 70) return Math.min(92, prev + 3);
+            return Math.min(92, prev + 1);
+          });
+        }, 220);
+      }
+      return;
+    }
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+    if (progressPercent > 0) {
+      setProgressPercent(100);
+      progressResetRef.current = setTimeout(() => {
+        setProgressPercent(0);
+        progressResetRef.current = null;
+      }, 420);
+    }
+  }, [payoutBusy, progressPercent]);
+
+  useEffect(
+    () => () => {
+      if (progressTimerRef.current) clearInterval(progressTimerRef.current);
+      if (progressResetRef.current) clearTimeout(progressResetRef.current);
+    },
+    [],
+  );
 
   const location = locations.find((l) => l._id === selectedLocationId);
   const payouts = [...(data?.payouts ?? [])].sort((a, b) =>
@@ -329,30 +341,6 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
       </div>
     );
   }
-
-  const spinner = (
-    <svg
-      className="mr-2 h-4 w-4 animate-spin"
-      xmlns="http://www.w3.org/2000/svg"
-      fill="none"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-      />
-    </svg>
-  );
 
   return (
     <div className="space-y-6">
@@ -407,14 +395,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
             />
           </div>
           <Button onClick={() => loadPayout(false)} disabled={loading}>
-            {loading ? (
-              <>
-                {spinner}
-                Loading…
-              </>
-            ) : (
-              "Load payout"
-            )}
+            {loading ? "Loading..." : "Load payout"}
           </Button>
           <Button
             onClick={() => loadPayout(true)}
@@ -882,6 +863,67 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                   </Button>
                 </div>
               </div>
+              </div>,
+              modalRoot,
+            )}
+
+          {progressPercent > 0 &&
+            modalRoot &&
+            createPortal(
+              <div
+                className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="weekly-payout-busy-title"
+                aria-busy="true"
+                aria-live="polite"
+              >
+                <div
+                  className="absolute inset-0 bg-gradient-to-br from-slate-950/75 via-indigo-950/50 to-slate-950/75 backdrop-blur-md"
+                  aria-hidden
+                />
+                <div className="relative w-full max-w-md animate-[fadeIn_0.35s_ease-out] overflow-hidden rounded-3xl border border-white/15 bg-white/98 shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_25px_50px_-12px_rgba(15,23,42,0.45),0_0_80px_-20px_rgba(99,102,241,0.35)] dark:border-white/10 dark:bg-slate-900/98 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_25px_50px_-12px_rgba(0,0,0,0.65),0_0_90px_-24px_rgba(99,102,241,0.45)]">
+                  <div
+                    className="h-1.5 w-full bg-gradient-to-r from-violet-500 via-indigo-500 to-cyan-400 bg-[length:200%_100%] animate-[shimmer_2.2s_linear_infinite]"
+                    aria-hidden
+                  />
+                  <div className="px-8 pb-10 pt-9 text-center sm:px-10">
+                    <div className="relative mx-auto mb-7 flex h-[7.25rem] w-[7.25rem] flex-col items-center justify-center">
+                      <div className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-tr from-violet-500/25 via-indigo-400/20 to-cyan-400/25 blur-xl" aria-hidden />
+                      <div className="pointer-events-none absolute inset-1 rounded-full border-2 border-dashed border-indigo-400/35 dark:border-indigo-400/25" aria-hidden />
+                      <div className="relative flex flex-col items-center justify-center gap-1.5">
+                        <div className="relative flex items-center justify-center">
+                          <FiZap className="absolute -right-1 -top-1 h-5 w-5 text-cyan-400 motion-safe:animate-pulse sm:h-6 sm:w-6" aria-hidden />
+                          <FiLoader
+                            className="h-12 w-12 text-indigo-600 drop-shadow-[0_0_10px_rgba(99,102,241,0.45)] motion-safe:animate-spin dark:text-indigo-400 sm:h-14 sm:w-14"
+                            style={{ animationDuration: "1.05s" }}
+                            aria-hidden
+                          />
+                        </div>
+                        <span className="text-[1.65rem] font-bold tabular-nums tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+                          {Math.round(progressPercent)}
+                          <span className="text-lg font-semibold text-indigo-500 dark:text-indigo-300 sm:text-xl">%</span>
+                        </span>
+                      </div>
+                    </div>
+                    <h2 id="weekly-payout-busy-title" className="text-lg font-semibold tracking-tight text-slate-900 dark:text-white sm:text-xl">
+                      {saving ? "Saving & recalculating payout" : "Loading payout"}
+                    </h2>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+                      Fetching and calculating weekly payout details for this location.
+                    </p>
+                    <div className="mt-8 h-2.5 w-full overflow-hidden rounded-full bg-slate-200/90 ring-1 ring-slate-900/5 dark:bg-white/[0.08] dark:ring-white/10">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-violet-500 via-indigo-500 to-cyan-400 shadow-[0_0_14px_rgba(99,102,241,0.55)] transition-[width] duration-200 ease-out"
+                        style={{ width: `${Math.min(100, progressPercent)}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <style>{`
+                  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+                  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+                `}</style>
               </div>,
               modalRoot,
             )}

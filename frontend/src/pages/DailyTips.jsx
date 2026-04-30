@@ -25,7 +25,7 @@ import {
 import {
   formatCsvNumeric,
 } from "../utils/reportUtils";
-import { FiClock, FiFileText } from "react-icons/fi";
+import { FiClock, FiFileText, FiLoader, FiZap } from "react-icons/fi";
 import Button from "../components/ui/Button";
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -789,20 +789,12 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
 
   const pageTitle = stepTitle || "Daily Tips";
   const modalRoot = typeof document !== "undefined" ? document.body : null;
-  const pageBusy =
-    checkingExistingTipInput ||
-    loadingPending ||
-    batchCalculating ||
-    loadingCalculation ||
-    saving ||
-    manualLoading ||
-    manualSaving ||
-    breakdownEmployeesLoading ||
-    manualRemoveSaving ||
-    adjustSaving;
+  /** Full-screen progress modal only while fetching breakdown tip calculation on the Breakdown tab. */
+  const breakdownCalculationBusy =
+    loadingCalculation && activeSubTab === "breakdown";
 
   useEffect(() => {
-    if (pageBusy) {
+    if (breakdownCalculationBusy) {
       if (progressResetRef.current) {
         clearTimeout(progressResetRef.current);
         progressResetRef.current = null;
@@ -832,7 +824,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
         progressResetRef.current = null;
       }, 420);
     }
-  }, [pageBusy, progressPercent]);
+  }, [breakdownCalculationBusy, progressPercent]);
 
   useEffect(() => {
     return () => {
@@ -893,20 +885,6 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
 
   return (
     <div className="space-y-6">
-      {progressPercent > 0 && (
-        <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-white/[0.04] px-4 py-3 shadow-sm">
-          <div className="mb-2 flex items-center justify-between text-xs font-medium uppercase tracking-wide text-slate-600 dark:text-slate-300">
-            <span>Processing</span>
-            <span>{Math.round(progressPercent)}%</span>
-          </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
-            <div
-              className="h-full rounded-full bg-indigo-500 transition-[width] duration-200 ease-out"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
-        </div>
-      )}
       {!embedded && <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{pageTitle}</h1>}
       <div className="flex gap-1 border-b border-slate-200 dark:border-white/10">
         <button
@@ -2123,6 +2101,83 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               </Button>
             </div>
           </div>
+          </div>,
+          modalRoot,
+        )}
+
+      {progressPercent > 0 &&
+        modalRoot &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="daily-tips-busy-title"
+            aria-busy="true"
+            aria-live="polite"
+          >
+            <div
+              className="absolute inset-0 bg-gradient-to-br from-slate-950/75 via-indigo-950/50 to-slate-950/75 backdrop-blur-md"
+              aria-hidden
+            />
+            <div className="relative w-full max-w-md animate-[fadeIn_0.35s_ease-out] overflow-hidden rounded-3xl border border-white/15 bg-white/98 shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_25px_50px_-12px_rgba(15,23,42,0.45),0_0_80px_-20px_rgba(99,102,241,0.35)] dark:border-white/10 dark:bg-slate-900/98 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_25px_50px_-12px_rgba(0,0,0,0.65),0_0_90px_-24px_rgba(99,102,241,0.45)]">
+              <div
+                className="h-1.5 w-full bg-gradient-to-r from-violet-500 via-indigo-500 to-cyan-400 bg-[length:200%_100%] animate-[shimmer_2.2s_linear_infinite]"
+                aria-hidden
+              />
+              <div className="px-8 pb-10 pt-9 text-center sm:px-10">
+                <div className="relative mx-auto mb-7 flex h-[7.25rem] w-[7.25rem] flex-col items-center justify-center">
+                  <div
+                    className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-tr from-violet-500/25 via-indigo-400/20 to-cyan-400/25 blur-xl"
+                    aria-hidden
+                  />
+                  <div
+                    className="pointer-events-none absolute inset-1 rounded-full border-2 border-dashed border-indigo-400/35 dark:border-indigo-400/25"
+                    aria-hidden
+                  />
+                  <div className="relative flex flex-col items-center justify-center gap-1.5">
+                    <div className="relative flex items-center justify-center">
+                      <FiZap
+                        className="absolute -right-1 -top-1 h-5 w-5 text-cyan-400 motion-safe:animate-pulse sm:h-6 sm:w-6"
+                        aria-hidden
+                      />
+                      <FiLoader
+                        className="h-12 w-12 text-indigo-600 drop-shadow-[0_0_10px_rgba(99,102,241,0.45)] motion-safe:animate-spin dark:text-indigo-400 sm:h-14 sm:w-14"
+                        style={{ animationDuration: "1.05s" }}
+                        aria-hidden
+                      />
+                    </div>
+                    <span className="text-[1.65rem] font-bold tabular-nums tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+                      {Math.round(progressPercent)}
+                      <span className="text-lg font-semibold text-indigo-500 dark:text-indigo-300 sm:text-xl">
+                        %
+                      </span>
+                    </span>
+                  </div>
+                </div>
+                <h2
+                  id="daily-tips-busy-title"
+                  className="text-lg font-semibold tracking-tight text-slate-900 dark:text-white sm:text-xl"
+                >
+                  {breakdownCalculationBusy ? "Calculating tips" : "Finishing up"}
+                </h2>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+                  {breakdownCalculationBusy
+                    ? "Computing the breakdown for this location and date."
+                    : "Almost done — closing out this step."}
+                </p>
+                <div className="mt-8 h-2.5 w-full overflow-hidden rounded-full bg-slate-200/90 ring-1 ring-slate-900/5 dark:bg-white/[0.08] dark:ring-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-violet-500 via-indigo-500 to-cyan-400 shadow-[0_0_14px_rgba(99,102,241,0.55)] transition-[width] duration-200 ease-out"
+                    style={{ width: `${Math.min(100, progressPercent)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+            <style>{`
+              @keyframes fadeIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+              @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+            `}</style>
           </div>,
           modalRoot,
         )}
