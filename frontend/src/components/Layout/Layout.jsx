@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { FiUser, FiLogOut, FiUsers, FiSettings, FiMoon, FiSun } from 'react-icons/fi';
+import { FiUser, FiLogOut, FiUsers, FiSettings, FiMoon, FiSun, FiMenu, FiX } from 'react-icons/fi';
 
 // All navigation items
 const navItems = [
@@ -16,6 +16,7 @@ const navItems = [
 export default function Layout() {
   const { user, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'light') return false;
@@ -46,6 +47,10 @@ export default function Layout() {
     localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
 
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
+
   async function handleLogout() {
     setDropdownOpen(false);
     await logout();
@@ -70,17 +75,17 @@ export default function Layout() {
       }`}
     >
       <header
-        className={`sticky top-0 z-10 border-b shadow-sm backdrop-blur ${
+        className={`sticky top-0 z-40 border-b shadow-sm backdrop-blur ${
           isDarkMode
             ? 'border-white/10 bg-slate-950/85'
             : 'border-slate-200 bg-white/85'
         }`}
       >
-        <div className="mx-auto flex items-center justify-between px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2">
+        <div className="mx-auto flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
+          <div className="min-w-0 flex items-center gap-2">
             <span className="inline-block h-2.5 w-2.5 rounded-full bg-gradient-to-br from-indigo-300 to-fuchsia-400 shadow-[0_0_14px_rgba(129,140,248,0.8)]" />
             <h1
-              className={`text-xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r ${
+              className={`truncate text-base font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r sm:text-xl ${
                 isDarkMode
                   ? 'from-indigo-200 via-violet-200 to-fuchsia-300'
                   : 'from-indigo-700 via-violet-700 to-fuchsia-700'
@@ -89,27 +94,20 @@ export default function Layout() {
               Corvia Tips Dashboard
             </h1>
           </div>
-          <nav className="flex flex-wrap items-center gap-1">
-            {/* Render filtered navigation items based on role */}
-            {filteredNavItems.map(({ to, label }) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) =>
-                  `rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                    isActive
-                      ? isDarkMode
-                        ? 'bg-indigo-500/20 text-indigo-200'
-                        : 'bg-indigo-100 text-indigo-700'
-                      : isDarkMode
-                        ? 'text-slate-300 hover:bg-white/10 hover:text-white'
-                        : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                  }`
-                }
-              >
-                {label}
-              </NavLink>
-            ))}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              className={`inline-flex items-center justify-center rounded-lg p-2 transition-colors sm:hidden ${
+                isDarkMode
+                  ? 'text-slate-300 hover:bg-white/10 hover:text-white'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+              aria-expanded={mobileMenuOpen}
+              aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            >
+              {mobileMenuOpen ? <FiX className="h-5 w-5" /> : <FiMenu className="h-5 w-5" />}
+            </button>
 
             <button
               type="button"
@@ -209,9 +207,75 @@ export default function Layout() {
                 </div>
               )}
             </div>
+          </div>
+          <nav className="hidden items-center gap-1 sm:flex">
+            {/* Render filtered navigation items based on role */}
+            {filteredNavItems.map(({ to, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) =>
+                  `rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                    isActive
+                      ? isDarkMode
+                        ? 'bg-indigo-500/20 text-indigo-200'
+                        : 'bg-indigo-100 text-indigo-700'
+                      : isDarkMode
+                        ? 'text-slate-300 hover:bg-white/10 hover:text-white'
+                        : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                  }`
+                }
+              >
+                {label}
+              </NavLink>
+            ))}
           </nav>
         </div>
       </header>
+      <>
+        <button
+          type="button"
+          className={`fixed inset-0 top-[60px] z-20 bg-black/40 transition-opacity duration-200 sm:hidden ${
+            mobileMenuOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+          }`}
+          aria-label="Close navigation overlay"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+        <nav
+          className={`fixed left-0 right-0 top-[60px] z-30 border-b px-4 pb-3 shadow-lg transition-all duration-200 ease-out sm:hidden ${
+            isDarkMode
+              ? 'border-white/10 bg-slate-950/95'
+              : 'border-slate-200 bg-white/95'
+          } ${
+            mobileMenuOpen
+              ? 'translate-y-0 opacity-100'
+              : 'pointer-events-none -translate-y-2 opacity-0'
+          }`}
+        >
+          <div className="flex flex-col gap-1 pt-3">
+            {filteredNavItems.map(({ to, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                onClick={() => setMobileMenuOpen(false)}
+                className={({ isActive }) =>
+                  `rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                    isActive
+                      ? isDarkMode
+                        ? 'bg-indigo-500/20 text-indigo-200'
+                        : 'bg-indigo-100 text-indigo-700'
+                      : isDarkMode
+                        ? 'text-slate-300 hover:bg-white/10 hover:text-white'
+                        : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                  }`
+                }
+              >
+                {label}
+              </NavLink>
+            ))}
+          </div>
+        </nav>
+      </>
       <main className="mx-auto  px-4 py-6 sm:px-6">
         <Outlet />
       </main>
