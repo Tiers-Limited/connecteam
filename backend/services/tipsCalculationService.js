@@ -408,7 +408,6 @@ function getTardinessDeductionPercent(minutes) {
 }
 
 function getJobTipMultiplier(jobTitle) {
-  console.log("job title", jobTitle);
   if (!jobTitle) return JOB_TIP_MULTIPLIERS.default || 1.0;
   const title = String(jobTitle).trim();
   if (title in JOB_TIP_MULTIPLIERS) {
@@ -669,11 +668,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     if (row.subJobId && jobTitleBySubJobId.has(String(row.subJobId))) {
       jobTitle = jobTitleBySubJobId.get(String(row.subJobId));
     }
-    
-    if (jobTitle) {
-      console.log(`[DailyTip] Employee: ${employeeName} | Job: ${jobTitle}`);
-    }
-    
+
     employeeHours.set(mapKey, {
       employeeId,
       employeeName,
@@ -1521,17 +1516,7 @@ async function getWeeklyPayout(locationId, weekStartDate, options = {}) {
       daysWithTipInput.push(dateStr);
     }
   }
-  console.log('[getWeeklyPayout] Tip data from DB (DailyTipAudit):', {
-    locationId: locationIdObj?.toString(),
-    dateStrs,
-    daysWithTipInput,
-    auditDates: Array.from(auditByDate.keys()),
-    auditSummary: Array.from(auditByDate.entries()).map(([d, a]) => ({
-      date: d,
-      employeePayoutsCount: a?.financial?.employeePayouts?.length ?? 0,
-      employeeHoursCount: a?.derived?.employeeHours?.length ?? 0,
-    })),
-  });
+
 
   // Include employees who only appear in daily tip audits (e.g. manual hours, not in Connecteam tardiness).
   const auditEmployeeIdSet = new Set();
@@ -1835,7 +1820,8 @@ async function getAllLocationsWeeklyFinalPayableSummary(startDate, endDate) {
 
   const byEmployeeMap = new Map();
   for (const loc of activeLocations) {
-    const weekly = await getWeeklyPayout(String(loc._id), sd, {
+    const locId = String(loc._id);
+    const weekly = await getWeeklyPayout(locId, sd, {
       startDate: sd,
       endDate: ed,
     }).catch(() => null);
@@ -1849,22 +1835,48 @@ async function getAllLocationsWeeklyFinalPayableSummary(startDate, endDate) {
           employeeName,
           totalWorkingMinutes: 0,
           totalFinalWeeklyTipsPayable: 0,
+          byLocation: {},
         });
       }
       const row = byEmployeeMap.get(key);
-      row.totalWorkingMinutes += Number(p?.totalWorkingMinutes) || 0;
-      row.totalFinalWeeklyTipsPayable += Number(p?.finalWeeklyTipsPayable) || 0;
+      if (!row.byLocation[locId]) {
+        row.byLocation[locId] = { finalWeeklyTipsPayable: 0, workingMinutes: 0 };
+      }
+      const locCell = row.byLocation[locId];
+      const addMins = Number(p?.totalWorkingMinutes) || 0;
+      const addPay = Number(p?.finalWeeklyTipsPayable) || 0;
+      locCell.workingMinutes += addMins;
+      locCell.finalWeeklyTipsPayable += addPay;
+      row.totalWorkingMinutes += addMins;
+      row.totalFinalWeeklyTipsPayable += addPay;
     }
   }
 
+  const locations = activeLocations.map((l) => ({
+    locationId: String(l._id),
+    locationName: l.name || '',
+  }));
+
   const byEmployee = Array.from(byEmployeeMap.values())
-    .map((row) => ({
-      employeeName: row.employeeName,
-      totalWorkingMinutes: Math.max(0, Number(row.totalWorkingMinutes) || 0),
-      totalFinalWeeklyTipsPayable: roundMoney(
-        Number(row.totalFinalWeeklyTipsPayable) || 0,
-      ),
-    }))
+    .map((row) => {
+      const byLocation = {};
+      for (const loc of activeLocations) {
+        const lid = String(loc._id);
+        const raw = row.byLocation[lid] || { finalWeeklyTipsPayable: 0, workingMinutes: 0 };
+        byLocation[lid] = {
+          finalWeeklyTipsPayable: roundMoney(Number(raw.finalWeeklyTipsPayable) || 0),
+          workingMinutes: Math.max(0, Number(raw.workingMinutes) || 0),
+        };
+      }
+      return {
+        employeeName: row.employeeName,
+        totalWorkingMinutes: Math.max(0, Number(row.totalWorkingMinutes) || 0),
+        totalFinalWeeklyTipsPayable: roundMoney(
+          Number(row.totalFinalWeeklyTipsPayable) || 0,
+        ),
+        byLocation,
+      };
+    })
     .sort((a, b) =>
       a.employeeName.localeCompare(b.employeeName, undefined, { sensitivity: 'base' }),
     );
@@ -1880,12 +1892,37 @@ async function getAllLocationsWeeklyFinalPayableSummary(startDate, endDate) {
     0,
   );
 
+  const grandTotalsByLocation = {};
+  for (const loc of activeLocations) {
+    const lid = String(loc._id);
+    grandTotalsByLocation[lid] = { finalWeeklyTipsPayable: 0, workingMinutes: 0 };
+  }
+  for (const empRow of byEmployee) {
+    for (const loc of activeLocations) {
+      const lid = String(loc._id);
+      const c = empRow.byLocation[lid];
+      grandTotalsByLocation[lid].finalWeeklyTipsPayable += Number(c.finalWeeklyTipsPayable) || 0;
+      grandTotalsByLocation[lid].workingMinutes += Number(c.workingMinutes) || 0;
+    }
+  }
+  for (const lid of Object.keys(grandTotalsByLocation)) {
+    grandTotalsByLocation[lid].finalWeeklyTipsPayable = roundMoney(
+      grandTotalsByLocation[lid].finalWeeklyTipsPayable,
+    );
+    grandTotalsByLocation[lid].workingMinutes = Math.max(
+      0,
+      Math.round(grandTotalsByLocation[lid].workingMinutes) || 0,
+    );
+  }
+
   return {
     dateRange: { startDate: sd, endDate: ed },
+    locations,
     byEmployee,
     grandEmployeesCount: byEmployee.length,
     grandTotalWorkingMinutes,
     grandTotalFinalWeeklyTipsPayable,
+    grandTotalsByLocation,
   };
 }
 
