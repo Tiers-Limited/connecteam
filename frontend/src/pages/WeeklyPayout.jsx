@@ -105,14 +105,6 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
             ? payload.payouts.length
             : 0;
           const emptyReason = payload?.emptyReason;
-          console.log("[WeeklyPayout] Tip/payout data from API:", {
-            locationId: selectedLocationId,
-            dateRange: { start, end },
-            refresh,
-            payoutsCount: count,
-            emptyReason: emptyReason ?? null,
-            payload: payload ?? null,
-          });
           setData(payload);
           setPage(1);
           if (count === 0 && emptyReason === "no_employees_for_location") {

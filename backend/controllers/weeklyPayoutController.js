@@ -66,28 +66,13 @@ async function getPayout(req, res, next) {
         : Boolean(cachedPayload);
 
       if (cachedPayload && cacheMatches) {
-        console.log('[weeklyPayoutController.getPayout] Tip/payout data from DB (cache):', {
-          locationId,
-          weekStartStr,
-          requestedStart,
-          requestedEnd,
-          payoutsCount: cachedPayload?.payouts?.length ?? 0,
-          fromCache: true,
-        });
+
         return res.json({ success: true, data: cachedPayload, fromCache: true });
       }
     }
 
     const options = useDateRange ? { startDate, endDate } : {};
     const result = await tipsCalculationService.getWeeklyPayout(locationId, weekStart, options);
-    console.log('[weeklyPayoutController.getPayout] Tip/payout data from DB (computed):', {
-      locationId,
-      weekStartStr,
-      useDateRange,
-      dateRange: useDateRange ? { startDate, endDate } : null,
-      payoutsCount: result?.payouts?.length ?? 0,
-      fromCache: false,
-    });
     await WeeklyPayoutCache.findOneAndUpdate(
       { locationId, weekStart: weekStartStr },
       { $set: { payload: result } },

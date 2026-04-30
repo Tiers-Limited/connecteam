@@ -1000,24 +1000,42 @@ export default function PayoutReports() {
         return;
       }
 
-      const headers = ["Employee", "Working hours", "Final Weekly Tip Payable"];
-      const rows = rowsByEmployee.map((row) => [
-        row.employeeName ?? "-",
-        formatDurationForReport(row.totalWorkingMinutes),
+      const locations = Array.isArray(summary?.locations) ? summary.locations : [];
+      const formatPayCell = (value) =>
         kind === "csv"
-          ? formatCsvNumeric(row.totalFinalWeeklyTipsPayable, {
-              maxFractionDigits: 2,
-            })
-          : formatMoney(row.totalFinalWeeklyTipsPayable),
-      ]);
+          ? formatCsvNumeric(value, { maxFractionDigits: 2 })
+          : formatMoney(value);
+
+      const headers = [
+        "Employee",
+        "Working hours",
+        ...locations.map((loc) => String(loc.locationName ?? "").trim() || "—"),
+        "Final Weekly Tip Payable",
+      ];
+      const rows = rowsByEmployee.map((row) => {
+        const byLoc = row.byLocation ?? {};
+        const locCells = locations.map((loc) => {
+          const lid = String(loc.locationId ?? "");
+          const amt = Number(byLoc[lid]?.finalWeeklyTipsPayable) || 0;
+          return formatPayCell(amt);
+        });
+        return [
+          row.employeeName ?? "-",
+          formatDurationForReport(row.totalWorkingMinutes),
+          ...locCells,
+          formatPayCell(row.totalFinalWeeklyTipsPayable),
+        ];
+      });
+      const grandByLoc = summary?.grandTotalsByLocation ?? {};
       rows.push([
         "Total",
         formatDurationForReport(summary?.grandTotalWorkingMinutes),
-        kind === "csv"
-          ? formatCsvNumeric(summary?.grandTotalFinalWeeklyTipsPayable, {
-              maxFractionDigits: 2,
-            })
-          : formatMoney(summary?.grandTotalFinalWeeklyTipsPayable),
+        ...locations.map((loc) => {
+          const lid = String(loc.locationId ?? "");
+          const amt = Number(grandByLoc[lid]?.finalWeeklyTipsPayable) || 0;
+          return formatPayCell(amt);
+        }),
+        formatPayCell(summary?.grandTotalFinalWeeklyTipsPayable),
       ]);
 
       const file = `weekly-final-payable-total-all-locations-${sd}-${ed}.${kind}`;

@@ -44,9 +44,6 @@ async function run() {
   await connectDB();
   const stamp = completionTimestamp();
   const tz = getAppTimezone();
-  console.log(`App timezone: ${tz}`);
-  console.log(`Excluded calendar days: ${[...EXCLUDED_YMD].join(', ')}`);
-  console.log(`Setting calculationCompletedAt to: ${stamp.toISOString()}`);
 
   const docs = await DailyTipInput.find({}).select('_id date').lean();
   let updated = 0;
@@ -67,10 +64,7 @@ async function run() {
     else unchanged += 1;
   }
 
-  console.log(`Total documents: ${docs.length}`);
-  console.log(`Skipped (excluded dates): ${skippedExcluded}`);
-  console.log(`Updated (modified): ${updated}`);
-  console.log(`Matched but not modified (already same value): ${unchanged}`);
+
   await mongoose.connection.close();
   process.exit(0);
 }
