@@ -3,7 +3,7 @@
  * AM: 06:00 – 15:00, PM: 15:00 – 23:00
  * Casa del Mar & Oranjestad: AM 06:00 – 14:00, PM 14:00 – 23:00
  */
-const PRODUCTION_DEDUCTION_PERCENT = 0.04;
+const PRODUCTION_DEDUCTION_PERCENT = 0.054;
 
 const SHIFT_BOUNDARIES = {
   AM_START: '06:00',

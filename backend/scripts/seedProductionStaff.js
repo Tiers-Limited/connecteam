@@ -19,20 +19,29 @@ async function seedProductionStaff() {
     { isActive: false }
   );
   for (const row of DEFAULT_STAFF) {
-    await ProductionStaff.findOneAndUpdate(
-      { name: row.name },
-      {
-        $setOnInsert: {
-          name: row.name,
-          allocationPercent: row.allocationPercent,
-          subjectToTardiness: row.subjectToTardiness,
-        },
-        $set: {
-          // Keep custom allocation/tardiness edits; only ensure staff is active.
-          isActive: true,
-        },
-      },
-      { upsert: true, new: true }
+    const existing = await ProductionStaff.findOne({ name: row.name });
+    if (!existing) {
+      await ProductionStaff.create({
+        name: row.name,
+        allocationPercent: row.allocationPercent,
+        subjectToTardiness: row.subjectToTardiness,
+        isActive: true,
+      });
+      continue;
+    }
+
+    const update = { isActive: true };
+    const current = Number(existing.allocationPercent) || 0;
+    // Auto-heal legacy bad data like 1 / 1.5 / 2 while preserving valid custom edits.
+    if (current > 0 && current < 5) {
+      update.allocationPercent = row.allocationPercent;
+      update.subjectToTardiness = row.subjectToTardiness;
+    }
+
+    await ProductionStaff.findByIdAndUpdate(
+      existing._id,
+      { $set: update },
+      { new: true, runValidators: true }
     );
   }
 }

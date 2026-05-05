@@ -29,7 +29,7 @@ import { FiClock, FiFileText, FiLoader, FiZap } from "react-icons/fi";
 import Button from "../components/ui/Button";
 
 const PAGE_SIZES = [10, 25, 50, 100];
-const PRODUCTION_POOL_PERCENT = 0.04;
+const PRODUCTION_POOL_PERCENT = 0.054;
 const STORAGE_BREAKDOWN = "dailyTipsBreakdownContext";
 
 function locationIsTheCove(loc) {
@@ -624,7 +624,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
       toast.success(
         hasExistingTipInput
           ? "Tips updated. Run calculation to refresh employee split."
-          : "Tips saved. Production pool uses 4% of gross from saved data.",
+          : "Tips saved. Production pool uses 5.4% of gross from saved data.",
       );
       setCalculation(null);
       setCalculationError(null);
@@ -1062,7 +1062,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                           PM gross ($)
                         </th>
                         <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
-                          4% pool ($)
+                          5.4% pool ($)
                         </th>
                         <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                           Actions
@@ -1131,7 +1131,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                                   void refreshBreakdownCalculation(false, {
                                     locationId: id,
                                     dateStr: ymd,
-                                  }, false);
+                                  }, true);
                                 }}
                                 disabled={loadingCalculation}
                               >
@@ -1228,7 +1228,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => refreshBreakdownCalculation(false, undefined, false)}
+                onClick={() => refreshBreakdownCalculation(false, undefined, true)}
                 disabled={
                   loadingCalculation ||
                   !breakdownView?.locationId ||
@@ -1575,7 +1575,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
           <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-white/10 pb-3">
             <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600 dark:text-slate-300">
               <span>
-                4% production pool:{" "}
+                5.4% production pool:{" "}
                 <strong className="text-slate-900 dark:text-slate-100">
                   ${productionDeductionDollars?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }) ?? "0.00"}
                 </strong>

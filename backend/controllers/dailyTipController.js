@@ -40,7 +40,33 @@ async function getCalculation(req, res, next) {
       if (snapshot && snapshot.error) {
         result = snapshot;
       } else if (snapshot) {
-        result = snapshot;
+        let shouldRecalculate = false;
+        try {
+          const tipInput = await dailyTipInputService.getByLocationAndDate(
+            locationId,
+            date,
+          );
+          const tipUpdatedAtMs = tipInput?.updatedAt
+            ? new Date(tipInput.updatedAt).getTime()
+            : NaN;
+          const snapUpdatedAtMs = snapshot?.audit?.updatedAt
+            ? new Date(snapshot.audit.updatedAt).getTime()
+            : NaN;
+          // If tip input was updated after snapshot (or completion flag not set),
+          // rebuild once so breakdown never shows stale/empty rows.
+          shouldRecalculate =
+            !tipInput?.calculationCompletedAt ||
+            Number.isNaN(snapUpdatedAtMs) ||
+            (!Number.isNaN(tipUpdatedAtMs) && tipUpdatedAtMs > snapUpdatedAtMs);
+        } catch (tipErr) {
+          console.warn(
+            '[getCalculation] Tip freshness check failed; serving snapshot:',
+            tipErr?.message || tipErr,
+          );
+        }
+        result = shouldRecalculate
+          ? await tipsCalculationService.getDailyTipCalculation(locationId, date)
+          : snapshot;
       } else {
         result = await tipsCalculationService.getDailyTipCalculation(locationId, date);
       }

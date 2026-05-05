@@ -74,6 +74,10 @@ function getTardinessDeductionPercent(minutes) {
   return 0.2;
 }
 
+function normalizeStaffName(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
 async function getDailyProductionPool(dateStr) {
   const d = typeof dateStr === 'string' ? dateStr.slice(0, 10) : toDateString(dateStr);
   const dateStart = new Date(d + 'T00:00:00.000Z');
@@ -183,6 +187,46 @@ async function getProductionTardinessMap(weekStartStr, staffNames, options = {})
   return map;
 }
 
+async function getProductionClockedInDatesMap(weekStartStr, staffNames, options = {}) {
+  const map = new Map(staffNames.map((n) => [normalizeStaffName(n), new Set()]));
+  let entries = [];
+  if (options.connecteamPayload && Array.isArray(options.connecteamPayload.entries)) {
+    entries = options.connecteamPayload.entries;
+  } else {
+    const tardinessDocs = await WeeklyTardinessCache.find({ weekStart: weekStartStr }).lean();
+    for (const doc of tardinessDocs) {
+      if (doc.payload?.entries && Array.isArray(doc.payload.entries)) {
+        entries.push(...doc.payload.entries);
+      }
+    }
+  }
+  if (entries.length === 0) return map;
+
+  // Keep one first-punch per employee/day to represent clock-in presence.
+  const firstPunchByKey = new Map();
+  for (const e of entries) {
+    const nameKey = normalizeStaffName(e.employeeName);
+    const date = (e.date || '').toString().slice(0, 10);
+    if (!nameKey || !date) continue;
+    if (!map.has(nameKey)) continue;
+    const key = `${nameKey}|${date}`;
+    const clockInMins = timeToMinutes(e.clockIn);
+    const existing = firstPunchByKey.get(key);
+    if (existing == null || clockInMins < existing.clockInMins) {
+      firstPunchByKey.set(key, {
+        nameKey,
+        date,
+        clockInMins,
+      });
+    }
+  }
+
+  for (const row of firstPunchByKey.values()) {
+    map.get(row.nameKey).add(row.date);
+  }
+  return map;
+}
+
 
 async function getWeeklyProductionPayout(weekStartStr, options = {}) {
   const staff = await ProductionStaff.find({ isActive: true }).sort({ name: 1 });
@@ -231,6 +275,7 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
 
   const staffNames = staff.map((s) => s.name.trim());
   let tardinessMap;
+  let clockedInDatesByStaff;
   if (useDateRange) {
     const connecteamPayload = await connecteamsService.getTardinessFromConnecteamsByDateRange(
       options.startDate.trim().slice(0, 10),
@@ -238,8 +283,14 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
       null
     );
     tardinessMap = await getProductionTardinessMap(weekStartStr, staffNames, { connecteamPayload });
+    clockedInDatesByStaff = await getProductionClockedInDatesMap(
+      weekStartStr,
+      staffNames,
+      { connecteamPayload },
+    );
   } else {
     tardinessMap = await getProductionTardinessMap(weekStartStr, staffNames);
+    clockedInDatesByStaff = await getProductionClockedInDatesMap(weekStartStr, staffNames);
   }
   const manualDeductions = await ProductionManualDeduction.find({ weekStart: weekStartForManual })
     .populate('productionStaffId')
@@ -258,8 +309,13 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
   for (let i = 0; i < numDays; i += 1) {
     const dateStr = dateStrs[i];
     const pool = dailyPoolByDate.get(dateStr) || 0;
+    const clockedInStaff = staff.filter((member) =>
+      clockedInDatesByStaff
+        .get(normalizeStaffName(member.name))
+        ?.has(dateStr),
+    );
     const byStaffId = allocateCentsProportionally(
-      staff,
+      clockedInStaff,
       pool,
       (member) => Number(member.allocationPercent) || 0,
       (member) => member?._id?.toString?.() || '',
@@ -271,21 +327,11 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
     }
   }
 
-  const totalWeeklyPool = roundMoney(
-    dateStrs.reduce((sum, d) => sum + (dailyPoolByDate.get(d) || 0), 0),
-  );
-  const weeklyGrossByStaffId = allocateCentsProportionally(
-    staff,
-    totalWeeklyPool,
-    (member) => Number(member.allocationPercent) || 0,
-    (member) => member?._id?.toString?.() || '',
-  );
-
   const rows = [];
   for (const s of staff) {
     const id = s._id.toString();
     const dailyByDay = dailyGrossByStaffId.get(id) || Array(numDays).fill(0);
-    const weeklyGross = roundMoney(weeklyGrossByStaffId.get(id) || 0);
+    const weeklyGross = roundMoney(dailyByDay.reduce((sum, v) => sum + (Number(v) || 0), 0));
     const tardinessMinutes = s.subjectToTardiness ? (tardinessMap.get(s.name.trim()) ?? 0) : 0;
     const deductionPercent = s.subjectToTardiness ? getTardinessDeductionPercent(tardinessMinutes) : 0;
     const tardinessDeductionAmount = roundMoney(weeklyGross * deductionPercent);

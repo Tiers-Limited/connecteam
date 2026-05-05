@@ -94,7 +94,7 @@ export default function Layout() {
               Corvia Tips Dashboard
             </h1>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="order-3 flex items-center gap-1">
             <button
               type="button"
               onClick={() => setMobileMenuOpen((prev) => !prev)}
@@ -208,7 +208,7 @@ export default function Layout() {
               )}
             </div>
           </div>
-          <nav className="hidden items-center gap-1 sm:flex">
+          <nav className="order-2 hidden items-center gap-1 sm:flex">
             {/* Render filtered navigation items based on role */}
             {filteredNavItems.map(({ to, label }) => (
               <NavLink
