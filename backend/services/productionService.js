@@ -78,6 +78,70 @@ function normalizeStaffName(name) {
   return String(name || '').trim().toLowerCase();
 }
 
+function normalizeNameForMatch(name) {
+  return String(name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function buildStaffNameLookup(staffNames) {
+  const exact = new Map();
+  const candidates = [];
+  for (const staffName of staffNames || []) {
+    const canonicalStaffName = String(staffName || '').trim();
+    if (!canonicalStaffName) continue;
+    const matchKey = normalizeNameForMatch(canonicalStaffName);
+    if (!matchKey) continue;
+    const tokens = matchKey.split(' ').filter(Boolean);
+    exact.set(matchKey, canonicalStaffName);
+    candidates.push({
+      canonicalStaffName,
+      matchKey,
+      tokens,
+    });
+  }
+  return { exact, candidates };
+}
+
+function resolveStaffName(entryName, lookup) {
+  const key = normalizeNameForMatch(entryName);
+  if (!key || !lookup) return null;
+  if (lookup.exact.has(key)) return lookup.exact.get(key);
+
+  const entryTokens = key.split(' ').filter(Boolean);
+  if (entryTokens.length === 0) return null;
+
+  let best = null;
+  let bestScore = 0;
+  for (const candidate of lookup.candidates || []) {
+    const shared = candidate.tokens.filter((t) => entryTokens.includes(t)).length;
+    const minRequired = Math.max(2, Math.min(candidate.tokens.length, entryTokens.length) - 1);
+    if (shared < minRequired) continue;
+    const score = shared / Math.max(candidate.tokens.length, entryTokens.length);
+    if (score > bestScore) {
+      best = candidate.canonicalStaffName;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+function deriveMinutesLateFromTimes(scheduledTime, clockIn) {
+  const scheduled = String(scheduledTime || '').trim();
+  const actualClockIn = String(clockIn || '').trim();
+  // Never derive tardiness without a valid scheduled time.
+  if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(scheduled)) return 0;
+  if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(actualClockIn)) return 0;
+  const scheduledMins = timeToMinutes(scheduledTime);
+  const clockInMins = timeToMinutes(clockIn);
+  if (!Number.isFinite(scheduledMins) || !Number.isFinite(clockInMins)) return 0;
+  return Math.max(0, clockInMins - scheduledMins);
+}
+
 async function getDailyProductionPool(dateStr) {
   const d = typeof dateStr === 'string' ? dateStr.slice(0, 10) : toDateString(dateStr);
   const dateStart = new Date(d + 'T00:00:00.000Z');
@@ -155,6 +219,7 @@ async function getProductionStaff() {
 
 async function getProductionTardinessMap(weekStartStr, staffNames, options = {}) {
   const map = new Map(staffNames.map((n) => [n, 0]));
+  const staffNameLookup = buildStaffNameLookup(staffNames);
   let entries = [];
   if (options.connecteamPayload && Array.isArray(options.connecteamPayload.entries)) {
     entries = options.connecteamPayload.entries;
@@ -167,28 +232,88 @@ async function getProductionTardinessMap(weekStartStr, staffNames, options = {})
     }
   }
   if (entries.length === 0) return map;
+  console.log('[ProductionPoolDebug] tardiness input', {
+    weekStart: weekStartStr,
+    staffCount: staffNames.length,
+    entryCount: entries.length,
+    source: options.connecteamPayload ? 'connecteamPayload' : 'weeklyTardinessCache',
+  });
   const firstPunchByKey = new Map();
+  let skippedMissingCoreFields = 0;
+  const tardinessSampleRows = [];
   for (const e of entries) {
-    const name = (e.employeeName || '').toString().trim();
+    const rawName = (e.employeeName || '').toString().trim();
+    const name = resolveStaffName(rawName, staffNameLookup);
     const date = (e.date || '').toString().slice(0, 10);
-    if (!name || !date || !e.clockIn) continue;
+    if (!name || !date || !e.clockIn) {
+      skippedMissingCoreFields += 1;
+      continue;
+    }
     const key = `${name}|${date}`;
     const clockInMins = timeToMinutes(e.clockIn);
-    const minutesLate = Math.max(0, Number(e.minutesLate) || 0);
+    const payloadMinutesLate = Math.max(0, Number(e.minutesLate) || 0);
+    const derivedMinutesLate = deriveMinutesLateFromTimes(e.scheduledTime, e.clockIn);
+    const minutesLate = Math.max(payloadMinutesLate, derivedMinutesLate);
     const existing = firstPunchByKey.get(key);
     if (existing == null || clockInMins < existing.clockInMins) {
-      firstPunchByKey.set(key, { clockInMins, minutesLate });
+      firstPunchByKey.set(key, {
+        clockInMins,
+        minutesLate,
+        payloadMinutesLate,
+        derivedMinutesLate,
+        scheduledTime: e.scheduledTime || null,
+        clockIn: e.clockIn || null,
+      });
+      if (tardinessSampleRows.length < 25) {
+        tardinessSampleRows.push({
+          name,
+          date,
+          scheduledTime: e.scheduledTime || null,
+          clockIn: e.clockIn || null,
+          payloadMinutesLate,
+          derivedMinutesLate,
+          usedMinutesLate: minutesLate,
+        });
+      }
     }
   }
-  for (const [key, { minutesLate }] of firstPunchByKey) {
+  const tardinessDebugRows = [];
+  for (const [key, { minutesLate, scheduledTime, clockIn, payloadMinutesLate, derivedMinutesLate }] of firstPunchByKey) {
     const name = key.split('|')[0];
-    if (map.has(name)) map.set(name, (map.get(name) || 0) + minutesLate);
+    if (map.has(name)) {
+      map.set(name, (map.get(name) || 0) + minutesLate);
+      const date = key.split('|')[1];
+      tardinessDebugRows.push({
+        name,
+        date,
+        scheduledTime,
+        clockIn,
+        payloadMinutesLate,
+        derivedMinutesLate,
+        usedMinutesLate: minutesLate,
+      });
+    }
   }
+  const tardinessTotals = Array.from(map.entries())
+    .map(([name, totalMinutes]) => ({ name, totalMinutes }))
+    .filter((row) => row.totalMinutes > 0)
+    .sort((a, b) => b.totalMinutes - a.totalMinutes);
+  console.log('[ProductionPoolDebug] tardiness parse summary', {
+    uniqueEmployeeDays: firstPunchByKey.size,
+    skippedMissingCoreFields,
+    contributingRows: tardinessDebugRows.length,
+    tardinessSampleRows,
+    tardinessTotals,
+  });
   return map;
 }
 
 async function getProductionClockedInDatesMap(weekStartStr, staffNames, options = {}) {
+  const canonicalStaffBySimpleKey = new Map(
+    staffNames.map((n) => [normalizeStaffName(n), String(n || '').trim()]),
+  );
   const map = new Map(staffNames.map((n) => [normalizeStaffName(n), new Set()]));
+  const staffNameLookup = buildStaffNameLookup(staffNames);
   let entries = [];
   if (options.connecteamPayload && Array.isArray(options.connecteamPayload.entries)) {
     entries = options.connecteamPayload.entries;
@@ -201,16 +326,43 @@ async function getProductionClockedInDatesMap(weekStartStr, staffNames, options 
     }
   }
   if (entries.length === 0) return map;
+  console.log('[ProductionPoolDebug] clocked-in input', {
+    weekStart: weekStartStr,
+    staffCount: staffNames.length,
+    entryCount: entries.length,
+    source: options.connecteamPayload ? 'connecteamPayload' : 'weeklyTardinessCache',
+  });
 
   // Keep one first-punch per employee/day to represent clock-in presence.
   const firstPunchByKey = new Map();
+  let skippedMissingFields = 0;
+  let skippedInvalidClockIn = 0;
+  const sampleRawClockRows = [];
   for (const e of entries) {
-    const nameKey = normalizeStaffName(e.employeeName);
+    const canonicalName = resolveStaffName(e.employeeName, staffNameLookup);
+    const nameKey = normalizeStaffName(canonicalName);
     const date = (e.date || '').toString().slice(0, 10);
-    if (!nameKey || !date) continue;
+    if (!nameKey || !date || !e.clockIn) {
+      skippedMissingFields += 1;
+      continue;
+    }
     if (!map.has(nameKey)) continue;
     const key = `${nameKey}|${date}`;
     const clockInMins = timeToMinutes(e.clockIn);
+    if (!Number.isFinite(clockInMins)) {
+      skippedInvalidClockIn += 1;
+      continue;
+    }
+    if (sampleRawClockRows.length < 25) {
+      sampleRawClockRows.push({
+        employeeName: e.employeeName || '',
+        mappedToStaffName: canonicalName || null,
+        date,
+        clockIn: e.clockIn || null,
+        clockOut: e.clockOut || null,
+        minutesLate: Number(e.minutesLate) || 0,
+      });
+    }
     const existing = firstPunchByKey.get(key);
     if (existing == null || clockInMins < existing.clockInMins) {
       firstPunchByKey.set(key, {
@@ -224,6 +376,19 @@ async function getProductionClockedInDatesMap(weekStartStr, staffNames, options 
   for (const row of firstPunchByKey.values()) {
     map.get(row.nameKey).add(row.date);
   }
+  const clockedInSummary = Array.from(map.entries()).map(([nameKey, datesSet]) => ({
+    nameKey,
+    staffName: canonicalStaffBySimpleKey.get(nameKey) || nameKey,
+    clockedInDates: Array.from(datesSet).sort(),
+    daysCount: datesSet.size,
+  }));
+  console.log('[ProductionPoolDebug] clocked-in parse summary', {
+    uniqueEmployeeDays: firstPunchByKey.size,
+    skippedMissingFields,
+    skippedInvalidClockIn,
+    sampleRawClockRows,
+    clockedInSummary,
+  });
   return map;
 }
 
@@ -274,24 +439,25 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
   );
 
   const staffNames = staff.map((s) => s.name.trim());
-  let tardinessMap;
-  let clockedInDatesByStaff;
-  if (useDateRange) {
-    const connecteamPayload = await connecteamsService.getTardinessFromConnecteamsByDateRange(
-      options.startDate.trim().slice(0, 10),
-      options.endDate.trim().slice(0, 10),
-      null
-    );
-    tardinessMap = await getProductionTardinessMap(weekStartStr, staffNames, { connecteamPayload });
-    clockedInDatesByStaff = await getProductionClockedInDatesMap(
-      weekStartStr,
-      staffNames,
-      { connecteamPayload },
-    );
-  } else {
-    tardinessMap = await getProductionTardinessMap(weekStartStr, staffNames);
-    clockedInDatesByStaff = await getProductionClockedInDatesMap(weekStartStr, staffNames);
-  }
+  const rangeStart = dateStrs[0];
+  const rangeEnd = dateStrs[dateStrs.length - 1];
+  const connecteamPayload = await connecteamsService.getTardinessFromConnecteamsByDateRange(
+    rangeStart,
+    rangeEnd,
+    null,
+    { includeAllLocations: true }
+  );
+  console.log('[ProductionPoolDebug] connecteam payload summary', {
+    startDate: rangeStart,
+    endDate: rangeEnd,
+    entries: Array.isArray(connecteamPayload?.entries) ? connecteamPayload.entries.length : 0,
+  });
+  const tardinessMap = await getProductionTardinessMap(weekStartStr, staffNames, { connecteamPayload });
+  const clockedInDatesByStaff = await getProductionClockedInDatesMap(
+    weekStartStr,
+    staffNames,
+    { connecteamPayload },
+  );
   const manualDeductions = await ProductionManualDeduction.find({ weekStart: weekStartForManual })
     .populate('productionStaffId')
     .lean();
@@ -325,6 +491,15 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
       const arr = dailyGrossByStaffId.get(id);
       arr[i] = byStaffId.get(id) || 0;
     }
+    console.log('[ProductionPoolDebug] daily distribution', {
+      date: dateStr,
+      grossProductionPool: pool,
+      clockedInStaff: clockedInStaff.map((member) => member.name),
+      distributedByStaff: staff.map((member) => ({
+        name: member.name,
+        amount: byStaffId.get(member._id.toString()) || 0,
+      })),
+    });
   }
 
   const rows = [];

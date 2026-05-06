@@ -236,6 +236,9 @@ export default function ProductionPool() {
   }, [modalRow, closeModal]);
 
   const payouts = data?.payouts ?? [];
+  const dateColumns = data?.dateRange
+    ? getDateRangeColumns(data.dateRange.startDate, data.dateRange.endDate)
+    : getWeekDateColumns(startDate);
   const totalPoolFromLocations = locationWisePool.reduce(
     (sum, row) => sum + (Number(row.weeklyPool) || 0),
     0,
@@ -298,8 +301,16 @@ export default function ProductionPool() {
                       Allocation %
                     </th>
                     <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-600 dark:text-slate-300">
-                      Gross Production Tips
+                      Gross Production Tips (Weekly)
                     </th>
+                    {dateColumns.map((col) => (
+                      <th
+                        key={`gross-${col.dateKey}`}
+                        className="whitespace-nowrap pb-3 pr-3 text-right font-semibold text-slate-600 dark:text-slate-300"
+                      >
+                        Gross ({col.label})
+                      </th>
+                    ))}
                     <th className="whitespace-nowrap pb-3 pr-4 text-right font-semibold text-slate-600 dark:text-slate-300">
                       Weekly Tardiness (min)
                     </th>
@@ -350,6 +361,14 @@ export default function ProductionPool() {
                       <td className="py-3 pr-4 text-right tabular-nums font-medium text-slate-900 dark:text-slate-100">
                         {formatMoney(p.weeklyGrossProductionTips)}
                       </td>
+                      {dateColumns.map((col, i) => (
+                        <td
+                          key={`daily-gross-${getStaffId(p)}-${col.dateKey}`}
+                          className="py-3 pr-3 text-right tabular-nums text-slate-700 dark:text-slate-200"
+                        >
+                          {formatMoney((p.dailyByDay || [])[i] || 0)}
+                        </td>
+                      ))}
                       <td className="py-3 pr-4 text-right tabular-nums text-slate-700 dark:text-slate-200">
                         {p.weeklyTardinessMinutes ?? 0}
                       </td>

@@ -87,11 +87,13 @@ function normalizeLocationKey(str) {
   if (s.includes('casa') && s.includes('mar')) return 'casa del mar';
   if (s.includes('cove')) return 'the cove';
   if (s.includes('drive') && s.includes('thru')) return 'drive thru';
+  if (s.includes('pastry')) return 'pastry';
   return null;
 }
 
 function getLocationKeysForPunch(userInfo, schedLocationKey, locationKeys) {
-  if (schedLocationKey && locationKeys.includes(schedLocationKey)) {
+  const scoped = Array.isArray(locationKeys) && locationKeys.length > 0;
+  if (schedLocationKey && (!scoped || locationKeys.includes(schedLocationKey))) {
     return [schedLocationKey];
   }
   const collected = new Set();
@@ -99,10 +101,12 @@ function getLocationKeysForPunch(userInfo, schedLocationKey, locationKeys) {
   const locOnly = (userInfo && userInfo.locationValues) || [];
   for (const v of [...locJob, ...locOnly]) {
     const k = normalizeLocationKey(String(v));
-    if (k && locationKeys.includes(k)) collected.add(k);
+    if (!k) continue;
+    if (!scoped || locationKeys.includes(k)) collected.add(k);
   }
   if (collected.size > 0) return Array.from(collected);
-  return [locationKeys[0]];
+  if (scoped && locationKeys[0]) return [locationKeys[0]];
+  return [];
 }
 
 function dateFromTimestamp(tsSeconds) {
@@ -222,9 +226,12 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
   }
 
   connecteamCallCount = 0;
-  const locationKeys = Array.isArray(locationKeysOverride) && locationKeysOverride.length > 0
-    ? locationKeysOverride
-    : LOCATIONS.map((l) => l.key);
+  const includeAllLocations = Array.isArray(locationKeysOverride) && locationKeysOverride.length === 0;
+  const locationKeys = includeAllLocations
+    ? []
+    : (Array.isArray(locationKeysOverride) && locationKeysOverride.length > 0
+      ? locationKeysOverride
+      : LOCATIONS.map((l) => l.key));
   const firstUserFlow = { userId: null, userName: null, userFromApi: null, timeActivitiesResponse: null, jobIds: null, jobResponses: [] };
   const datesInRange = getDatesInRange(startDate, endDate);
   const dayBounds = getDateRangeBoundsUnixSeconds(startDate, endDate);
@@ -275,6 +282,7 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
   const locationFilteredUserIds = Object.keys(userMap).filter((ukey) =>
     userBelongsToLocations(userMap[ukey], locationKeys)
   );
+  const shouldSendUserIdsFilter = locationKeys.length > 0;
 
   const scheduleMap = {};
   let totalShiftsLoaded = 0;
@@ -373,7 +381,7 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
   for (const tcId of timeClockIds) {
     try {
       const userIdsParam =
-        locationFilteredUserIds.length > 0
+        shouldSendUserIdsFilter && locationFilteredUserIds.length > 0
           ? locationFilteredUserIds.map((id) => `userIds=${encodeURIComponent(id)}`).join('&')
           : '';
       const actPath = `/time-clock/v1/time-clocks/${tcId}/time-activities?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}${userIdsParam ? '&' + userIdsParam : ''}`;
@@ -447,7 +455,7 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
       const title = (job && (job.title || job.name)) ? String(job.title || job.name).trim() : '';
       const locKey = title ? normalizeLocationKey(title) : null;
       jobIdToResolvedKey[jobId] = locKey;
-      if (locKey && locationKeys.includes(locKey)) {
+      if (locKey && (locationKeys.length === 0 || locationKeys.includes(locKey))) {
         jobIdToLocationKey[jobId] = locKey;
       }
     } catch (_) {
@@ -477,7 +485,7 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
     let locationKey = jobId && jobIdToLocationKey[jobId] ? jobIdToLocationKey[jobId] : null;
     if (!locationKey && jobId != null && Object.prototype.hasOwnProperty.call(jobIdToResolvedKey, jobId)) {
       const resolved = jobIdToResolvedKey[jobId];
-      if (resolved != null && resolved !== '' && !locationKeys.includes(resolved)) {
+      if (locationKeys.length > 0 && resolved != null && resolved !== '' && !locationKeys.includes(resolved)) {
         continue;
       }
     }
@@ -485,7 +493,17 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
       const sched = (scheduleMap[ukey] || {})[shiftDate];
       const locationKeysForPunch = getLocationKeysForPunch(userInfo, sched && sched.locationKey, locationKeys);
       if (locationKeysForPunch.length > 0) locationKey = locationKeysForPunch[0];
-      else continue;
+      else if (includeAllLocations) {
+        const shiftLocationStr =
+          (shift.locationData && (shift.locationData.gps || {}).address)
+            ? shift.locationData.gps.address
+            : (shift.locationData && shift.locationData.address)
+              ? shift.locationData.address
+              : (shift.locationData && shift.locationData.name)
+                ? shift.locationData.name
+                : (shift.locationName || shift.address || (shift.location && shift.location.name) || (shift.location && shift.location.address) || '');
+        locationKey = normalizeLocationKey(shiftLocationStr) || 'unknown';
+      } else continue;
     }
 
     const clockOutTs = getClockOutMsFromRecord(shift);
@@ -589,22 +607,28 @@ function mergeIntervalsMs(intervals) {
 const DAY_KEY_BY_JS_DAY = { 0: 'sun', 1: 'mon', 2: 'tue', 3: 'wed', 4: 'thu', 5: 'fri', 6: 'sat' };
 
 
-async function getTardinessFromConnecteamsByDateRange(startDate, endDate, locationKeyFilter = null) {
+async function getTardinessFromConnecteamsByDateRange(startDate, endDate, locationKeyFilter = null, options = {}) {
   const start = (startDate || '').toString().trim().slice(0, 10);
   const end = (endDate || '').toString().trim().slice(0, 10);
   if (!start || !end) throw new Error('startDate and endDate are required (YYYY-MM-DD)');
-  const locationKeys = locationKeyFilter ? [String(locationKeyFilter).toLowerCase().trim()] : null;
+  const includeAllLocations = options && options.includeAllLocations === true;
+  const locationKeys = includeAllLocations
+    ? []
+    : (locationKeyFilter ? [String(locationKeyFilter).toLowerCase().trim()] : null);
   const rawEntries = await getTimeEntriesFromConnecteams(start, end, locationKeys);
   return buildTardinessPayload(rawEntries, locationKeyFilter);
 }
 
-async function getWeeklyTardinessFromConnecteams(weekStart, locationKeyFilter = null) {
+async function getWeeklyTardinessFromConnecteams(weekStart, locationKeyFilter = null, options = {}) {
   const startDate = toDateString(weekStart) || weekStart;
   const weekStartDate = new Date(startDate + 'T12:00:00');
   const weekEndDate = getWeekEnd(weekStartDate);
   const endDate = toDateString(weekEndDate);
 
-  const locationKeys = locationKeyFilter ? [String(locationKeyFilter).toLowerCase().trim()] : null;
+  const includeAllLocations = options && options.includeAllLocations === true;
+  const locationKeys = includeAllLocations
+    ? []
+    : (locationKeyFilter ? [String(locationKeyFilter).toLowerCase().trim()] : null);
   const rawEntries = await getTimeEntriesFromConnecteams(startDate, endDate, locationKeys);
   return buildTardinessPayload(rawEntries, locationKeyFilter);
 }
