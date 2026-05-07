@@ -557,10 +557,11 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
 
   const totalRedistributionPool = rows.reduce((sum, r) => sum + r.tardinessDeduction, 0);
   const eligible = rows.filter((r) => r.eligibleForRedistribution);
+  const equalShareWeight = () => 1;
   const redistributionByStaffId = allocateCentsProportionally(
     eligible,
     totalRedistributionPool,
-    (r) => r.allocationPercent || 0,
+    equalShareWeight,
     (r) => r.productionStaffId?.toString?.() || '',
   );
 
