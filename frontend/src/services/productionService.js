@@ -14,6 +14,7 @@ export async function updateProductionStaff(id, body) {
  * @param {string} weekStart - YYYY-MM-DD (Monday or range start)
  * @param {string} [startDate] - with endDate = fetch tardiness from Connecteam for this range
  * @param {string} [endDate]
+ * @returns {Promise<object>} Includes `payouts`, `locationWisePool` (same as location-wise table), `redistributionPool`, etc.
  */
 export async function getWeeklyProductionPayout(weekStart, startDate = null, endDate = null) {
   const params = {};

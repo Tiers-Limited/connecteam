@@ -565,7 +565,7 @@ export default function Dashboard() {
                   <div className="h-2.5 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-violet-400"
-                      style={{ width: `${Math.max(item.share, 3)}%` }}
+                      style={{ width: `${item.share > 0 ? Math.max(item.share, 3) : 0}%` }}
                     />
                   </div>
                 </div>

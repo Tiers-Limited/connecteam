@@ -8,17 +8,36 @@ const { PRODUCTION_DEDUCTION_PERCENT } = require('../utils/constants');
 const connecteamsService = require('./connecteamsService');
 const { timeToMinutes, toDateString, getDatesInRange } = require('../utils/dateUtils');
 
-function roundMoney(value) {
-  return Math.round(value * 100) / 100;
+function productionPoolLog(...args) {
+  if (process.env.DEBUG_PRODUCTION_POOL === '1') {
+    console.log(...args);
+  }
 }
 
-function allocateCentsProportionally(items, poolAmount, weightSelector, keySelector) {
+function roundMoney(value, decimals = 3) {
+  const factor = 10 ** decimals;
+  return Math.round((Number(value) || 0) * factor) / factor;
+}
+
+function hashStringToInt(value) {
+  let h = 0;
+  const text = String(value || '');
+  for (let i = 0; i < text.length; i += 1) {
+    h = ((h << 5) - h) + text.charCodeAt(i);
+    h |= 0;
+  }
+  return Math.abs(h);
+}
+
+function allocateCentsProportionally(items, poolAmount, weightSelector, keySelector, tieBreakerSeed = '') {
   const candidates = (items || []).filter((item) => item && keySelector(item));
   const result = new Map();
   if (candidates.length === 0) return result;
 
-  const poolCents = Math.max(0, Math.round((Number(poolAmount) || 0) * 100));
-  if (poolCents === 0) return result;
+  // Use 0.001 precision units for fairer splits than cents-only allocation.
+  const unitScale = 1000;
+  const poolUnits = Math.max(0, Math.round((Number(poolAmount) || 0) * unitScale));
+  if (poolUnits === 0) return result;
 
   const weighted = candidates.map((item) => {
     const key = String(keySelector(item));
@@ -28,33 +47,36 @@ function allocateCentsProportionally(items, poolAmount, weightSelector, keySelec
   const totalWeight = weighted.reduce((sum, x) => sum + x.weight, 0);
 
   if (totalWeight <= 0) {
-    const base = Math.floor(poolCents / weighted.length);
-    let remainder = poolCents - base * weighted.length;
+    const base = Math.floor(poolUnits / weighted.length);
+    let remainder = poolUnits - base * weighted.length;
     const ordered = weighted.slice().sort((a, b) => a.key.localeCompare(b.key));
     for (const entry of ordered) {
       const extra = remainder > 0 ? 1 : 0;
       if (remainder > 0) remainder -= 1;
-      result.set(entry.key, (base + extra) / 100);
+      result.set(entry.key, (base + extra) / unitScale);
     }
     return result;
   }
 
   const prepared = weighted.map((entry) => {
-    const exactCents = (entry.weight / totalWeight) * poolCents;
-    const floorCents = Math.floor(exactCents);
+    const exactUnits = (entry.weight / totalWeight) * poolUnits;
+    const floorUnits = Math.floor(exactUnits);
     return {
       ...entry,
-      floorCents,
-      fraction: exactCents - floorCents,
+      floorCents: floorUnits,
+      fraction: exactUnits - floorUnits,
     };
   });
 
   const floorSum = prepared.reduce((sum, entry) => sum + entry.floorCents, 0);
-  let remainder = poolCents - floorSum;
+  let remainder = poolUnits - floorSum;
   const ranking = prepared
     .slice()
     .sort((a, b) => {
       if (b.fraction !== a.fraction) return b.fraction - a.fraction;
+      const aRank = hashStringToInt(`${tieBreakerSeed}|${a.key}`);
+      const bRank = hashStringToInt(`${tieBreakerSeed}|${b.key}`);
+      if (aRank !== bRank) return aRank - bRank;
       return a.key.localeCompare(b.key);
     });
   for (let i = 0; i < ranking.length && remainder > 0; i += 1) {
@@ -63,7 +85,7 @@ function allocateCentsProportionally(items, poolAmount, weightSelector, keySelec
   }
 
   for (const entry of prepared) {
-    result.set(entry.key, entry.floorCents / 100);
+    result.set(entry.key, entry.floorCents / unitScale);
   }
   return result;
 }
@@ -232,7 +254,7 @@ async function getProductionTardinessMap(weekStartStr, staffNames, options = {})
     }
   }
   if (entries.length === 0) return map;
-  console.log('[ProductionPoolDebug] tardiness input', {
+  productionPoolLog('[ProductionPoolDebug] tardiness input', {
     weekStart: weekStartStr,
     staffCount: staffNames.length,
     entryCount: entries.length,
@@ -298,7 +320,7 @@ async function getProductionTardinessMap(weekStartStr, staffNames, options = {})
     .map(([name, totalMinutes]) => ({ name, totalMinutes }))
     .filter((row) => row.totalMinutes > 0)
     .sort((a, b) => b.totalMinutes - a.totalMinutes);
-  console.log('[ProductionPoolDebug] tardiness parse summary', {
+  productionPoolLog('[ProductionPoolDebug] tardiness parse summary', {
     uniqueEmployeeDays: firstPunchByKey.size,
     skippedMissingCoreFields,
     contributingRows: tardinessDebugRows.length,
@@ -326,7 +348,7 @@ async function getProductionClockedInDatesMap(weekStartStr, staffNames, options 
     }
   }
   if (entries.length === 0) return map;
-  console.log('[ProductionPoolDebug] clocked-in input', {
+  productionPoolLog('[ProductionPoolDebug] clocked-in input', {
     weekStart: weekStartStr,
     staffCount: staffNames.length,
     entryCount: entries.length,
@@ -382,7 +404,7 @@ async function getProductionClockedInDatesMap(weekStartStr, staffNames, options 
     clockedInDates: Array.from(datesSet).sort(),
     daysCount: datesSet.size,
   }));
-  console.log('[ProductionPoolDebug] clocked-in parse summary', {
+  productionPoolLog('[ProductionPoolDebug] clocked-in parse summary', {
     uniqueEmployeeDays: firstPunchByKey.size,
     skippedMissingFields,
     skippedInvalidClockIn,
@@ -399,6 +421,7 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
     return {
       weekStart: weekStartStr,
       weekEnd: '',
+      locationWisePool: [],
       redistributionPool: 0,
       payouts: [],
       ...(options.startDate && options.endDate && { dateRange: { startDate: options.startDate.trim().slice(0, 10), endDate: options.endDate.trim().slice(0, 10) } }),
@@ -447,7 +470,7 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
     null,
     { includeAllLocations: true }
   );
-  console.log('[ProductionPoolDebug] connecteam payload summary', {
+  productionPoolLog('[ProductionPoolDebug] connecteam payload summary', {
     startDate: rangeStart,
     endDate: rangeEnd,
     entries: Array.isArray(connecteamPayload?.entries) ? connecteamPayload.entries.length : 0,
@@ -485,13 +508,14 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
       pool,
       (member) => Number(member.allocationPercent) || 0,
       (member) => member?._id?.toString?.() || '',
+      dateStr,
     );
     for (const s of staff) {
       const id = s._id.toString();
       const arr = dailyGrossByStaffId.get(id);
       arr[i] = byStaffId.get(id) || 0;
     }
-    console.log('[ProductionPoolDebug] daily distribution', {
+    productionPoolLog('[ProductionPoolDebug] daily distribution', {
       date: dateStr,
       grossProductionPool: pool,
       clockedInStaff: clockedInStaff.map((member) => member.name),
@@ -550,6 +574,7 @@ async function getWeeklyProductionPayout(weekStartStr, options = {}) {
     weekStart: weekStartForManual,
     weekEnd: weekEndStr,
     ...(useDateRange && { dateRange: { startDate: options.startDate.trim().slice(0, 10), endDate: options.endDate.trim().slice(0, 10) } }),
+    locationWisePool: locationWise,
     redistributionPool: roundMoney(totalRedistributionPool),
     payouts: rows.map((r) => ({
       productionStaffId: r.productionStaffId,

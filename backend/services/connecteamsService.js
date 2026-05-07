@@ -1,7 +1,14 @@
 const https = require('https');
 const { connecteamsApiKey, connecteamsBase } = require('../config/env');
 const { LOCATIONS } = require('../utils/constants');
-const { toDateString, getWeekEnd, timeToMinutes } = require('../utils/dateUtils');
+const {
+  toDateString,
+  getWeekEnd,
+  timeToMinutes,
+  getDatesInRange: getDatesInRangeAppTimezone,
+  dateRangeToUtcBounds,
+  getAppTimezone,
+} = require('../utils/dateUtils');
 
 const DEFAULT_TIMEZONE = 'America/Aruba';
 
@@ -183,22 +190,12 @@ function dateFromTimestampInTimezone(tsSeconds, timezone) {
   }
 }
 
+/** Inclusive calendar range bounds in Unix seconds, using app timezone (same as Daily Tips / production pool). */
 function getDateRangeBoundsUnixSeconds(startStr, endStr) {
-  const start = new Date(startStr + 'T00:00:00Z');
-  const end = new Date(endStr + 'T23:59:59.999Z');
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-    const s = new Date(startStr + 'T12:00:00Z');
-    const e = new Date(endStr + 'T12:00:00Z');
-    s.setUTCHours(0, 0, 0, 0);
-    e.setUTCHours(23, 59, 59, 999);
-    return {
-      startTime: Math.floor(s.getTime() / 1000),
-      endTime: Math.floor(e.getTime() / 1000),
-    };
-  }
+  const { startMs, endMs } = dateRangeToUtcBounds(startStr, endStr, getAppTimezone());
   return {
-    startTime: Math.floor(start.getTime() / 1000),
-    endTime: Math.floor(end.getTime() / 1000),
+    startTime: Math.floor(startMs / 1000),
+    endTime: Math.floor(endMs / 1000),
   };
 }
 
@@ -233,7 +230,7 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
       ? locationKeysOverride
       : LOCATIONS.map((l) => l.key));
   const firstUserFlow = { userId: null, userName: null, userFromApi: null, timeActivitiesResponse: null, jobIds: null, jobResponses: [] };
-  const datesInRange = getDatesInRange(startDate, endDate);
+  const datesInRange = getDatesInRangeAppTimezone(startDate, endDate);
   const dayBounds = getDateRangeBoundsUnixSeconds(startDate, endDate);
 
   const userMap = {};
@@ -275,7 +272,6 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
   const tcRaw = timeClocksRes.data != null ? timeClocksRes.data : timeClocksRes;
   const timeClocksList = Array.isArray(tcRaw) ? tcRaw : (tcRaw.timeClocks || tcRaw.items || []);
   const timeClockIds = timeClocksList
-    .slice(0, 25)
     .map((c) => (c.id != null ? c.id : c.timeClockId))
     .filter(Boolean);
 
@@ -378,7 +374,8 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
   const manualBreakDedupe = new Set();
 
   const allShiftsWithUser = [];
-  for (const tcId of timeClockIds) {
+  const tcFetchConcurrency = Math.min(8, Math.max(1, timeClockIds.length));
+  await mapWithConcurrency(timeClockIds, tcFetchConcurrency, async (tcId) => {
     try {
       const userIdsParam =
         shouldSendUserIdsFilter && locationFilteredUserIds.length > 0
@@ -438,7 +435,7 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
       }
     } catch (_) {
     }
-  }
+  });
 
   const uniqueJobIds = [...new Set(allShiftsWithUser.map(({ shift }) => shift.jobId).filter(Boolean))];
   const jobIdToLocationKey = {};
@@ -564,28 +561,6 @@ async function getTimeEntriesFromConnecteams(startDate, endDate, locationKeysOve
 
   connecteamEntriesInFlight.set(key, promise);
   return promise;
-}
-
-function toLocalDateString(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function getDatesInRange(startStr, endStr) {
-  const start = new Date(startStr + 'T12:00:00');
-  const end = new Date(endStr + 'T12:00:00');
-  if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
-    return [typeof startStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(startStr) ? startStr : (toDateString(startStr) || startStr)];
-  }
-  const dates = [];
-  const d = new Date(start);
-  while (d <= end) {
-    dates.push(toLocalDateString(d));
-    d.setDate(d.getDate() + 1);
-  }
-  return dates;
 }
 
 function mergeIntervalsMs(intervals) {

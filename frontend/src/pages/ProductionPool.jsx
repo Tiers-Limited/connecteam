@@ -3,7 +3,6 @@ import toast from "react-hot-toast";
 import {
   getWeeklyProductionPayout,
   getProductionManualDeductions,
-  getLocationWiseProductionPool,
   upsertProductionManualDeduction,
   updateProductionStaff,
 } from "../services/productionService";
@@ -23,7 +22,9 @@ import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 
 function formatMoney(n) {
-  return "$" + (Number(n) ?? 0).toFixed(2);
+  const num = Number(n) || 0;
+  const trimmed = num.toFixed(3).replace(/\.?0+$/, "");
+  return "$" + trimmed;
 }
 
 function formatMoneyCsv(n) {
@@ -92,13 +93,11 @@ export default function ProductionPool() {
       return;
     }
     setLoading(true);
-    Promise.all([
-      getWeeklyProductionPayout(start, start, end),
-      getLocationWiseProductionPool(start, start, end),
-    ])
-      .then(([res, locationList]) => {
+    getWeeklyProductionPayout(start, start, end)
+      .then((res) => {
         setData(res);
-        setLocationWisePool(Array.isArray(locationList) ? locationList : []);
+        const loc = res?.locationWisePool;
+        setLocationWisePool(Array.isArray(loc) ? loc : []);
         toast.success(
           `Loaded production payout for ${res?.payouts?.length ?? 0} staff.`,
         );

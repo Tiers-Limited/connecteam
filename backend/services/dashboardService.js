@@ -4,7 +4,13 @@ const WeeklyPayoutCache = require('../models/WeeklyPayoutCache');
 const DailyTipInput = require('../models/DailyTipInput');
 const productionService = require('./productionService');
 const connecteamsService = require('./connecteamsService');
+const tipsCalculationService = require('./tipsCalculationService');
 const { getWeekStart } = require('../utils/dateUtils');
+
+const DASHBOARD_SUMMARY_TTL_MS = 60 * 1000;
+let dashboardSummaryCache = null;
+let dashboardSummaryCachedAt = 0;
+let dashboardSummaryInFlight = null;
 
 function toDateString(d) {
   const x = new Date(d);
@@ -12,6 +18,12 @@ function toDateString(d) {
 }
 
 async function getDashboardSummary() {
+  if (dashboardSummaryCache && Date.now() - dashboardSummaryCachedAt < DASHBOARD_SUMMARY_TTL_MS) {
+    return dashboardSummaryCache;
+  }
+  if (dashboardSummaryInFlight) return dashboardSummaryInFlight;
+
+  dashboardSummaryInFlight = (async () => {
   const locations = await Location.find({ isActive: true }).lean();
   let employeesCount = 0;
   try {
@@ -29,25 +41,71 @@ async function getDashboardSummary() {
     '-' +
     String(prevMon.getDate()).padStart(2, '0');
 
-  const payoutByLocation = [];
-  for (const loc of locations) {
-    const cached = await WeeklyPayoutCache.findOne({
-      locationId: loc._id,
-      weekStart: previousWeekStart,
-    }).lean();
-    let totalPayable = 0;
-    if (cached?.payload?.payouts) {
-      totalPayable = cached.payload.payouts.reduce(
-        (sum, p) => sum + (Number(p.finalWeeklyTipsPayable) || 0),
-        0
-      );
-    }
-    payoutByLocation.push({
-      locationId: loc._id,
-      locationName: loc.name || '—',
-      totalPayable: Math.round(totalPayable * 100) / 100,
-    });
-  }
+  const [y, mo, day] = previousWeekStart.split('-').map(Number);
+  const startOfPrevWeek = new Date(Date.UTC(y, mo - 1, day, 0, 0, 0, 0));
+  const prevWeekEnd = new Date(Date.UTC(y, mo - 1, day + 6, 23, 59, 59, 999));
+  const weekEndStr =
+    prevWeekEnd.getUTCFullYear() +
+    '-' +
+    String(prevWeekEnd.getUTCMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(prevWeekEnd.getUTCDate()).padStart(2, '0');
+
+  const locationIds = locations.map((loc) => loc._id);
+  const cachedRows = await WeeklyPayoutCache.find({
+    locationId: { $in: locationIds },
+    weekStart: previousWeekStart,
+  })
+    .select('locationId payload')
+    .lean();
+  const cachedByLocationId = new Map(
+    cachedRows.map((row) => [String(row.locationId), row])
+  );
+
+  const payoutByLocation = await Promise.all(
+    locations.map(async (loc) => {
+      const cached = cachedByLocationId.get(String(loc._id));
+      let totalPayable = 0;
+      if (cached?.payload?.payouts) {
+        totalPayable = cached.payload.payouts.reduce(
+          (sum, p) => sum + (Number(p.finalWeeklyTipsPayable) || 0),
+          0
+        );
+      } else {
+        // Dashboard fallback: if weekly payout cache is missing for a location,
+        // compute on the fly so contribution reflects locations that had tips.
+        try {
+          const computed = await tipsCalculationService.getWeeklyPayout(
+            loc._id,
+            previousWeekStart,
+            { startDate: previousWeekStart, endDate: weekEndStr },
+          );
+          const payouts = Array.isArray(computed?.payouts) ? computed.payouts : [];
+          totalPayable = payouts.reduce(
+            (sum, p) => sum + (Number(p.finalWeeklyTipsPayable) || 0),
+            0,
+          );
+          // Persist computed payload to avoid recomputing on subsequent dashboard requests.
+          await WeeklyPayoutCache.findOneAndUpdate(
+            { locationId: loc._id, weekStart: previousWeekStart },
+            {
+              locationId: loc._id,
+              weekStart: previousWeekStart,
+              payload: computed,
+            },
+            { upsert: true, new: false, setDefaultsOnInsert: true },
+          );
+        } catch (_) {
+          totalPayable = 0;
+        }
+      }
+      return {
+        locationId: loc._id,
+        locationName: loc.name || '—',
+        totalPayable: Math.round(totalPayable * 100) / 100,
+      };
+    })
+  );
 
   let productionTotal = 0;
   try {
@@ -62,10 +120,6 @@ async function getDashboardSummary() {
   } catch (_) {
     // ignore
   }
-
-  const [y, mo, day] = previousWeekStart.split('-').map(Number);
-  const startOfPrevWeek = new Date(Date.UTC(y, mo - 1, day, 0, 0, 0, 0));
-  const prevWeekEnd = new Date(Date.UTC(y, mo - 1, day + 6, 23, 59, 59, 999));
 
   const dailyTipRows = await DailyTipInput.find({
     date: { $gte: startOfPrevWeek, $lte: prevWeekEnd },
@@ -102,14 +156,7 @@ async function getDashboardSummary() {
 
   const totalPayoutThisWeek = payoutByLocation.reduce((s, l) => s + l.totalPayable, 0);
 
-  const weekEndStr =
-    prevWeekEnd.getUTCFullYear() +
-    '-' +
-    String(prevWeekEnd.getUTCMonth() + 1).padStart(2, '0') +
-    '-' +
-    String(prevWeekEnd.getUTCDate()).padStart(2, '0');
-
-  return {
+  const summary = {
     locationsCount: locations.length,
     employeesCount,
     currentWeekStart: previousWeekStart,
@@ -120,6 +167,16 @@ async function getDashboardSummary() {
     productionTotal,
     dailyTipsLast7,
   };
+  dashboardSummaryCache = summary;
+  dashboardSummaryCachedAt = Date.now();
+  return summary;
+  })();
+
+  try {
+    return await dashboardSummaryInFlight;
+  } finally {
+    dashboardSummaryInFlight = null;
+  }
 }
 
 module.exports = { getDashboardSummary };
