@@ -52,6 +52,32 @@ function formatMoney(n) {
   return "$" + (Number(n) ?? 0).toFixed(2);
 }
 
+/**
+ * Full-precision numeric for exports — no 3-decimal screen truncation.
+ * Keeps up to 4 fractional digits to suppress IEEE-754 float noise
+ * (`...000000004`) while preserving everything that's actually stored.
+ */
+function fullNumExport(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "0";
+  if (Number.isInteger(n)) return String(n);
+  const rounded = Math.round(n * 10000) / 10000;
+  const s = rounded.toString();
+  if (s.includes("e") || s.includes("E")) {
+    return rounded.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+  }
+  return s;
+}
+
+function fullMoneyExport(value) {
+  return "$" + fullNumExport(value);
+}
+
+/** PDF gets `$` prefix; CSV stays a raw number for spreadsheet math. */
+function moneyExportCell(value, forCsv) {
+  return forCsv ? fullNumExport(value) : fullMoneyExport(value);
+}
+
 function getDefaultDateRange() {
   const mon = getWeekStart(new Date());
   const sun = getWeekEnd(mon);
@@ -91,25 +117,23 @@ function breakMinutesFromPayout(p) {
 }
 
 function payoutToExportRow(p, locLabel, cols, forCsv = false) {
-  const fmtMoney = forCsv
-    ? (n) => formatCsvNumeric(n, { maxFractionDigits: 2 })
-    : formatMoney;
+  const fmt = (n) => moneyExportCell(n, forCsv);
   return [
     p.employeeName ?? "",
     locLabel,
-    ...cols.map((_, idx) => fmtMoney((p.dailyTipsByDay || [])[idx] ?? 0)),
-    fmtMoney(p.weeklyGrossTips ?? p.dailyTipsMonToSun),
+    ...cols.map((_, idx) => fmt((p.dailyTipsByDay || [])[idx] ?? 0)),
+    fmt(p.weeklyGrossTips ?? p.dailyTipsMonToSun),
     formatDurationForReport(p.totalWorkingMinutes ?? 0),
     formatDurationForReport(breakMinutesFromPayout(p)),
     String(p.weeklyTardinessMinutes ?? 0),
     `${p.tardinessPercent ?? 0}%`,
-    fmtMoney(p.tardinessDeduction),
-    fmtMoney(p.weeklyAfterTardiness),
-    fmtMoney(p.manualDeduction),
-    fmtMoney(p.additionalTips ?? 0),
-    fmtMoney(p.netWeeklyTips),
-    fmtMoney(p.tardinessRedistribution ?? 0),
-    fmtMoney(p.finalWeeklyTipsPayable ?? 0),
+    fmt(p.tardinessDeduction),
+    fmt(p.weeklyAfterTardiness),
+    fmt(p.manualDeduction),
+    fmt(p.additionalTips ?? 0),
+    fmt(p.netWeeklyTips),
+    fmt(p.tardinessRedistribution ?? 0),
+    fmt(p.finalWeeklyTipsPayable ?? 0),
   ];
 }
 
@@ -475,6 +499,8 @@ export default function PayoutReports() {
       const allLocationsOneEmployee =
         geographicScope === "all_locations" && employeeScope === "one_employee";
 
+      const fmtMoney = (v) => moneyExportCell(v, forCsv);
+
       if (allLocationsAllEmployees) {
         const groups = groupPayoutsByLocationDisplayOrder(payouts, activeLocations);
         const sections = groups.map((g) => ({
@@ -490,23 +516,19 @@ export default function PayoutReports() {
             rows.push([
               "Total",
               g.label,
-              ...dayTotals.map((v) =>
-                forCsv ? formatCsvNumeric(v, { maxFractionDigits: 2 }) : formatMoney(v),
-              ),
-              forCsv
-                ? formatCsvNumeric(sum(g.payouts.map((p) => p.weeklyGrossTips ?? p.dailyTipsMonToSun)), { maxFractionDigits: 2 })
-                : formatMoney(sum(g.payouts.map((p) => p.weeklyGrossTips ?? p.dailyTipsMonToSun))),
+              ...dayTotals.map((v) => fmtMoney(v)),
+              fmtMoney(sum(g.payouts.map((p) => p.weeklyGrossTips ?? p.dailyTipsMonToSun))),
               formatDurationForReport(sum(g.payouts.map((p) => p.totalWorkingMinutes))),
               formatDurationForReport(sum(g.payouts.map((p) => breakMinutesFromPayout(p)))),
               String(sum(g.payouts.map((p) => p.weeklyTardinessMinutes))),
               "",
-              forCsv ? formatCsvNumeric(sum(g.payouts.map((p) => p.tardinessDeduction)), { maxFractionDigits: 2 }) : formatMoney(sum(g.payouts.map((p) => p.tardinessDeduction))),
-              forCsv ? formatCsvNumeric(sum(g.payouts.map((p) => p.weeklyAfterTardiness)), { maxFractionDigits: 2 }) : formatMoney(sum(g.payouts.map((p) => p.weeklyAfterTardiness))),
-              forCsv ? formatCsvNumeric(sum(g.payouts.map((p) => p.manualDeduction)), { maxFractionDigits: 2 }) : formatMoney(sum(g.payouts.map((p) => p.manualDeduction))),
-              forCsv ? formatCsvNumeric(sum(g.payouts.map((p) => p.additionalTips ?? 0)), { maxFractionDigits: 2 }) : formatMoney(sum(g.payouts.map((p) => p.additionalTips ?? 0))),
-              forCsv ? formatCsvNumeric(sum(g.payouts.map((p) => p.netWeeklyTips)), { maxFractionDigits: 2 }) : formatMoney(sum(g.payouts.map((p) => p.netWeeklyTips))),
-              forCsv ? formatCsvNumeric(sum(g.payouts.map((p) => p.tardinessRedistribution)), { maxFractionDigits: 2 }) : formatMoney(sum(g.payouts.map((p) => p.tardinessRedistribution))),
-              forCsv ? formatCsvNumeric(sum(g.payouts.map((p) => p.finalWeeklyTipsPayable)), { maxFractionDigits: 2 }) : formatMoney(sum(g.payouts.map((p) => p.finalWeeklyTipsPayable))),
+              fmtMoney(sum(g.payouts.map((p) => p.tardinessDeduction))),
+              fmtMoney(sum(g.payouts.map((p) => p.weeklyAfterTardiness))),
+              fmtMoney(sum(g.payouts.map((p) => p.manualDeduction))),
+              fmtMoney(sum(g.payouts.map((p) => p.additionalTips ?? 0))),
+              fmtMoney(sum(g.payouts.map((p) => p.netWeeklyTips))),
+              fmtMoney(sum(g.payouts.map((p) => p.tardinessRedistribution))),
+              fmtMoney(sum(g.payouts.map((p) => p.finalWeeklyTipsPayable))),
             ]);
             return rows;
           })(),
@@ -542,7 +564,7 @@ export default function PayoutReports() {
         const timelineHeaders = ["Date", "Tips", "Location"];
         const timelineBody = timelineRows.map((r) => [
           r.dateLabel,
-          forCsv ? formatCsvNumeric(r.amount, { maxFractionDigits: 2 }) : formatMoney(r.amount),
+          fmtMoney(r.amount),
           r.locationName,
         ]);
         const totalAmount = sum(timelineRows.map((r) => r.amount));
@@ -571,21 +593,9 @@ export default function PayoutReports() {
           totalWeeklyGrossTips > 0
             ? `${((totalTardinessDeduction / totalWeeklyGrossTips) * 100).toFixed(2)}%`
             : "0%";
-        timelineBody.push([
-          "Total",
-          forCsv
-            ? formatCsvNumeric(totalAmount, { maxFractionDigits: 2 })
-            : formatMoney(totalAmount),
-          "All locations",
-        ]);
+        timelineBody.push(["Total", fmtMoney(totalAmount), "All locations"]);
         timelineBody.push(["", "", ""]);
-        timelineBody.push([
-          "Weekly Gross Tips",
-          forCsv
-            ? formatCsvNumeric(totalWeeklyGrossTips, { maxFractionDigits: 2 })
-            : formatMoney(totalWeeklyGrossTips),
-          "",
-        ]);
+        timelineBody.push(["Weekly Gross Tips", fmtMoney(totalWeeklyGrossTips), ""]);
         timelineBody.push([
           "Working hours",
           formatDurationForReport(totalWorkingMinutes),
@@ -602,53 +612,23 @@ export default function PayoutReports() {
           "",
         ]);
         timelineBody.push(["Tardiness %", mergedTardinessPercent, ""]);
-        timelineBody.push([
-          "Tardiness Deduction",
-          forCsv
-            ? formatCsvNumeric(totalTardinessDeduction, { maxFractionDigits: 2 })
-            : formatMoney(totalTardinessDeduction),
-          "",
-        ]);
+        timelineBody.push(["Tardiness Deduction", fmtMoney(totalTardinessDeduction), ""]);
         timelineBody.push([
           "Weekly After Tardiness",
-          forCsv
-            ? formatCsvNumeric(totalWeeklyAfterTardiness, { maxFractionDigits: 2 })
-            : formatMoney(totalWeeklyAfterTardiness),
+          fmtMoney(totalWeeklyAfterTardiness),
           "",
         ]);
-        timelineBody.push([
-          "Manual Deduction",
-          forCsv
-            ? formatCsvNumeric(totalManualDeduction, { maxFractionDigits: 2 })
-            : formatMoney(totalManualDeduction),
-          "",
-        ]);
-        timelineBody.push([
-          "Additional Tips (+)",
-          forCsv
-            ? formatCsvNumeric(totalAdditionalTips, { maxFractionDigits: 2 })
-            : formatMoney(totalAdditionalTips),
-          "",
-        ]);
-        timelineBody.push([
-          "Net Weekly Tips",
-          forCsv
-            ? formatCsvNumeric(totalNetWeeklyTips, { maxFractionDigits: 2 })
-            : formatMoney(totalNetWeeklyTips),
-          "",
-        ]);
+        timelineBody.push(["Manual Deduction", fmtMoney(totalManualDeduction), ""]);
+        timelineBody.push(["Additional Tips (+)", fmtMoney(totalAdditionalTips), ""]);
+        timelineBody.push(["Net Weekly Tips", fmtMoney(totalNetWeeklyTips), ""]);
         timelineBody.push([
           "Tardiness Redistribution",
-          forCsv
-            ? formatCsvNumeric(totalTardinessRedistribution, { maxFractionDigits: 2 })
-            : formatMoney(totalTardinessRedistribution),
+          fmtMoney(totalTardinessRedistribution),
           "",
         ]);
         timelineBody.push([
           "Final Weekly Tips Payable",
-          forCsv
-            ? formatCsvNumeric(totalFinalWeeklyTipsPayable, { maxFractionDigits: 2 })
-            : formatMoney(totalFinalWeeklyTipsPayable),
+          fmtMoney(totalFinalWeeklyTipsPayable),
           "",
         ]);
         if (kind === "csv") {
@@ -670,23 +650,19 @@ export default function PayoutReports() {
           rows.push([
             "Total",
             geographicScope === "one_location" ? oneLocationLabel || "-" : "All locations",
-            ...dayTotals.map((v) =>
-              forCsv ? formatCsvNumeric(v, { maxFractionDigits: 2 }) : formatMoney(v),
-            ),
-            forCsv
-              ? formatCsvNumeric(sum(payouts.map((p) => p.weeklyGrossTips ?? p.dailyTipsMonToSun)), { maxFractionDigits: 2 })
-              : formatMoney(sum(payouts.map((p) => p.weeklyGrossTips ?? p.dailyTipsMonToSun))),
+            ...dayTotals.map((v) => fmtMoney(v)),
+            fmtMoney(sum(payouts.map((p) => p.weeklyGrossTips ?? p.dailyTipsMonToSun))),
             formatDurationForReport(sum(payouts.map((p) => p.totalWorkingMinutes))),
             formatDurationForReport(sum(payouts.map((p) => breakMinutesFromPayout(p)))),
             String(sum(payouts.map((p) => p.weeklyTardinessMinutes))),
             "",
-            forCsv ? formatCsvNumeric(sum(payouts.map((p) => p.tardinessDeduction)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.tardinessDeduction))),
-            forCsv ? formatCsvNumeric(sum(payouts.map((p) => p.weeklyAfterTardiness)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.weeklyAfterTardiness))),
-            forCsv ? formatCsvNumeric(sum(payouts.map((p) => p.manualDeduction)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.manualDeduction))),
-            forCsv ? formatCsvNumeric(sum(payouts.map((p) => p.additionalTips ?? 0)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.additionalTips ?? 0))),
-            forCsv ? formatCsvNumeric(sum(payouts.map((p) => p.netWeeklyTips)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.netWeeklyTips))),
-            forCsv ? formatCsvNumeric(sum(payouts.map((p) => p.tardinessRedistribution)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.tardinessRedistribution))),
-            forCsv ? formatCsvNumeric(sum(payouts.map((p) => p.finalWeeklyTipsPayable)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.finalWeeklyTipsPayable))),
+            fmtMoney(sum(payouts.map((p) => p.tardinessDeduction))),
+            fmtMoney(sum(payouts.map((p) => p.weeklyAfterTardiness))),
+            fmtMoney(sum(payouts.map((p) => p.manualDeduction))),
+            fmtMoney(sum(payouts.map((p) => p.additionalTips ?? 0))),
+            fmtMoney(sum(payouts.map((p) => p.netWeeklyTips))),
+            fmtMoney(sum(payouts.map((p) => p.tardinessRedistribution))),
+            fmtMoney(sum(payouts.map((p) => p.finalWeeklyTipsPayable))),
           ]);
         }
         if (kind === "csv") {
@@ -870,51 +846,84 @@ export default function PayoutReports() {
       const calc = await getDailyTipCalculation(singleLocationId, d, { refresh: false });
       const allocations = (calc?.employeeAllocations ?? [])
         .slice()
-        .sort((a, b) => (a.employeeName || "").localeCompare(b.employeeName || "", undefined, { sensitivity: "base" }));
-      if (!allocations.length) {
+        .sort((a, b) =>
+          (a.employeeName || "").localeCompare(b.employeeName || "", undefined, { sensitivity: "base" }),
+        );
+      const excludedEmployees = Array.isArray(calc?.excludedEmployees)
+        ? calc.excludedEmployees
+            .slice()
+            .sort((a, b) =>
+              (a.employeeName || "").localeCompare(b.employeeName || "", undefined, { sensitivity: "base" }),
+            )
+        : [];
+      if (!allocations.length && excludedEmployees.length === 0) {
         toast.error("No daily tips rows for export");
         return;
       }
-      const headers = [
-        "Employee",
-        "Multiplier",
-        "AM weighted hrs",
-        "PM weighted hrs",
-        "AM tips",
-        "PM tips",
-        "Net tips",
-        "MR",
-        "Total",
-      ];
-      const asNumberString = (value) => {
+      const locName = activeLocations.find((l) => l._id === singleLocationId)?.name || "location";
+      const isCove = String(locName || "").trim().toLowerCase() === "the cove";
+
+      // Show the underlying numeric value (no 3-decimal screen truncation);
+      // strip trailing float noise but keep up to 4 fractional digits.
+      const fullNum = (value) => {
         const n = Number(value);
-        return Number.isFinite(n) ? String(n) : "0";
+        if (!Number.isFinite(n)) return "0";
+        if (Number.isInteger(n)) return String(n);
+        const rounded = Math.round(n * 10000) / 10000;
+        const s = rounded.toString();
+        if (s.includes("e") || s.includes("E")) return rounded.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+        return s;
       };
-      const asMoneyString = (value) => `$${asNumberString(value)}`;
-      const rows = allocations.map((a) =>
-        [
+      const fullMoney = (value) => `$${fullNum(value)}`;
+      const moneyCell = (value) => (kind === "csv" ? fullNum(value) : fullMoney(value));
+
+      const headers = isCove
+        ? ["Employee", "Multiplier", "Worked hrs (weighted)", "Tips", "Net tips", "MR", "Total"]
+        : [
+            "Employee",
+            "Multiplier",
+            "AM weighted hrs",
+            "PM weighted hrs",
+            "AM tips",
+            "PM tips",
+            "Net tips",
+            "MR",
+            "Total",
+          ];
+
+      const rows = allocations.map((a) => {
+        if (isCove) {
+          return [
+            a.employeeName ?? "",
+            fullNum(jobTipMultiplierDisplay(a)),
+            fullNum(amWeightedWorkedHours(a) + pmWeightedWorkedHours(a)),
+            moneyCell(displayedAmTips(a) + displayedPmTips(a)),
+            moneyCell(netTipsAfterDeductions(a)),
+            moneyCell(Number(a.redistributionShare ?? 0)),
+            moneyCell(Number(a.finalTips ?? a.totalTips ?? 0)),
+          ];
+        }
+        return [
           a.employeeName ?? "",
-          asNumberString(jobTipMultiplierDisplay(a)),
-          asNumberString(amWeightedWorkedHours(a)),
-          asNumberString(pmWeightedWorkedHours(a)),
-          kind === "csv" ? asNumberString(displayedAmTips(a)) : asMoneyString(displayedAmTips(a)),
-          kind === "csv" ? asNumberString(displayedPmTips(a)) : asMoneyString(displayedPmTips(a)),
-          kind === "csv" ? asNumberString(netTipsAfterDeductions(a)) : asMoneyString(netTipsAfterDeductions(a)),
-          kind === "csv" ? asNumberString(Number(a.redistributionShare ?? 0)) : asMoneyString(Number(a.redistributionShare ?? 0)),
-          kind === "csv" ? asNumberString(Number(a.finalTips ?? a.totalTips)) : asMoneyString(Number(a.finalTips ?? a.totalTips)),
-        ],
-      );
+          fullNum(jobTipMultiplierDisplay(a)),
+          fullNum(amWeightedWorkedHours(a)),
+          fullNum(pmWeightedWorkedHours(a)),
+          moneyCell(displayedAmTips(a)),
+          moneyCell(displayedPmTips(a)),
+          moneyCell(netTipsAfterDeductions(a)),
+          moneyCell(Number(a.redistributionShare ?? 0)),
+          moneyCell(Number(a.finalTips ?? a.totalTips ?? 0)),
+        ];
+      });
+
       const totals = allocations.reduce(
         (acc, a) => ({
-          amWeightedWorkedHours:
-            acc.amWeightedWorkedHours + amWeightedWorkedHours(a),
-          pmWeightedWorkedHours:
-            acc.pmWeightedWorkedHours + pmWeightedWorkedHours(a),
+          amWeightedWorkedHours: acc.amWeightedWorkedHours + amWeightedWorkedHours(a),
+          pmWeightedWorkedHours: acc.pmWeightedWorkedHours + pmWeightedWorkedHours(a),
           amTips: acc.amTips + displayedAmTips(a),
           pmTips: acc.pmTips + displayedPmTips(a),
           netTips: acc.netTips + netTipsAfterDeductions(a),
-          redistributionShare:
-            acc.redistributionShare + (Number(a.redistributionShare) || 0),
+          redistributionShare: acc.redistributionShare + (Number(a.redistributionShare) || 0),
           totalTips: acc.totalTips + (Number(a.finalTips ?? a.totalTips) || 0),
         }),
         {
@@ -927,39 +936,113 @@ export default function PayoutReports() {
           totalTips: 0,
         },
       );
-      const summaryRows = [
-        [
-          "Summary",
-          `AM gross: ${kind === "csv" ? asNumberString(calc?.inputs?.amGrossTips) : asMoneyString(calc?.inputs?.amGrossTips)}`,
-          `PM gross: ${kind === "csv" ? asNumberString(calc?.inputs?.pmGrossTips) : asMoneyString(calc?.inputs?.pmGrossTips)}`,
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-        ],
-      ];
-      rows.unshift(...summaryRows);
-      rows.push(
-        [
-          "Total",
-          "",
-          asNumberString(totals.amWeightedWorkedHours),
-          asNumberString(totals.pmWeightedWorkedHours),
-          kind === "csv" ? asNumberString(totals.amTips) : asMoneyString(totals.amTips),
-          kind === "csv" ? asNumberString(totals.pmTips) : asMoneyString(totals.pmTips),
-          kind === "csv" ? asNumberString(totals.netTips) : asMoneyString(totals.netTips),
-          kind === "csv" ? asNumberString(totals.redistributionShare) : asMoneyString(totals.redistributionShare),
-          kind === "csv" ? asNumberString(totals.totalTips) : asMoneyString(totals.totalTips),
-        ],
-      );
-      const locName = activeLocations.find((l) => l._id === singleLocationId)?.name || "location";
+
+      if (allocations.length > 0) {
+        if (isCove) {
+          rows.push([
+            "Total",
+            "",
+            fullNum(totals.amWeightedWorkedHours + totals.pmWeightedWorkedHours),
+            moneyCell(totals.amTips + totals.pmTips),
+            moneyCell(totals.netTips),
+            moneyCell(totals.redistributionShare),
+            moneyCell(totals.totalTips),
+          ]);
+        } else {
+          rows.push([
+            "Total",
+            "",
+            fullNum(totals.amWeightedWorkedHours),
+            fullNum(totals.pmWeightedWorkedHours),
+            moneyCell(totals.amTips),
+            moneyCell(totals.pmTips),
+            moneyCell(totals.netTips),
+            moneyCell(totals.redistributionShare),
+            moneyCell(totals.totalTips),
+          ]);
+        }
+      }
+
+      const amGross = Number(calc?.inputs?.amGrossTips) || 0;
+      const pmGross = Number(calc?.inputs?.pmGrossTips) || 0;
+      const productionPool =
+        (Number(calc?.inputs?.productionDeductionAM) || 0) +
+        (Number(calc?.inputs?.productionDeductionPM) || 0);
+      const distAm = Number(calc?.inputs?.distributableAM) || 0;
+      const distPm = Number(calc?.inputs?.distributablePM) || 0;
+      const amRate = Number(calc?.totals?.amTipRate) || 0;
+      const pmRate = Number(calc?.totals?.pmTipRate) || 0;
+
+      const preambleLines = [
+        `Location: ${locName}`,
+        `Date: ${d}`,
+        isCove
+          ? `Gross Tips: ${fullMoney(amGross)}`
+          : `AM Gross Tips: ${fullMoney(amGross)}`,
+        ...(isCove ? [] : [`PM Gross Tips: ${fullMoney(pmGross)}`]),
+        `Total Gross Tips: ${fullMoney(amGross + pmGross)}`,
+        `5.4% Production Pool: ${fullMoney(productionPool)}`,
+        isCove
+          ? `Distributable: ${fullMoney(distAm)}`
+          : `AM Distributable: ${fullMoney(distAm)}`,
+        ...(isCove ? [] : [`PM Distributable: ${fullMoney(distPm)}`]),
+        isCove
+          ? `Tip Rate: ${fullMoney(amRate)}/hr`
+          : `AM Tip Rate: ${fullMoney(amRate)}/hr`,
+        ...(isCove ? [] : [`PM Tip Rate: ${fullMoney(pmRate)}/hr`]),
+        excludedEmployees.length > 0
+          ? `Excluded employees: ${excludedEmployees.length} (see section below)`
+          : null,
+      ].filter(Boolean);
+
+      const sections = [];
+      if (allocations.length > 0) {
+        sections.push({
+          sectionTitle: "Employee Allocations",
+          headers,
+          rows,
+        });
+      }
+      if (excludedEmployees.length > 0) {
+        const excludedHeaders = isCove
+          ? ["Employee", "Job", "Worked hrs", "Reason"]
+          : ["Employee", "Job", "AM hrs", "PM hrs", "Reason"];
+        const excludedRows = excludedEmployees.map((ex) => {
+          const am = Number(ex.amWorkedHours) || 0;
+          const pm = Number(ex.pmWorkedHours) || 0;
+          if (isCove) {
+            return [
+              ex.employeeName ?? "",
+              ex.jobTitle || "—",
+              fullNum(am + pm),
+              String(ex.reason ?? "").trim() || "—",
+            ];
+          }
+          return [
+            ex.employeeName ?? "",
+            ex.jobTitle || "—",
+            fullNum(am),
+            fullNum(pm),
+            String(ex.reason ?? "").trim() || "—",
+          ];
+        });
+        sections.push({
+          sectionTitle: "Excluded Employees (not in calculation)",
+          headers: excludedHeaders,
+          rows: excludedRows,
+        });
+      }
+
       const file = `daily-tips-${sanitizeExportSlug(locName)}-${d}.${kind}`;
       if (kind === "csv") {
-        exportTableToCSV(headers, rows, file);
+        exportSectionedTableToCSV(preambleLines, sections, file);
       } else {
-        exportTableToPDF(`Daily Tips ${locName} ${d}`, headers, rows, file);
+        exportSectionedTableToPDF(
+          `Daily Tips - ${locName} - ${d}`,
+          sections,
+          file,
+          { preambleLines },
+        );
       }
     },
     [singleDate, singleLocationId, activeLocations],
@@ -1061,6 +1144,9 @@ export default function PayoutReports() {
         (sum, row) => sum + (Number(row.weeklyPool) || 0),
         0,
       );
+      const forCsv = kind === "csv";
+      const fmtMoney = (v) => moneyExportCell(v, forCsv);
+
       const payoutHeaders = [
         "Employee",
         "Allocation %",
@@ -1075,50 +1161,43 @@ export default function PayoutReports() {
       const payoutRows = payouts.map((p) => [
         p.name + (p.subjectToTardiness === false ? " (exempt)" : ""),
         `${p.allocationPercent ?? 0}%`,
-        kind === "csv" ? formatCsvNumeric(p.weeklyGrossProductionTips, { maxFractionDigits: 2 }) : formatMoney(p.weeklyGrossProductionTips),
+        fmtMoney(p.weeklyGrossProductionTips),
         String(p.weeklyTardinessMinutes ?? 0),
         `${p.tardinessPercent ?? 0}%`,
-        kind === "csv" ? formatCsvNumeric(p.tardinessDeduction, { maxFractionDigits: 2 }) : formatMoney(p.tardinessDeduction),
-        kind === "csv" ? formatCsvNumeric(p.manualDeduction, { maxFractionDigits: 2 }) : formatMoney(p.manualDeduction),
-        kind === "csv" ? formatCsvNumeric(p.tardinessRedistribution ?? 0, { maxFractionDigits: 2 }) : formatMoney(p.tardinessRedistribution ?? 0),
-        kind === "csv" ? formatCsvNumeric(p.finalWeeklyProductionPayout ?? 0, { maxFractionDigits: 2 }) : formatMoney(p.finalWeeklyProductionPayout ?? 0),
+        fmtMoney(p.tardinessDeduction),
+        fmtMoney(p.manualDeduction),
+        fmtMoney(p.tardinessRedistribution ?? 0),
+        fmtMoney(p.finalWeeklyProductionPayout ?? 0),
       ]);
       payoutRows.push([
         "Total",
         "",
-        kind === "csv" ? formatCsvNumeric(sum(payouts.map((p) => p.weeklyGrossProductionTips)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.weeklyGrossProductionTips))),
+        fmtMoney(sum(payouts.map((p) => p.weeklyGrossProductionTips))),
         String(sum(payouts.map((p) => p.weeklyTardinessMinutes))),
         "",
-        kind === "csv" ? formatCsvNumeric(sum(payouts.map((p) => p.tardinessDeduction)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.tardinessDeduction))),
-        kind === "csv" ? formatCsvNumeric(sum(payouts.map((p) => p.manualDeduction)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.manualDeduction)),
-        ),
-        kind === "csv" ? formatCsvNumeric(sum(payouts.map((p) => p.tardinessRedistribution ?? 0)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.tardinessRedistribution ?? 0))),
-        kind === "csv" ? formatCsvNumeric(sum(payouts.map((p) => p.finalWeeklyProductionPayout ?? 0)), { maxFractionDigits: 2 }) : formatMoney(sum(payouts.map((p) => p.finalWeeklyProductionPayout ?? 0))),
+        fmtMoney(sum(payouts.map((p) => p.tardinessDeduction))),
+        fmtMoney(sum(payouts.map((p) => p.manualDeduction))),
+        fmtMoney(sum(payouts.map((p) => p.tardinessRedistribution ?? 0))),
+        fmtMoney(sum(payouts.map((p) => p.finalWeeklyProductionPayout ?? 0))),
       ]);
       const locationHeaders = ["Location", ...dateCols.map((c) => c.label), "Weekly total"];
       const locationRows = locationWisePool.map((row) => [
         row.locationName ?? "",
-        ...dateCols.map((_, i) =>
-          kind === "csv"
-            ? formatCsvNumeric((row.dailyByDay || [])[i] ?? 0, { maxFractionDigits: 2 })
-            : formatMoney((row.dailyByDay || [])[i] ?? 0),
-        ),
-        kind === "csv" ? formatCsvNumeric(row.weeklyPool ?? 0, { maxFractionDigits: 2 }) : formatMoney(row.weeklyPool ?? 0),
+        ...dateCols.map((_, i) => fmtMoney((row.dailyByDay || [])[i] ?? 0)),
+        fmtMoney(row.weeklyPool ?? 0),
       ]);
       if (locationWisePool.length > 0) {
         locationRows.push([
           "Total",
           ...dateCols.map((_, i) =>
-            kind === "csv"
-              ? formatCsvNumeric(
-                  locationWisePool.reduce((s, row) => s + (Number((row.dailyByDay || [])[i]) || 0), 0),
-                  { maxFractionDigits: 2 },
-                )
-              : formatMoney(
-                  locationWisePool.reduce((s, row) => s + (Number((row.dailyByDay || [])[i]) || 0), 0),
-                ),
+            fmtMoney(
+              locationWisePool.reduce(
+                (s, row) => s + (Number((row.dailyByDay || [])[i]) || 0),
+                0,
+              ),
+            ),
           ),
-          kind === "csv" ? formatCsvNumeric(totalPoolFromLocations, { maxFractionDigits: 2 }) : formatMoney(totalPoolFromLocations),
+          fmtMoney(totalPoolFromLocations),
         ]);
       }
       const file = `production-pool-${sd}-${ed}.${kind}`;

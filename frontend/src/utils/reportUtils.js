@@ -469,11 +469,13 @@ export function exportSectionedTableToCSV(reportHeading, sections, filename) {
  * @param {string} reportTitle - Used only if options.weeklyPayoutHeader is not set
  * @param {{ sectionTitle: string, headers: string[], rows: string[][] }[]} sections
  * @param {string} filename
+ * @param {{ preambleLines?: string[] }} [options] - `preambleLines` renders below the title and above the first section.
  */
 export function exportSectionedTableToPDF(reportTitle, sections, filename, options = {}) {
   const headFillColor = options.headFillColor || [71, 85, 105];
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageH = doc.internal.pageSize.getHeight();
+  const pageW = doc.internal.pageSize.getWidth();
   const meta = options.weeklyPayoutHeader;
   let startY;
   if (meta && meta.periodStart && meta.periodEnd && meta.scopeLabel != null) {
@@ -484,6 +486,29 @@ export function exportSectionedTableToPDF(reportTitle, sections, filename, optio
     doc.text(reportTitle, 14, 12);
     startY = 18;
     doc.setFont('helvetica', 'normal');
+  }
+
+  const preambleLines = Array.isArray(options.preambleLines)
+    ? options.preambleLines.map((l) => String(l ?? '').trim()).filter(Boolean)
+    : [];
+  if (preambleLines.length > 0) {
+    doc.setFontSize(9.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(30, 41, 59);
+    const wrapWidth = pageW - 28;
+    for (const line of preambleLines) {
+      const wrapped = doc.splitTextToSize(line, wrapWidth);
+      for (const wl of wrapped) {
+        if (startY > pageH - 10) {
+          doc.addPage();
+          startY = 14;
+        }
+        doc.text(wl, 14, startY);
+        startY += 4.6;
+      }
+    }
+    startY += 2;
+    doc.setTextColor(0, 0, 0);
   }
 
   sections.forEach(({ sectionTitle, headers, rows }) => {
