@@ -51,4 +51,20 @@ async function remove(req, res, next) {
   }
 }
 
-module.exports = { list, getOne, create, update, remove };
+async function patchTipMultiplier(req, res, next) {
+  try {
+    const employee = await employeeService.setTipMultiplierOverride(
+      req.params.id,
+      req.body.tipMultiplierOverride,
+    );
+    if (!employee) return res.status(404).json({ success: false, error: 'Employee not found' });
+    res.json({ success: true, data: employee });
+  } catch (err) {
+    if (err.status === 400) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    next(err);
+  }
+}
+
+module.exports = { list, getOne, create, update, remove, patchTipMultiplier };

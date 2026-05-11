@@ -26,3 +26,11 @@ export async function deleteEmployee(id) {
   const { data } = await api.delete(`/employees/${id}`);
   return data.data;
 }
+
+/** Persist tip multiplier override on the employee (daily tips). Pass null to use job-title default. */
+export async function patchEmployeeTipMultiplier(id, tipMultiplierOverride) {
+  const { data } = await api.patch(`/employees/${id}/tip-multiplier`, {
+    tipMultiplierOverride,
+  });
+  return data.data;
+}

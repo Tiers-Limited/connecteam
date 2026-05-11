@@ -124,16 +124,28 @@ function toFileDate(d) {
   return String(d || "").trim().slice(0, 10);
 }
 
-function locationIsTheCoveByName(name) {
-  return String(name || "").trim().toLowerCase() === "the cove";
-}
-
 function displayedAmTips(allocation) {
   return (Number(allocation?.amTips) || 0) + (Number(allocation?.manualAmTips) || 0);
 }
 
 function displayedPmTips(allocation) {
   return (Number(allocation?.pmTips) || 0) + (Number(allocation?.manualPmTips) || 0);
+}
+
+function jobTipMultiplierDisplay(row) {
+  const o = row?.tipMultiplierOverride;
+  const on = o != null ? Number(o) : NaN;
+  if (Number.isFinite(on) && on > 0) return on;
+  const m = Number(row?.jobTipMultiplier);
+  return Number.isFinite(m) && m > 0 ? m : 1;
+}
+
+function amWeightedWorkedHours(row) {
+  return (Number(row?.amWorkedHours) || 0) * jobTipMultiplierDisplay(row);
+}
+
+function pmWeightedWorkedHours(row) {
+  return (Number(row?.pmWorkedHours) || 0) * jobTipMultiplierDisplay(row);
 }
 
 function netTipsAfterDeductions(allocation) {
@@ -863,48 +875,41 @@ export default function PayoutReports() {
         toast.error("No daily tips rows for export");
         return;
       }
-      const isCove = locationIsTheCoveByName(activeLocations.find((l) => l._id === singleLocationId)?.name);
-      const showShiftSplit = !isCove;
-      const headers = showShiftSplit
-        ? ["Employee", "Clock In", "Clock Out", "Break In", "Break Out", "Break (hrs)", "AM hrs", "PM hrs", "AM tips", "PM tips", "Net tips", "Manual Redistribution", "Total"]
-        : ["Employee", "Clock In", "Clock Out", "Break In", "Break Out", "Break (hrs)", "Hours", "Tips", "Net tips", "Manual Redistribution", "Total"];
+      const headers = [
+        "Employee",
+        "Multiplier",
+        "AM weighted hrs",
+        "PM weighted hrs",
+        "AM tips",
+        "PM tips",
+        "Net tips",
+        "MR",
+        "Total",
+      ];
+      const asNumberString = (value) => {
+        const n = Number(value);
+        return Number.isFinite(n) ? String(n) : "0";
+      };
+      const asMoneyString = (value) => `$${asNumberString(value)}`;
       const rows = allocations.map((a) =>
-        showShiftSplit
-          ? [
-              a.employeeName ?? "",
-              a.clockIn ?? "–",
-              a.clockOut ?? "–",
-              a.breakClockIn ?? "–",
-              a.breakClockOut ?? "–",
-              kind === "csv" ? formatCsvNumeric(a.connecteamBreakHours ?? "", { maxFractionDigits: 3 }) : Number(a.connecteamBreakHours || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
-              kind === "csv" ? formatCsvNumeric(a.amWorkedHours ?? "", { maxFractionDigits: 3 }) : Number(a.amWorkedHours || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
-              kind === "csv" ? formatCsvNumeric(a.pmWorkedHours ?? "", { maxFractionDigits: 3 }) : Number(a.pmWorkedHours || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
-              kind === "csv" ? formatCsvNumeric(displayedAmTips(a), { maxFractionDigits: 3 }) : `$${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-              kind === "csv" ? formatCsvNumeric(displayedPmTips(a), { maxFractionDigits: 3 }) : `$${displayedPmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-              kind === "csv" ? formatCsvNumeric(netTipsAfterDeductions(a), { maxFractionDigits: 3 }) : `$${netTipsAfterDeductions(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-              kind === "csv" ? formatCsvNumeric(Number(a.redistributionShare ?? 0), { maxFractionDigits: 3 }) : `$${Number(a.redistributionShare ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-              kind === "csv" ? formatCsvNumeric(Number(a.finalTips ?? a.totalTips), { maxFractionDigits: 3 }) : `$${Number(a.finalTips ?? a.totalTips).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-            ]
-          : [
-              a.employeeName ?? "",
-              a.clockIn ?? "–",
-              a.clockOut ?? "–",
-              a.breakClockIn ?? "–",
-              a.breakClockOut ?? "–",
-              kind === "csv" ? formatCsvNumeric(a.connecteamBreakHours ?? "", { maxFractionDigits: 3 }) : Number(a.connecteamBreakHours || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
-              kind === "csv" ? formatCsvNumeric(a.amWorkedHours ?? "", { maxFractionDigits: 3 }) : Number(a.amWorkedHours || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
-              kind === "csv" ? formatCsvNumeric(displayedAmTips(a), { maxFractionDigits: 3 }) : `$${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-              kind === "csv" ? formatCsvNumeric(netTipsAfterDeductions(a), { maxFractionDigits: 3 }) : `$${netTipsAfterDeductions(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-              kind === "csv" ? formatCsvNumeric(Number(a.redistributionShare ?? 0), { maxFractionDigits: 3 }) : `$${Number(a.redistributionShare ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-              kind === "csv" ? formatCsvNumeric(Number(a.finalTips ?? a.totalTips), { maxFractionDigits: 3 }) : `$${Number(a.finalTips ?? a.totalTips).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-            ],
+        [
+          a.employeeName ?? "",
+          asNumberString(jobTipMultiplierDisplay(a)),
+          asNumberString(amWeightedWorkedHours(a)),
+          asNumberString(pmWeightedWorkedHours(a)),
+          kind === "csv" ? asNumberString(displayedAmTips(a)) : asMoneyString(displayedAmTips(a)),
+          kind === "csv" ? asNumberString(displayedPmTips(a)) : asMoneyString(displayedPmTips(a)),
+          kind === "csv" ? asNumberString(netTipsAfterDeductions(a)) : asMoneyString(netTipsAfterDeductions(a)),
+          kind === "csv" ? asNumberString(Number(a.redistributionShare ?? 0)) : asMoneyString(Number(a.redistributionShare ?? 0)),
+          kind === "csv" ? asNumberString(Number(a.finalTips ?? a.totalTips)) : asMoneyString(Number(a.finalTips ?? a.totalTips)),
+        ],
       );
       const totals = allocations.reduce(
         (acc, a) => ({
-          amWorkedHours: acc.amWorkedHours + (Number(a.amWorkedHours) || 0),
-          pmWorkedHours: acc.pmWorkedHours + (Number(a.pmWorkedHours) || 0),
-          connecteamBreakHours:
-            acc.connecteamBreakHours + (Number(a.connecteamBreakHours) || 0),
+          amWeightedWorkedHours:
+            acc.amWeightedWorkedHours + amWeightedWorkedHours(a),
+          pmWeightedWorkedHours:
+            acc.pmWeightedWorkedHours + pmWeightedWorkedHours(a),
           amTips: acc.amTips + displayedAmTips(a),
           pmTips: acc.pmTips + displayedPmTips(a),
           netTips: acc.netTips + netTipsAfterDeductions(a),
@@ -913,9 +918,8 @@ export default function PayoutReports() {
           totalTips: acc.totalTips + (Number(a.finalTips ?? a.totalTips) || 0),
         }),
         {
-          amWorkedHours: 0,
-          pmWorkedHours: 0,
-          connecteamBreakHours: 0,
+          amWeightedWorkedHours: 0,
+          pmWeightedWorkedHours: 0,
           amTips: 0,
           pmTips: 0,
           netTips: 0,
@@ -926,51 +930,29 @@ export default function PayoutReports() {
       const summaryRows = [
         [
           "Summary",
-          `AM gross: ${kind === "csv" ? formatCsvNumeric(calc?.inputs?.amGrossTips, { maxFractionDigits: 3 }) : formatMoney(calc?.inputs?.amGrossTips || 0)}`,
-          `PM gross: ${kind === "csv" ? formatCsvNumeric(calc?.inputs?.pmGrossTips, { maxFractionDigits: 3 }) : formatMoney(calc?.inputs?.pmGrossTips || 0)}`,
+          `AM gross: ${kind === "csv" ? asNumberString(calc?.inputs?.amGrossTips) : asMoneyString(calc?.inputs?.amGrossTips)}`,
+          `PM gross: ${kind === "csv" ? asNumberString(calc?.inputs?.pmGrossTips) : asMoneyString(calc?.inputs?.pmGrossTips)}`,
           "",
           "",
           "",
           "",
           "",
           "",
-          "",
-          "",
-          "",
-          "",
-        ].slice(0, headers.length),
+        ],
       ];
       rows.unshift(...summaryRows);
       rows.push(
-        showShiftSplit
-          ? [
-              "Total",
-              "",
-              "",
-              "",
-              "",
-              kind === "csv" ? formatCsvNumeric(totals.connecteamBreakHours, { maxFractionDigits: 3 }) : totals.connecteamBreakHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
-              kind === "csv" ? formatCsvNumeric(totals.amWorkedHours, { maxFractionDigits: 3 }) : totals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
-              kind === "csv" ? formatCsvNumeric(totals.pmWorkedHours, { maxFractionDigits: 3 }) : totals.pmWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
-              kind === "csv" ? formatCsvNumeric(totals.amTips, { maxFractionDigits: 3 }) : `$${totals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-              kind === "csv" ? formatCsvNumeric(totals.pmTips, { maxFractionDigits: 3 }) : `$${totals.pmTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-              kind === "csv" ? formatCsvNumeric(totals.netTips, { maxFractionDigits: 3 }) : `$${totals.netTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-              kind === "csv" ? formatCsvNumeric(totals.redistributionShare, { maxFractionDigits: 3 }) : `$${totals.redistributionShare.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-              kind === "csv" ? formatCsvNumeric(totals.totalTips, { maxFractionDigits: 3 }) : `$${totals.totalTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-            ]
-          : [
-              "Total",
-              "",
-              "",
-              "",
-              "",
-              kind === "csv" ? formatCsvNumeric(totals.connecteamBreakHours, { maxFractionDigits: 3 }) : totals.connecteamBreakHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
-              kind === "csv" ? formatCsvNumeric(totals.amWorkedHours, { maxFractionDigits: 3 }) : totals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" }),
-              kind === "csv" ? formatCsvNumeric(totals.amTips, { maxFractionDigits: 3 }) : `$${totals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-              kind === "csv" ? formatCsvNumeric(totals.netTips, { maxFractionDigits: 3 }) : `$${totals.netTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-              kind === "csv" ? formatCsvNumeric(totals.redistributionShare, { maxFractionDigits: 3 }) : `$${totals.redistributionShare.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-              kind === "csv" ? formatCsvNumeric(totals.totalTips, { maxFractionDigits: 3 }) : `$${totals.totalTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}`,
-            ],
+        [
+          "Total",
+          "",
+          asNumberString(totals.amWeightedWorkedHours),
+          asNumberString(totals.pmWeightedWorkedHours),
+          kind === "csv" ? asNumberString(totals.amTips) : asMoneyString(totals.amTips),
+          kind === "csv" ? asNumberString(totals.pmTips) : asMoneyString(totals.pmTips),
+          kind === "csv" ? asNumberString(totals.netTips) : asMoneyString(totals.netTips),
+          kind === "csv" ? asNumberString(totals.redistributionShare) : asMoneyString(totals.redistributionShare),
+          kind === "csv" ? asNumberString(totals.totalTips) : asMoneyString(totals.totalTips),
+        ],
       );
       const locName = activeLocations.find((l) => l._id === singleLocationId)?.name || "location";
       const file = `daily-tips-${sanitizeExportSlug(locName)}-${d}.${kind}`;

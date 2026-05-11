@@ -52,7 +52,7 @@ router.post(
   param('locationId').isMongoId(),
   param('date').isISO8601().withMessage('Valid date required'),
   body('employeeId').isMongoId().withMessage('Valid employeeId required'),
-  body('type').isIn(['cash_advance', 'redistribute_equal']).withMessage('Valid adjustment type required'),
+  body('type').isIn(['cash_advance', 'redistribute_equal', 'exclude']).withMessage('Valid adjustment type required'),
   body('amount').isFloat({ min: 0 }).withMessage('Amount must be >= 0'),
   body('reason').optional().isString(),
   validate,

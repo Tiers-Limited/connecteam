@@ -21,6 +21,12 @@ const employeeSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    /** When set, daily tip pool uses this multiplier instead of the job-title default from constants. */
+    tipMultiplierOverride: {
+      type: Number,
+      min: 0.01,
+      max: 100,
+    },
   },
   { timestamps: true }
 );

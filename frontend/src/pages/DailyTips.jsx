@@ -15,7 +15,7 @@ import {
   upsertManualWorking,
   deleteManualWorking,
 } from "../services/manualWorkingService";
-import { getEmployees } from "../services/employeeService";
+import { getEmployees, patchEmployeeTipMultiplier } from "../services/employeeService";
 import { toDateString } from "../utils/dateUtils";
 import {
   splitWorkedHoursForLocation,
@@ -87,6 +87,13 @@ function getAdjustmentReasonForEmployee(adjustments, employeeId, type) {
   return String(hit?.reason ?? "").trim();
 }
 
+function excludedEmployeeIdString(row) {
+  const raw = row?.employeeId;
+  if (raw && typeof raw === "object" && raw._id != null) return String(raw._id);
+  if (raw != null && raw !== "") return String(raw);
+  return "";
+}
+
 /** After cash advance & Deduct & Redistribute, before equal pool share (matches final − share). */
 function netTipsAfterDeductions(allocation) {
   const fin = Number(allocation?.finalTips ?? allocation?.totalTips) || 0;
@@ -120,6 +127,31 @@ function dailyRedistributionCellTitle(allocation, redistributionPool) {
     return "No share for this row; pool is split only among eligible staff";
   }
   return "Tips received from redistribution pool (aligned with Weekly Payout manual redistribution)";
+}
+
+function allocationEmployeeIdString(row) {
+  const raw = row?.employeeId;
+  if (raw && typeof raw === "object" && raw._id != null) return String(raw._id);
+  if (raw != null && raw !== "") return String(raw);
+  return "";
+}
+
+/** Effective multiplier: saved employee override wins, else API jobTipMultiplier (from last calc / job title). */
+function jobTipMultiplierDisplay(row) {
+  const o = row?.tipMultiplierOverride;
+  const on = o != null ? Number(o) : NaN;
+  if (Number.isFinite(on) && on > 0) return on;
+  const m = Number(row?.jobTipMultiplier);
+  return Number.isFinite(m) && m > 0 ? m : 1;
+}
+
+/** AM/PM worked hours × job tip multiplier (same weighting used for tip rates). Display-only. */
+function amWeightedWorkedHours(row) {
+  return (Number(row?.amWorkedHours) || 0) * jobTipMultiplierDisplay(row);
+}
+
+function pmWeightedWorkedHours(row) {
+  return (Number(row?.pmWorkedHours) || 0) * jobTipMultiplierDisplay(row);
 }
 
 /** CSV breakdown amounts/hours: up to 3 fraction digits, trunc (matches on-screen tips). */
@@ -212,12 +244,17 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
   const [checkingExistingTipInput, setCheckingExistingTipInput] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [employeeShiftModalRow, setEmployeeShiftModalRow] = useState(null);
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
   const [adjustEmployee, setAdjustEmployee] = useState(null);
   const [adjustCashAdvance, setAdjustCashAdvance] = useState("");
   const [adjustRedistribute, setAdjustRedistribute] = useState("");
   const [adjustRedistributeReason, setAdjustRedistributeReason] = useState("");
+  const [adjustMultiplierInput, setAdjustMultiplierInput] = useState("");
+  const [adjustExclude, setAdjustExclude] = useState(false);
+  const [adjustExcludeReason, setAdjustExcludeReason] = useState("");
   const [adjustSaving, setAdjustSaving] = useState(false);
+  const [includeSavingId, setIncludeSavingId] = useState(null);
   const [manualRows, setManualRows] = useState([]);
   const [manualLoading, setManualLoading] = useState(false);
   const [manualSaving, setManualSaving] = useState(false);
@@ -570,6 +607,15 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
     return () => window.removeEventListener("keydown", onEscape);
   }, [manualRemoveRow]);
 
+  useEffect(() => {
+    if (!employeeShiftModalRow) return;
+    const onEscape = (e) => {
+      if (e.key === "Escape") setEmployeeShiftModalRow(null);
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, [employeeShiftModalRow]);
+
   const confirmRemoveManual = useCallback(async () => {
     if (!manualRemoveRow?._id) return;
     setManualRemoveSaving(true);
@@ -673,6 +719,10 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
           (acc, a) => ({
             amWorkedHours: acc.amWorkedHours + (Number(a.amWorkedHours) || 0),
             pmWorkedHours: acc.pmWorkedHours + (Number(a.pmWorkedHours) || 0),
+            amWeightedWorkedHours:
+              acc.amWeightedWorkedHours + amWeightedWorkedHours(a),
+            pmWeightedWorkedHours:
+              acc.pmWeightedWorkedHours + pmWeightedWorkedHours(a),
             connecteamBreakHours:
               acc.connecteamBreakHours + (Number(a.connecteamBreakHours) || 0),
             amTips: acc.amTips + displayedAmTips(a),
@@ -689,6 +739,8 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
           {
             amWorkedHours: 0,
             pmWorkedHours: 0,
+            amWeightedWorkedHours: 0,
+            pmWeightedWorkedHours: 0,
             connecteamBreakHours: 0,
             amTips: 0,
             pmTips: 0,
@@ -736,6 +788,18 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
           "redistribute_equal",
         ),
       );
+      const o = row?.tipMultiplierOverride;
+      const on = o != null ? Number(o) : NaN;
+      const prev = Number(row?.jobTipMultiplier);
+      const prefill =
+        Number.isFinite(on) && on > 0
+          ? on
+          : Number.isFinite(prev) && prev > 0
+            ? prev
+            : 1;
+      setAdjustMultiplierInput(String(prefill));
+      setAdjustExclude(false);
+      setAdjustExcludeReason("");
       setAdjustModalOpen(true);
     },
     [calculation?.adjustments],
@@ -744,7 +808,11 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
   const saveAdjustments = useCallback(async () => {
     const lid = breakdownView?.locationId;
     const ds = breakdownView?.dateStr;
-    if (!lid || !ds || !adjustEmployee?.employeeId) return;
+    const empIdStr = adjustEmployee ? allocationEmployeeIdString(adjustEmployee) : "";
+    if (!lid || !ds || !empIdStr) {
+      toast.error("This row has no employee record; cash and multiplier changes cannot be saved.");
+      return;
+    }
     const cashAdvance = Math.max(0, parseFloat(adjustCashAdvance || "0") || 0);
     const redistribute = Math.max(0, parseFloat(adjustRedistribute || "0") || 0);
     const redistributeReason = adjustRedistributeReason.trim();
@@ -752,23 +820,45 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
       toast.error("Reason is required when Deduct & Redistribute is greater than 0");
       return;
     }
+    const multTrim = adjustMultiplierInput.trim();
+    let tipMultiplierOverride = null;
+    if (multTrim !== "") {
+      const m = parseFloat(multTrim);
+      if (!Number.isFinite(m) || m < 0.01 || m > 100) {
+        toast.error("Tip multiplier must be between 0.01 and 100");
+        return;
+      }
+      tipMultiplierOverride = m;
+    }
+    const excludeReason = adjustExcludeReason.trim();
     setAdjustSaving(true);
     try {
       await Promise.all([
         upsertDailyTipAdjustment(lid, ds, {
-          employeeId: adjustEmployee.employeeId,
+          employeeId: empIdStr,
           type: "cash_advance",
           amount: cashAdvance,
           reason: "",
         }),
         upsertDailyTipAdjustment(lid, ds, {
-          employeeId: adjustEmployee.employeeId,
+          employeeId: empIdStr,
           type: "redistribute_equal",
           amount: redistribute,
           reason: redistribute > 0 ? redistributeReason : "",
         }),
+        upsertDailyTipAdjustment(lid, ds, {
+          employeeId: empIdStr,
+          type: "exclude",
+          amount: adjustExclude ? 1 : 0,
+          reason: adjustExclude ? excludeReason : "",
+        }),
+        patchEmployeeTipMultiplier(empIdStr, tipMultiplierOverride),
       ]);
-      toast.success("Adjustments saved. Recalculating…");
+      toast.success(
+        adjustExclude
+          ? "Employee excluded. Recalculating…"
+          : "Adjustments saved. Recalculating…",
+      );
       await refreshBreakdownCalculation(false, undefined, true);
       setAdjustModalOpen(false);
     } catch (_e) {
@@ -782,8 +872,36 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
     adjustCashAdvance,
     adjustRedistribute,
     adjustRedistributeReason,
+    adjustMultiplierInput,
+    adjustExclude,
+    adjustExcludeReason,
     refreshBreakdownCalculation,
   ]);
+
+  const includeExcludedEmployee = useCallback(
+    async (excludedRow) => {
+      const lid = breakdownView?.locationId;
+      const ds = breakdownView?.dateStr;
+      const empIdStr = excludedEmployeeIdString(excludedRow);
+      if (!lid || !ds || !empIdStr) return;
+      setIncludeSavingId(empIdStr);
+      try {
+        await upsertDailyTipAdjustment(lid, ds, {
+          employeeId: empIdStr,
+          type: "exclude",
+          amount: 0,
+          reason: "",
+        });
+        toast.success("Employee included again. Recalculating…");
+        await refreshBreakdownCalculation(false, undefined, true);
+      } catch (_e) {
+        toast.error("Failed to include employee");
+      } finally {
+        setIncludeSavingId(null);
+      }
+    },
+    [breakdownView, refreshBreakdownCalculation],
+  );
 
   const showShiftSplit = !isBreakdownTheCove;
 
@@ -1642,49 +1760,30 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                   <th className="sticky left-0 top-0 z-[2] bg-white dark:bg-slate-900 pb-2 pl-3 pt-2 text-left font-medium text-slate-700 dark:text-slate-200">
                     Employee
                   </th>
-                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-left font-medium text-slate-700 dark:text-slate-200">
-                    Clock In
-                  </th>
-                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-left font-medium text-slate-700 dark:text-slate-200">
-                    Clock Out
-                  </th>
-                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-left font-medium text-slate-700 dark:text-slate-200">
-                    Break In
-                  </th>
-                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-left font-medium text-slate-700 dark:text-slate-200">
-                    Break Out
+                  <th
+                    className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200"
+                    title="Job title tip multiplier (same factor used in pool / rate math)"
+                  >
+                    Multiplier
                   </th>
                   <th
                     className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200"
-                    title="Connecteam manual breaks that overlap first clock-in through last clock-out (deducted from worked hours for tips)."
+                    title="AM worked hours × multiplier"
                   >
-                    Break (hrs)
+                    AM weighted hrs
                   </th>
-                  {showShiftSplit ? (
-                    <>
-                      <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
-                        AM hrs
-                      </th>
-                      <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
-                        PM hrs
-                      </th>
-                      <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
-                        AM tips
-                      </th>
-                      <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
-                        PM tips
-                      </th>
-                    </>
-                  ) : (
-                    <>
-                      <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
-                        Hours
-                      </th>
-                      <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
-                        Tips
-                      </th>
-                    </>
-                  )}
+                  <th
+                    className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200"
+                    title="PM worked hours × multiplier"
+                  >
+                    PM weighted hrs
+                  </th>
+                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
+                    AM tips
+                  </th>
+                  <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
+                    PM tips
+                  </th>
                   <th className="sticky top-0 z-[1] bg-white dark:bg-slate-900 pb-2 text-right font-medium text-slate-700 dark:text-slate-200">
                     Net tips
                   </th>
@@ -1709,48 +1808,34 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                     className="hover:bg-slate-100 dark:hover:bg-white/5"
                   >
                     <td className="sticky left-0 z-[1] bg-white dark:bg-slate-900 py-2 pl-3 font-medium text-slate-900 dark:text-slate-100">
-                      {a.employeeName}
-                    </td>
-                    <td className="py-2 tabular-nums text-slate-600 dark:text-slate-300">
-                      {formatClockLabel(a.clockIn)}
-                    </td>
-                    <td className="py-2 tabular-nums text-slate-600 dark:text-slate-300">
-                      {formatClockLabel(a.clockOut)}
-                    </td>
-                    <td className="py-2 tabular-nums text-slate-600 dark:text-slate-300">
-                      {formatClockLabel(a.breakClockIn)}
-                    </td>
-                    <td className="py-2 tabular-nums text-slate-600 dark:text-slate-300">
-                      {formatClockLabel(a.breakClockOut)}
+                      <button
+                        type="button"
+                        onClick={() => setEmployeeShiftModalRow(a)}
+                        className="text-left text-indigo-700 underline decoration-indigo-400/60 underline-offset-2 hover:text-indigo-600 dark:text-indigo-300 dark:hover:text-indigo-200"
+                        title="View clock times, breaks, and hours"
+                      >
+                        {a.employeeName}
+                      </button>
                     </td>
                     <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
-                      {formatAllocHours(a.connecteamBreakHours)}
+                      {jobTipMultiplierDisplay(a).toLocaleString(undefined, {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 3,
+                        roundingMode: "trunc",
+                      })}
                     </td>
-                    {showShiftSplit ? (
-                      <>
-                        <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
-                          {a.amWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
-                        </td>
-                        <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
-                          {a.pmWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
-                        </td>
-                        <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
-                          ${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
-                        </td>
-                        <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
-                          ${displayedPmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
-                          {a.amWorkedHours?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
-                        </td>
-                        <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
-                          ${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
-                        </td>
-                      </>
-                    )}
+                    <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
+                      {formatAllocHours(amWeightedWorkedHours(a))}
+                    </td>
+                    <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
+                      {formatAllocHours(pmWeightedWorkedHours(a))}
+                    </td>
+                    <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
+                      ${displayedAmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
+                    </td>
+                    <td className="py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
+                      ${displayedPmTips(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
+                    </td>
                     <td className="py-2 text-right tabular-nums font-medium text-slate-700 dark:text-slate-200">
                       ${netTipsAfterDeductions(a).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                     </td>
@@ -1770,8 +1855,13 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                       <button
                         type="button"
                         onClick={() => openAdjustModal(a)}
-                        className="rounded-lg border border-slate-300 dark:border-white/20 bg-slate-100 dark:bg-white/10 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-white/15"
-                        title="Cash advance & redistribute adjustments"
+                        disabled={!allocationEmployeeIdString(a)}
+                        className="rounded-lg border border-slate-300 dark:border-white/20 bg-slate-100 dark:bg-white/10 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                        title={
+                          allocationEmployeeIdString(a)
+                            ? "Cash advance, redistribute, and tip multiplier"
+                            : "Requires a saved employee record"
+                        }
                       >
                         Adjust
                       </button>
@@ -1783,37 +1873,19 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 <tfoot className="border-t-2 border-slate-300 dark:border-white/20">
                   <tr className="bg-slate-100 dark:bg-white/5 font-semibold">
                     <td className="py-3 pl-2 text-slate-900 dark:text-slate-100">Total</td>
-                    <td className="py-3" colSpan={2} />
-                    <td className="py-3" />
-                    <td className="py-3" />
+                    <td className="py-3 text-right text-slate-500 dark:text-slate-400">—</td>
                     <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
-                      {formatAllocHours(normalizedTotals.connecteamBreakHours)}
+                      {formatAllocHours(normalizedTotals.amWeightedWorkedHours)}
                     </td>
-                    {showShiftSplit ? (
-                      <>
-                        <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
-                          {normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
-                        </td>
-                        <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
-                          {normalizedTotals.pmWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
-                        </td>
-                        <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
-                          ${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
-                        </td>
-                        <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
-                          ${normalizedTotals.pmTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
-                          {normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
-                        </td>
-                        <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
-                          ${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
-                        </td>
-                      </>
-                    )}
+                    <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                      {formatAllocHours(normalizedTotals.pmWeightedWorkedHours)}
+                    </td>
+                    <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                      ${normalizedTotals.amTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
+                    </td>
+                    <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                      ${normalizedTotals.pmTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
+                    </td>
                     <td className="py-3 text-right tabular-nums text-slate-900 dark:text-slate-100">
                       ${normalizedTotals.netTips.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                     </td>
@@ -1839,13 +1911,25 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 {showShiftSplit ? (
                   <>
                     <span>
-                      AM hours:{" "}
+                      AM weighted hrs:{" "}
+                      <strong className="text-slate-900 dark:text-slate-100">
+                        {formatAllocHours(normalizedTotals.amWeightedWorkedHours)}
+                      </strong>
+                    </span>
+                    <span>
+                      PM weighted hrs:{" "}
+                      <strong className="text-slate-900 dark:text-slate-100">
+                        {formatAllocHours(normalizedTotals.pmWeightedWorkedHours)}
+                      </strong>
+                    </span>
+                    <span>
+                      AM hours (unweighted):{" "}
                       <strong className="text-slate-900 dark:text-slate-100">
                         {normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
                     </span>
                     <span>
-                      PM hours:{" "}
+                      PM hours (unweighted):{" "}
                       <strong className="text-slate-900 dark:text-slate-100">
                         {normalizedTotals.pmWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
@@ -1872,7 +1956,13 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 ) : (
                   <>
                     <span>
-                      Hours:{" "}
+                      AM weighted hrs:{" "}
+                      <strong className="text-slate-900 dark:text-slate-100">
+                        {formatAllocHours(normalizedTotals.amWeightedWorkedHours)}
+                      </strong>
+                    </span>
+                    <span>
+                      Hours (single shift):{" "}
                       <strong className="text-slate-900 dark:text-slate-100">
                         {normalizedTotals.amWorkedHours.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3, roundingMode: "trunc" })}
                       </strong>
@@ -1912,6 +2002,115 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               </div>
             </div>
           )}
+
+          {Array.isArray(calculation?.excludedEmployees) &&
+            calculation.excludedEmployees.length > 0 && (
+              <div className="mt-4 rounded-lg border border-amber-300/50 dark:border-amber-400/30 bg-amber-50/70 dark:bg-amber-500/[0.06] px-4 py-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                    Excluded employees ({calculation.excludedEmployees.length})
+                  </h3>
+                  <span className="text-xs text-amber-800/80 dark:text-amber-200/80">
+                    These employees worked but were removed from this day's
+                    calculation. Their hours don't affect the tip rate and they
+                    receive no payout.
+                  </span>
+                </div>
+                <div className="overflow-x-auto rounded-md border border-amber-200/60 dark:border-amber-400/20 bg-white/60 dark:bg-white/[0.03]">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <thead>
+                      <tr className="border-b border-amber-200/60 dark:border-amber-400/20 text-left">
+                        <th className="px-3 py-2 font-medium text-amber-900 dark:text-amber-200">
+                          Employee
+                        </th>
+                        <th className="px-3 py-2 font-medium text-amber-900 dark:text-amber-200">
+                          Job
+                        </th>
+                        {isBreakdownTheCove ? (
+                          <th className="px-3 py-2 text-right font-medium text-amber-900 dark:text-amber-200">
+                            Hours
+                          </th>
+                        ) : (
+                          <>
+                            <th className="px-3 py-2 text-right font-medium text-amber-900 dark:text-amber-200">
+                              AM hrs
+                            </th>
+                            <th className="px-3 py-2 text-right font-medium text-amber-900 dark:text-amber-200">
+                              PM hrs
+                            </th>
+                          </>
+                        )}
+                        <th className="px-3 py-2 text-left font-medium text-amber-900 dark:text-amber-200">
+                          Reason
+                        </th>
+                        <th className="px-3 py-2 text-right font-medium text-amber-900 dark:text-amber-200">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-amber-200/50 dark:divide-amber-400/15">
+                      {calculation.excludedEmployees.map((ex) => {
+                        const empIdStr = excludedEmployeeIdString(ex);
+                        const am = Number(ex.amWorkedHours) || 0;
+                        const pm = Number(ex.pmWorkedHours) || 0;
+                        return (
+                          <tr key={empIdStr || ex.employeeName}>
+                            <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">
+                              {ex.employeeName || "—"}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                              {ex.jobTitle || "—"}
+                            </td>
+                            {isBreakdownTheCove ? (
+                              <td className="px-3 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
+                                {formatAllocHours(am + pm)}
+                              </td>
+                            ) : (
+                              <>
+                                <td className="px-3 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
+                                  {formatAllocHours(am)}
+                                </td>
+                                <td className="px-3 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
+                                  {formatAllocHours(pm)}
+                                </td>
+                              </>
+                            )}
+                            <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                              {(ex.reason || "").trim() || (
+                                <span className="text-slate-400 dark:text-slate-500">
+                                  —
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => includeExcludedEmployee(ex)}
+                                disabled={
+                                  !empIdStr ||
+                                  includeSavingId === empIdStr ||
+                                  adjustSaving
+                                }
+                                className="rounded-lg border border-emerald-300/60 dark:border-emerald-400/40 bg-emerald-50 dark:bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                                title={
+                                  empIdStr
+                                    ? "Add this employee back into the calculation"
+                                    : "Requires a saved employee record"
+                                }
+                              >
+                                {includeSavingId === empIdStr
+                                  ? "Including…"
+                                  : "Include in calculation"}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
           {totalRows > 0 && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 dark:border-white/10 pt-3">
@@ -2016,6 +2215,119 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
           modalRoot,
         )}
 
+      {employeeShiftModalRow &&
+        modalRoot &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-md"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="employee-shift-modal-title"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setEmployeeShiftModalRow(null);
+            }}
+          >
+            <div className="w-full max-w-lg rounded-xl border border-slate-200 dark:border-white/10 bg-white/95 dark:bg-slate-900/95 p-5 shadow-2xl">
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div>
+                  <h3
+                    id="employee-shift-modal-title"
+                    className="text-base font-semibold text-slate-900 dark:text-slate-100"
+                  >
+                    Shift details — {employeeShiftModalRow.employeeName}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEmployeeShiftModalRow(null)}
+                  className="rounded px-2 py-1 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-white/10">
+                <table className="w-full min-w-[320px] text-sm">
+                  <tbody className="divide-y divide-slate-200 dark:divide-white/10">
+                    <tr>
+                      <th className="bg-slate-50 px-3 py-2.5 text-left font-medium text-slate-700 dark:bg-white/5 dark:text-slate-200">
+                        Clock in
+                      </th>
+                      <td className="px-3 py-2.5 tabular-nums text-slate-900 dark:text-slate-100">
+                        {formatClockLabel(employeeShiftModalRow.clockIn)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th className="bg-slate-50 px-3 py-2.5 text-left font-medium text-slate-700 dark:bg-white/5 dark:text-slate-200">
+                        Clock out
+                      </th>
+                      <td className="px-3 py-2.5 tabular-nums text-slate-900 dark:text-slate-100">
+                        {formatClockLabel(employeeShiftModalRow.clockOut)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th className="bg-slate-50 px-3 py-2.5 text-left font-medium text-slate-700 dark:bg-white/5 dark:text-slate-200">
+                        Break in
+                      </th>
+                      <td className="px-3 py-2.5 tabular-nums text-slate-900 dark:text-slate-100">
+                        {formatClockLabel(employeeShiftModalRow.breakClockIn)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th className="bg-slate-50 px-3 py-2.5 text-left font-medium text-slate-700 dark:bg-white/5 dark:text-slate-200">
+                        Break out
+                      </th>
+                      <td className="px-3 py-2.5 tabular-nums text-slate-900 dark:text-slate-100">
+                        {formatClockLabel(employeeShiftModalRow.breakClockOut)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th className="bg-slate-50 px-3 py-2.5 text-left font-medium text-slate-700 dark:bg-white/5 dark:text-slate-200">
+                        Break hrs
+                      </th>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                        {formatAllocHours(employeeShiftModalRow.connecteamBreakHours)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th className="bg-slate-50 px-3 py-2.5 text-left font-medium text-slate-700 dark:bg-white/5 dark:text-slate-200">
+                        AM hrs
+                      </th>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                        {(Number(employeeShiftModalRow.amWorkedHours) || 0).toLocaleString(undefined, {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 3,
+                          roundingMode: "trunc",
+                        })}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th className="bg-slate-50 px-3 py-2.5 text-left font-medium text-slate-700 dark:bg-white/5 dark:text-slate-200">
+                        PM hrs
+                      </th>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                        {isBreakdownTheCove
+                          ? "—"
+                          : (Number(employeeShiftModalRow.pmWorkedHours) || 0).toLocaleString(undefined, {
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 3,
+                              roundingMode: "trunc",
+                            })}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-4 flex justify-end">
+                <Button type="button" variant="secondary" onClick={() => setEmployeeShiftModalRow(null)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>,
+          modalRoot,
+        )}
+
       {adjustModalOpen &&
         adjustEmployee &&
         modalRoot &&
@@ -2085,6 +2397,55 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                 placeholder="e.g. Shared register shortage"
                 className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
               />
+            </div>
+
+            <div className="mt-4 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50/80 dark:bg-white/[0.04] px-3 py-3">
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                Tip multiplier
+              </label>
+              <input
+                type="number"
+                min="0.01"
+                max="100"
+                step="0.01"
+                value={adjustMultiplierInput}
+                onChange={(e) => setAdjustMultiplierInput(e.target.value)}
+                className="w-full max-w-xs rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+              />
+            </div>
+
+            <div className="mt-4 rounded-lg border border-amber-300/60 dark:border-amber-400/30 bg-amber-50/80 dark:bg-amber-500/[0.08] px-3 py-3">
+              <label className="flex items-start gap-2 text-sm text-slate-800 dark:text-slate-100">
+                <input
+                  type="checkbox"
+                  checked={adjustExclude}
+                  onChange={(e) => setAdjustExclude(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-400 text-amber-600 focus:ring-amber-400"
+                />
+                <span>
+                  <span className="font-medium">Exclude from calculation</span>
+                  <span className="ml-1 text-xs text-slate-600 dark:text-slate-300">
+                    (employee's hours and tips are dropped from the daily breakdown)
+                  </span>
+                </span>
+              </label>
+              {adjustExclude && (
+                <div className="mt-3">
+                  <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                    Reason for exclusion{" "}
+                    <span className="font-normal text-slate-500 dark:text-slate-400">
+                      (optional)
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    value={adjustExcludeReason}
+                    onChange={(e) => setAdjustExcludeReason(e.target.value)}
+                    placeholder="e.g. Training shift, not eligible for tips"
+                    className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="mt-5 flex items-center justify-end gap-3">

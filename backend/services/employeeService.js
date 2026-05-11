@@ -46,6 +46,35 @@ async function removeById(id) {
   return Employee.findByIdAndUpdate(id, { isActive: false }, { new: true });
 }
 
+/**
+ * Persist tip multiplier override on the employee (used by daily tips calculation).
+ * Pass null to clear and use job-title default again.
+ */
+async function setTipMultiplierOverride(id, rawValue) {
+  if (rawValue === null || rawValue === undefined || rawValue === '') {
+    return Employee.findByIdAndUpdate(
+      id,
+      { $unset: { tipMultiplierOverride: 1 } },
+      { new: true },
+    )
+      .populate('locationId', 'name')
+      .lean();
+  }
+  const v = Number(rawValue);
+  if (!Number.isFinite(v) || v < 0.01 || v > 100) {
+    const err = new Error('tipMultiplierOverride must be between 0.01 and 100');
+    err.status = 400;
+    throw err;
+  }
+  return Employee.findByIdAndUpdate(
+    id,
+    { $set: { tipMultiplierOverride: v } },
+    { new: true },
+  )
+    .populate('locationId', 'name')
+    .lean();
+}
+
 module.exports = {
   findOrCreateByConnecteams,
   getByLocation,
@@ -54,4 +83,5 @@ module.exports = {
   create,
   updateById,
   removeById,
+  setTipMultiplierOverride,
 };
