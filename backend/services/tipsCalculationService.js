@@ -580,25 +580,43 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     if (row.subJobId && !row.jobTitle) subJobIds.add(String(row.subJobId));
   }
 
-  const employeeFilterOr = [];
-  if (connecteamsIds.size > 0) {
-    employeeFilterOr.push({ connecteamsUserId: { $in: [...connecteamsIds] } });
+  const connecteamsIdStrings = [...connecteamsIds].map((id) => String(id).trim()).filter(Boolean);
+  const mongoIdsFromConnecteamKeys = connecteamsIdStrings
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  const nameKeysLower = [...employeeNames]
+    .map((n) => String(n).trim().toLowerCase())
+    .filter(Boolean);
+
+  const employeeOrClauses = [];
+  if (connecteamsIdStrings.length > 0) {
+    employeeOrClauses.push({ connecteamsUserId: { $in: connecteamsIdStrings } });
   }
-  if (employeeNames.size > 0) {
-    employeeFilterOr.push({ name: { $in: [...employeeNames] } });
+  if (nameKeysLower.length > 0) {
+    employeeOrClauses.push({
+      $expr: {
+        $in: [{ $toLower: { $trim: { input: '$name' } } }, nameKeysLower],
+      },
+    });
   }
-  const employeeDocs = employeeFilterOr.length
+  if (mongoIdsFromConnecteamKeys.length > 0) {
+    employeeOrClauses.push({ _id: { $in: mongoIdsFromConnecteamKeys } });
+  }
+
+  const employeeDocs = employeeOrClauses.length
     ? await Employee.find({
         locationId,
         isActive: true,
-        $or: employeeFilterOr,
+        $or: employeeOrClauses,
       })
         .select('_id name connecteamsUserId tipMultiplierOverride')
         .lean()
     : [];
   const employeeByConnecteamId = new Map();
   const employeeByName = new Map();
+  const employeeById = new Map();
   for (const e of employeeDocs) {
+    employeeById.set(String(e._id), e);
     const uid = String(e.connecteamsUserId || '').trim();
     if (uid && !employeeByConnecteamId.has(uid)) {
       employeeByConnecteamId.set(uid, e);
@@ -664,10 +682,47 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
           splitOpts
         )
       : splitWorkedHours(row.firstIn, row.lastOut, splitOpts);
-    let employee = employeeByConnecteamId.get(String(connecteamsUserId).trim()) || null;
+    const uidKey = String(connecteamsUserId).trim();
+    let employee = employeeByConnecteamId.get(uidKey) || null;
     if (!employee && row.employeeName && String(row.employeeName).trim()) {
       employee =
         employeeByName.get(String(row.employeeName).trim().toLowerCase()) || null;
+    }
+    if (!employee) {
+      employee = employeeById.get(uidKey) || null;
+    }
+    if (!employee && uidKey) {
+      const uidLooksLikeMongoObjectId =
+        /^[a-f\d]{24}$/i.test(uidKey) && mongoose.Types.ObjectId.isValid(uidKey);
+      if (!uidLooksLikeMongoObjectId) {
+        try {
+          const created = await employeeService.findOrCreateByConnecteams(
+            uidKey,
+            locationId,
+            row.employeeName || 'Employee',
+          );
+          employee = {
+            _id: created._id,
+            name: created.name,
+            connecteamsUserId: created.connecteamsUserId,
+            tipMultiplierOverride: created.tipMultiplierOverride,
+          };
+          employeeById.set(String(employee._id), employee);
+          const cuid = String(employee.connecteamsUserId || '').trim();
+          if (cuid && !employeeByConnecteamId.has(cuid)) {
+            employeeByConnecteamId.set(cuid, employee);
+          }
+          const nk = String(employee.name || '').trim().toLowerCase();
+          if (nk && !employeeByName.has(nk)) {
+            employeeByName.set(nk, employee);
+          }
+        } catch (err) {
+          console.warn(
+            `[getDailyTipCalculation] findOrCreateByConnecteams failed for ${uidKey}:`,
+            err.message,
+          );
+        }
+      }
     }
     const employeeId = employee?._id || null;
     const employeeName = employee?.name || row.employeeName;
