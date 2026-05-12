@@ -531,7 +531,8 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
   return entries;
 }
 
-async function getTimeEntriesFromConnecteams(startDate, endDate, locationKeysOverride = null) {
+async function getTimeEntriesFromConnecteams(startDate, endDate, locationKeysOverride = null, options = {}) {
+  const skipCache = options && options.skipCache === true;
   const start = (startDate || '').toString().trim();
   const end = (endDate || '').toString().trim();
   const locationPart =
@@ -540,9 +541,15 @@ async function getTimeEntriesFromConnecteams(startDate, endDate, locationKeysOve
       : 'all';
   const key = `${start}_${end}_${locationPart}`;
 
-  const cached = connecteamEntriesCache.get(key);
-  if (cached && Date.now() - cached.ts < CONNECTEAM_ENTRIES_CACHE_TTL_MS) {
-    return cached.data;
+  if (skipCache) {
+    connecteamEntriesCache.delete(key);
+  }
+
+  if (!skipCache) {
+    const cached = connecteamEntriesCache.get(key);
+    if (cached && Date.now() - cached.ts < CONNECTEAM_ENTRIES_CACHE_TTL_MS) {
+      return cached.data;
+    }
   }
 
   let promise = connecteamEntriesInFlight.get(key);
@@ -590,7 +597,10 @@ async function getTardinessFromConnecteamsByDateRange(startDate, endDate, locati
   const locationKeys = includeAllLocations
     ? []
     : (locationKeyFilter ? [String(locationKeyFilter).toLowerCase().trim()] : null);
-  const rawEntries = await getTimeEntriesFromConnecteams(start, end, locationKeys);
+  const skipTimeEntryCache = options && options.skipTimeEntryCache === true;
+  const rawEntries = await getTimeEntriesFromConnecteams(start, end, locationKeys, {
+    skipCache: skipTimeEntryCache,
+  });
   return buildTardinessPayload(rawEntries, locationKeyFilter);
 }
 
@@ -604,7 +614,10 @@ async function getWeeklyTardinessFromConnecteams(weekStart, locationKeyFilter = 
   const locationKeys = includeAllLocations
     ? []
     : (locationKeyFilter ? [String(locationKeyFilter).toLowerCase().trim()] : null);
-  const rawEntries = await getTimeEntriesFromConnecteams(startDate, endDate, locationKeys);
+  const skipTimeEntryCache = options && options.skipTimeEntryCache === true;
+  const rawEntries = await getTimeEntriesFromConnecteams(startDate, endDate, locationKeys, {
+    skipCache: skipTimeEntryCache,
+  });
   return buildTardinessPayload(rawEntries, locationKeyFilter);
 }
 

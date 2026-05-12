@@ -77,7 +77,9 @@ async function getWeeklyTardiness(req, res, next) {
         }
       }
 
-      const data = await connecteamsService.getTardinessFromConnecteamsByDateRange(start, end, locationKeyFilter);
+      const data = await connecteamsService.getTardinessFromConnecteamsByDateRange(start, end, locationKeyFilter, {
+        skipTimeEntryCache: shouldRefresh,
+      });
       const payload = { ...data, dateRange: { startDate: start, endDate: end } };
       WeeklyTardinessCache.findOneAndUpdate(
         { weekStart: start, locationId: cacheLocationId },
@@ -141,7 +143,8 @@ async function getWeeklyTardiness(req, res, next) {
 
     const data = await connecteamsService.getWeeklyTardinessFromConnecteams(
       weekStartNorm,
-      locationKeyFilter
+      locationKeyFilter,
+      { skipTimeEntryCache: true },
     );
 
     res.json({ success: true, data, fromCache: false });

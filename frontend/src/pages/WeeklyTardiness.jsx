@@ -10,7 +10,7 @@ import {
   getDateRangeColumns,
   formatDate,
 } from "../utils/dateUtils";
-import { FiCalendar, FiLoader, FiZap } from "react-icons/fi";
+import { FiCalendar, FiLoader, FiZap, FiRefreshCw } from "react-icons/fi";
 import Button from "../components/ui/Button";
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -81,45 +81,46 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
   const progressTimerRef = useRef(null);
   const progressResetRef = useRef(null);
 
-  /** Load tardiness for the selected date range from Connecteam. */
-  const loadTardiness = useCallback(async () => {
-    const start = startDate.trim().slice(0, 10);
-    const end = endDate.trim().slice(0, 10);
-    if (
-      !start ||
-      !end ||
-      end < start
-    ) {
-      toast.error("Please select a valid date range (From ≤ To).");
-      return;
-    }
-    setLoading(true);
-    setData(null);
-    setPage(1);
-    try {
-      const result = await getWeeklyTardiness(
-        start,
-        selectedLocationId || undefined,
-        false,
-        start,
-        end,
-      );
-      setData(result);
-      const locLabel = selectedLocationId
-        ? locations.find((l) => l._id === selectedLocationId)?.name
-        : "All locations";
-      toast.success(
-        `Loaded ${result?.entries?.length ?? 0} tardiness entries for ${locLabel} (${start} – ${end}).`,
-      );
-    } catch (err) {
+  /** Load tardiness: from DB cache when it matches range (fast), else Connecteam. */
+  const loadTardiness = useCallback(
+    async (forceFromApi = false) => {
+      const start = startDate.trim().slice(0, 10);
+      const end = endDate.trim().slice(0, 10);
+      if (!start || !end || end < start) {
+        toast.error("Please select a valid date range (From ≤ To).");
+        return;
+      }
+      setLoading(true);
       setData(null);
-      const msg =
-        err.response?.data?.error || err.message || "Failed to load tardiness";
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, [startDate, endDate, selectedLocationId, locations]);
+      setPage(1);
+      try {
+        const result = await getWeeklyTardiness(
+          start,
+          selectedLocationId || undefined,
+          forceFromApi,
+          start,
+          end,
+        );
+        setData(result);
+        const locLabel = selectedLocationId
+          ? locations.find((l) => l._id === selectedLocationId)?.name
+          : "All locations";
+        toast.success(
+          forceFromApi
+            ? `Refreshed from Connecteam: ${result?.entries?.length ?? 0} entries for ${locLabel} (${start} – ${end}).`
+            : `Loaded ${result?.entries?.length ?? 0} tardiness entries for ${locLabel} (${start} – ${end}).`,
+        );
+      } catch (err) {
+        setData(null);
+        const msg =
+          err.response?.data?.error || err.message || "Failed to load tardiness";
+        toast.error(msg);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [startDate, endDate, selectedLocationId, locations],
+  );
 
   const location = locations.find((l) => l._id === selectedLocationId);
   const reportLocationPart = toFilenamePart(location?.name);
@@ -299,8 +300,33 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
               className="rounded-lg border border-slate-300 dark:border-white/15 bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-sm dark:[color-scheme:dark] focus:border-indigo-300/40 focus:outline-none focus:ring-2 focus:ring-indigo-400/25"
             />
           </div>
-          <Button onClick={loadTardiness} disabled={loading}>
-            {loading ? "Loading..." : "Load from Connecteam"}
+          <Button
+            type="button"
+            onClick={() => loadTardiness(false)}
+            disabled={loading}
+            title="Uses saved weekly tardiness when it matches this range; otherwise fetches from Connecteam."
+          >
+            {loading ? "Loading..." : "Load"}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => loadTardiness(true)}
+            disabled={loading}
+            title="Ignore saved data and fetch the latest shifts from Connecteam for this range."
+            className="inline-flex items-center gap-2"
+          >
+            {loading ? (
+              <>
+                <FiLoader className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+                Loading…
+              </>
+            ) : (
+              <>
+                <FiRefreshCw className="h-4 w-4 shrink-0" aria-hidden />
+                Refresh from Connecteam
+              </>
+            )}
           </Button>
         </div>
       </div>
@@ -312,9 +338,10 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
             : "All locations — "}
           Select <strong className="text-slate-900 dark:text-slate-100">From date</strong> and{" "}
           <strong className="text-slate-900 dark:text-slate-100">To date</strong>, then click{" "}
-          <strong className="text-slate-900 dark:text-slate-100">Load from Connecteam</strong>.
-          Tardiness = minutes late (clock-in after scheduled start). Data from
-          Connecteam.
+          <strong className="text-slate-900 dark:text-slate-100">Load</strong> (saved data when
+          available) or{" "}
+          <strong className="text-slate-900 dark:text-slate-100">Refresh from Connecteam</strong>{" "}
+          for a live API pull. Tardiness = minutes late (clock-in after scheduled start).
         </p>
       )}
 
@@ -329,8 +356,9 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
             </p>
             <p className="text-sm text-slate-600 dark:text-slate-300">
               Choose a date range and click{" "}
+              <span className="font-semibold text-indigo-700 dark:text-indigo-300">Load</span> or{" "}
               <span className="font-semibold text-indigo-700 dark:text-indigo-300">
-                Load from Connecteam
+                Refresh from Connecteam
               </span>{" "}
               to fetch records.
             </p>
