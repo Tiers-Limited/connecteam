@@ -216,6 +216,9 @@ const REPORT_TYPES = [
   { id: "production_pool", label: "Production Pool" },
 ];
 
+/** Include this site in Reports Studio even when the location is marked inactive (still in DB). */
+const ROYAL_PLAZA_LOCATION_NAME = "Royal Plaza";
+
 const REPORT_TYPE_STYLES = {
   weekly_payout: {
     accent: "from-indigo-500 via-violet-500 to-fuchsia-500",
@@ -252,10 +255,20 @@ const REPORT_TYPE_STYLES = {
 export default function PayoutReports() {
   const { selectedLocationId, locations } = useApp();
   const defaultRange = useMemo(() => getDefaultDateRange(), []);
-  const activeLocations = useMemo(
-    () => locations.filter((loc) => loc.isActive !== false),
-    [locations],
-  );
+  const reportLocations = useMemo(() => {
+    const active = locations.filter((loc) => loc.isActive !== false);
+    const activeIds = new Set(active.map((l) => String(l._id)));
+    const royalPlaza = locations.find(
+      (loc) =>
+        String(loc?.name || "")
+          .trim()
+          .toLowerCase() === ROYAL_PLAZA_LOCATION_NAME.toLowerCase(),
+    );
+    if (royalPlaza && !activeIds.has(String(royalPlaza._id))) {
+      return [...active, royalPlaza];
+    }
+    return active;
+  }, [locations]);
 
   const [reportType, setReportType] = useState("weekly_payout");
   const [startDate, setStartDate] = useState(defaultRange.start);
@@ -273,7 +286,7 @@ export default function PayoutReports() {
   const [tardinessEmployeeOptions, setTardinessEmployeeOptions] = useState([]);
   const [loadingTardinessEmployees, setLoadingTardinessEmployees] = useState(false);
   const [exportLoadingKind, setExportLoadingKind] = useState(null);
-  const firstActiveLocationId = activeLocations[0]?._id || "";
+  const firstActiveLocationId = reportLocations[0]?._id || "";
   const weeklyPayoutEmployeeOptions = useMemo(() => {
     const list = Array.isArray(employeeOptions) ? employeeOptions : [];
     if (geographicScope === "all_locations") {
@@ -317,14 +330,14 @@ export default function PayoutReports() {
 
   useEffect(() => {
     if (singleLocationId) return;
-    if (selectedLocationId && activeLocations.some((l) => l._id === selectedLocationId)) {
+    if (selectedLocationId && reportLocations.some((l) => l._id === selectedLocationId)) {
       setSingleLocationId(selectedLocationId);
       return;
     }
     if (firstActiveLocationId) {
       setSingleLocationId(firstActiveLocationId);
     }
-  }, [selectedLocationId, singleLocationId, activeLocations, firstActiveLocationId]);
+  }, [selectedLocationId, singleLocationId, reportLocations, firstActiveLocationId]);
 
   useEffect(() => {
     if (reportType !== "weekly_payout" || employeeScope !== "one_employee") {
@@ -451,7 +464,7 @@ export default function PayoutReports() {
       const scopeSummary =
         geographicScope === "all_locations"
           ? "All locations"
-          : activeLocations.find((l) => l._id === singleLocationId)?.name || "One location";
+          : reportLocations.find((l) => l._id === singleLocationId)?.name || "One location";
 
       const body = {
         startDate: sd,
@@ -480,7 +493,7 @@ export default function PayoutReports() {
       const exportMeta = buildWeeklyPayoutExportMeta(sd, ed, scopeSummary);
       const oneLocationLabel =
         geographicScope === "one_location"
-          ? activeLocations.find((l) => String(l._id) === String(singleLocationId))?.name ||
+          ? reportLocations.find((l) => String(l._id) === String(singleLocationId))?.name ||
             payouts[0]?.locationName ||
             "location"
           : "";
@@ -502,7 +515,7 @@ export default function PayoutReports() {
       const fmtMoney = (v) => moneyExportCell(v, forCsv);
 
       if (allLocationsAllEmployees) {
-        const groups = groupPayoutsByLocationDisplayOrder(payouts, activeLocations);
+        const groups = groupPayoutsByLocationDisplayOrder(payouts, reportLocations);
         const sections = groups.map((g) => ({
           sectionTitle: g.label,
           headers: hdr,
@@ -696,7 +709,7 @@ export default function PayoutReports() {
       singleLocationId,
       employeeScope,
       selectedEmployeeId,
-      activeLocations,
+      reportLocations,
       weeklyPayoutEmployeeOptions,
     ],
   );
@@ -812,7 +825,7 @@ export default function PayoutReports() {
         formatDurationForReport(sum(employeeRows.map((rec) => Number(result?.totalBreakMinutesByEmployee?.[rec.employeeName]) || 0))),
       ]);
       const locSlug = tardinessGeographicScope === "one_location" && singleLocationId
-        ? sanitizeExportSlug(activeLocations.find((l) => l._id === singleLocationId)?.name)
+        ? sanitizeExportSlug(reportLocations.find((l) => l._id === singleLocationId)?.name)
         : "all-locations";
       const empSlug =
         tardinessEmployeeScope === "one_employee"
@@ -829,7 +842,7 @@ export default function PayoutReports() {
       startDate,
       endDate,
       singleLocationId,
-      activeLocations,
+      reportLocations,
       tardinessGeographicScope,
       tardinessEmployeeScope,
       tardinessSelectedEmployee,
@@ -860,7 +873,7 @@ export default function PayoutReports() {
         toast.error("No daily tips rows for export");
         return;
       }
-      const locName = activeLocations.find((l) => l._id === singleLocationId)?.name || "location";
+      const locName = reportLocations.find((l) => l._id === singleLocationId)?.name || "location";
       const isCove = String(locName || "").trim().toLowerCase() === "the cove";
 
       // Show the underlying numeric value (no 3-decimal screen truncation);
@@ -1045,7 +1058,7 @@ export default function PayoutReports() {
         );
       }
     },
-    [singleDate, singleLocationId, activeLocations],
+    [singleDate, singleLocationId, reportLocations],
   );
 
   const runWeeklyFinalPayableTotalExport = useCallback(
@@ -1288,7 +1301,7 @@ export default function PayoutReports() {
       ]);
 
       const locSlug = singleLocationId
-        ? sanitizeExportSlug(activeLocations.find((l) => l._id === singleLocationId)?.name)
+        ? sanitizeExportSlug(reportLocations.find((l) => l._id === singleLocationId)?.name)
         : "all-locations";
       const file = `tip-history-${locSlug}-${sd}-${ed}.${kind}`;
       if (kind === "csv") {
@@ -1297,7 +1310,7 @@ export default function PayoutReports() {
         exportTableToPDF("Tip History", headers, rowValues, file);
       }
     },
-    [startDate, endDate, singleLocationId, activeLocations],
+    [startDate, endDate, singleLocationId, reportLocations],
   );
 
   const runExport = useCallback(
@@ -1437,7 +1450,7 @@ export default function PayoutReports() {
                       onChange={(e) => setSingleLocationId(e.target.value)}
                       className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:ring-indigo-300/30"
                     >
-                      {activeLocations.map((loc) => (
+                      {reportLocations.map((loc) => (
                         <option key={loc._id} value={loc._id}>
                           {loc.name}
                         </option>
@@ -1473,7 +1486,7 @@ export default function PayoutReports() {
                         onChange={(e) => setSingleLocationId(e.target.value)}
                         className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:ring-indigo-300/30"
                       >
-                        {activeLocations.map((loc) => (
+                        {reportLocations.map((loc) => (
                           <option key={loc._id} value={loc._id}>
                             {loc.name}
                           </option>
@@ -1550,7 +1563,7 @@ export default function PayoutReports() {
                         onChange={(e) => setSingleLocationId(e.target.value)}
                         className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 dark:border-white/15 dark:bg-slate-900/80 dark:text-slate-100 dark:focus:ring-indigo-300/30"
                       >
-                        {activeLocations.map((loc) => (
+                        {reportLocations.map((loc) => (
                           <option key={loc._id} value={loc._id}>
                             {loc.name}
                           </option>
