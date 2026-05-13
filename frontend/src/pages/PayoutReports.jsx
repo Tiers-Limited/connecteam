@@ -2,7 +2,6 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import toast from "react-hot-toast";
 import { useApp } from "../context/AppContext";
 import {
-  postWeeklyPayoutReport,
   getWeeklyPayoutReportEmployees,
 } from "../services/weeklyPayoutService";
 import {
@@ -10,11 +9,9 @@ import {
   getWeekEnd,
   toLocalDateString,
   getDateRangeColumns,
-  columnsFromDayDateKeys,
 } from "../utils/dateUtils";
 import { getWeeklyTardiness } from "../services/weeklyTardinessService";
 import {
-  getDailyTipCalculation,
   getDailyTipsHistory,
   getWeeklyFinalPayableSummary,
 } from "../services/dailyTipService";
@@ -25,15 +22,15 @@ import {
 import {
   exportTableToCSV,
   exportTableToPDF,
-  exportSingleEmployeeWeeklyPayoutPDF,
-  groupPayoutsByLocationDisplayOrder,
   exportSectionedTableToCSV,
   exportSectionedTableToPDF,
-  buildWeeklyPayoutExportMeta,
   exportMultiTableToCSV,
   exportMultiTableToPDF,
   formatCsvNumeric,
 } from "../utils/reportUtils";
+import { exportWeeklyPayoutReport } from "../utils/weeklyPayoutExport";
+import { exportWeeklyTardinessReport } from "../utils/weeklyTardinessExport";
+import { exportDailyTipsReport } from "../utils/dailyTipsExport";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import {
@@ -104,108 +101,13 @@ function formatDurationForReport(totalMinutes) {
   return `${h}h${m ? ` ${m}m` : ""} (${(mins / 60).toFixed(2)}h)`;
 }
 
-function breakMinutesFromPayout(p) {
-  const direct = Number(p?.totalBreakMinutes);
-  if (Number.isFinite(direct) && direct >= 0) return direct;
-  if (Array.isArray(p?.dailyBreakdown)) {
-    return p.dailyBreakdown.reduce(
-      (sum, d) => sum + (Number(d?.breakMinutes) || 0),
-      0,
-    );
-  }
-  return 0;
-}
-
-function payoutToExportRow(p, locLabel, cols, forCsv = false) {
-  const fmt = (n) => moneyExportCell(n, forCsv);
-  return [
-    p.employeeName ?? "",
-    locLabel,
-    ...cols.map((_, idx) => fmt((p.dailyTipsByDay || [])[idx] ?? 0)),
-    fmt(p.weeklyGrossTips ?? p.dailyTipsMonToSun),
-    formatDurationForReport(p.totalWorkingMinutes ?? 0),
-    formatDurationForReport(breakMinutesFromPayout(p)),
-    String(p.weeklyTardinessMinutes ?? 0),
-    `${p.tardinessPercent ?? 0}%`,
-    fmt(p.tardinessDeduction),
-    fmt(p.weeklyAfterTardiness),
-    fmt(p.manualDeduction),
-    fmt(p.additionalTips ?? 0),
-    fmt(p.netWeeklyTips),
-    fmt(p.tardinessRedistribution ?? 0),
-    fmt(p.finalWeeklyTipsPayable ?? 0),
-  ];
-}
-
-function timeToMinutes(str) {
-  if (!str || typeof str !== "string") return Infinity;
-  const [h, m] = str.trim().split(":").map(Number);
-  if (Number.isNaN(h)) return Infinity;
-  return (h || 0) * 60 + (Number.isNaN(m) ? 0 : m);
-}
-
 function toFileDate(d) {
   return String(d || "").trim().slice(0, 10);
-}
-
-function displayedAmTips(allocation) {
-  return (Number(allocation?.amTips) || 0) + (Number(allocation?.manualAmTips) || 0);
-}
-
-function displayedPmTips(allocation) {
-  return (Number(allocation?.pmTips) || 0) + (Number(allocation?.manualPmTips) || 0);
-}
-
-function jobTipMultiplierDisplay(row) {
-  const o = row?.tipMultiplierOverride;
-  const on = o != null ? Number(o) : NaN;
-  if (Number.isFinite(on) && on > 0) return on;
-  const m = Number(row?.jobTipMultiplier);
-  return Number.isFinite(m) && m > 0 ? m : 1;
-}
-
-function amWeightedWorkedHours(row) {
-  return (Number(row?.amWorkedHours) || 0) * jobTipMultiplierDisplay(row);
-}
-
-function pmWeightedWorkedHours(row) {
-  return (Number(row?.pmWorkedHours) || 0) * jobTipMultiplierDisplay(row);
-}
-
-function netTipsAfterDeductions(allocation) {
-  const fin = Number(allocation?.finalTips ?? allocation?.totalTips) || 0;
-  const share = Number(allocation?.redistributionShare) || 0;
-  return Math.max(0, fin - share);
 }
 
 function sum(values) {
   return values.reduce((acc, n) => acc + (Number(n) || 0), 0);
 }
-
-function parseWeeklyPayoutEmployeeSelection(value) {
-  const raw = String(value || "");
-  if (raw.startsWith("id:")) return { employeeId: raw.slice(3), employeeName: "" };
-  if (raw.startsWith("name:")) return { employeeId: "", employeeName: raw.slice(5) };
-  return { employeeId: raw, employeeName: "" };
-}
-
-const weeklyReportHeaders = (dateCols) => [
-  "Employee",
-  "Location",
-  ...dateCols.map((c) => c.label),
-  "Weekly Gross Tips",
-  "Working hours",
-  "Break hours",
-  "Weekly Tardiness (min)",
-  "Tardiness %",
-  "Tardiness Deduction",
-  "Weekly After Tardiness",
-  "Manual Deduction",
-  "Additional Tips (+)",
-  "Net Weekly Tips",
-  "Tardiness Redistribution",
-  "Final Weekly Tips Payable",
-];
 
 const REPORT_TYPES = [
   { id: "weekly_payout", label: "Weekly Payout" },
@@ -445,261 +347,25 @@ export default function PayoutReports() {
 
   const runWeeklyPayoutExport = useCallback(
     async (kind) => {
-      const sd = toFileDate(startDate);
-      const ed = toFileDate(endDate);
-      if (!sd || !ed || ed < sd) {
-        toast.error("Invalid date range");
-        return;
-      }
-      if (geographicScope === "one_location" && !singleLocationId) {
-        toast.error("Select location");
-        return;
-      }
-      if (employeeScope === "one_employee" && !selectedEmployeeId) {
-        toast.error("Select employee");
-        return;
-      }
-      const selectedEmployeeFilter = parseWeeklyPayoutEmployeeSelection(selectedEmployeeId);
-
-      const scopeSummary =
-        geographicScope === "all_locations"
-          ? "All locations"
-          : reportLocations.find((l) => l._id === singleLocationId)?.name || "One location";
-
-      const body = {
-        startDate: sd,
-        endDate: ed,
-        geographicScope,
-        employeeScope,
-        ...(geographicScope === "one_location" ? { singleLocationId } : {}),
-        ...(employeeScope === "one_employee"
-          ? selectedEmployeeFilter.employeeId
-            ? { employeeId: selectedEmployeeFilter.employeeId }
-            : { employeeName: selectedEmployeeFilter.employeeName }
-          : {}),
-      };
-
-      const reportData = await postWeeklyPayoutReport(body);
-      const payouts = reportData?.payouts ?? [];
-      if (!payouts.length) {
-        toast.error("No data for export");
-        return;
-      }
-      const cols =
-        Array.isArray(reportData.dayDateKeys) && reportData.dayDateKeys.length > 0
-          ? columnsFromDayDateKeys(reportData.dayDateKeys)
-          : getDateRangeColumns(sd, ed);
-      const hdr = weeklyReportHeaders(cols);
-      const exportMeta = buildWeeklyPayoutExportMeta(sd, ed, scopeSummary);
-      const oneLocationLabel =
-        geographicScope === "one_location"
-          ? reportLocations.find((l) => String(l._id) === String(singleLocationId))?.name ||
-            payouts[0]?.locationName ||
-            "location"
-          : "";
-      const scopeSlug =
-        geographicScope === "all_locations" ? "all-locations" : sanitizeExportSlug(oneLocationLabel);
-      const empSlug =
-        employeeScope === "one_employee"
-          ? `emp-${sanitizeExportSlug(
-              selectedEmployeeFilter.employeeName || selectedEmployeeFilter.employeeId,
-            )}`
-          : "all-employees";
-      const fileBase = `weekly-payout-report-${scopeSlug}-${empSlug}-${sd}-${ed}`;
-      const forCsv = kind === "csv";
-      const allLocationsAllEmployees =
-        geographicScope === "all_locations" && employeeScope !== "one_employee";
-      const allLocationsOneEmployee =
-        geographicScope === "all_locations" && employeeScope === "one_employee";
-
-      const fmtMoney = (v) => moneyExportCell(v, forCsv);
-
-      if (allLocationsAllEmployees) {
-        const groups = groupPayoutsByLocationDisplayOrder(payouts, reportLocations);
-        const sections = groups.map((g) => ({
-          sectionTitle: g.label,
-          headers: hdr,
-          rows: (() => {
-            const rows = g.payouts.map((p) =>
-              payoutToExportRow(p, p.locationName ?? g.label, cols, forCsv),
-            );
-            const dayTotals = cols.map((_, idx) =>
-              sum(g.payouts.map((p) => (p.dailyTipsByDay || [])[idx] ?? 0)),
-            );
-            rows.push([
-              "Total",
-              g.label,
-              ...dayTotals.map((v) => fmtMoney(v)),
-              fmtMoney(sum(g.payouts.map((p) => p.weeklyGrossTips ?? p.dailyTipsMonToSun))),
-              formatDurationForReport(sum(g.payouts.map((p) => p.totalWorkingMinutes))),
-              formatDurationForReport(sum(g.payouts.map((p) => breakMinutesFromPayout(p)))),
-              String(sum(g.payouts.map((p) => p.weeklyTardinessMinutes))),
-              "",
-              fmtMoney(sum(g.payouts.map((p) => p.tardinessDeduction))),
-              fmtMoney(sum(g.payouts.map((p) => p.weeklyAfterTardiness))),
-              fmtMoney(sum(g.payouts.map((p) => p.manualDeduction))),
-              fmtMoney(sum(g.payouts.map((p) => p.additionalTips ?? 0))),
-              fmtMoney(sum(g.payouts.map((p) => p.netWeeklyTips))),
-              fmtMoney(sum(g.payouts.map((p) => p.tardinessRedistribution))),
-              fmtMoney(sum(g.payouts.map((p) => p.finalWeeklyTipsPayable))),
-            ]);
-            return rows;
-          })(),
-        }));
-        if (kind === "csv") {
-          exportSectionedTableToCSV(exportMeta.csvMetaLines, sections, `${fileBase}.csv`);
-        } else {
-          exportSectionedTableToPDF("", sections, `${fileBase}.pdf`, {
-            headFillColor: PDF_HEAD_INDIGO,
-            weeklyPayoutHeader: exportMeta.weeklyPayoutHeader,
-          });
-        }
-      } else if (allLocationsOneEmployee) {
-        const timelineRows = [];
-        cols.forEach((col, idx) => {
-          payouts.forEach((p) => {
-            const amount = Number((p.dailyTipsByDay || [])[idx] ?? 0);
-            if (amount <= 0) return;
-            timelineRows.push({
-              dateLabel: col.label,
-              dateKey: col.dateKey || String(idx),
-              locationName: p.locationName || "-",
-              amount,
-            });
-          });
+      try {
+        await exportWeeklyPayoutReport({
+          kind,
+          startDate,
+          endDate,
+          geographicScope,
+          singleLocationId,
+          employeeScope,
+          selectedEmployeeId,
+          reportLocations,
+          weeklyPayoutEmployeeOptions,
         });
-        timelineRows.sort((a, b) => {
-          if (a.dateKey !== b.dateKey) return String(a.dateKey).localeCompare(String(b.dateKey));
-          return String(a.locationName).localeCompare(String(b.locationName), undefined, {
-            sensitivity: "base",
-          });
-        });
-        const timelineHeaders = ["Date", "Tips", "Location"];
-        const timelineBody = timelineRows.map((r) => [
-          r.dateLabel,
-          fmtMoney(r.amount),
-          r.locationName,
-        ]);
-        const totalAmount = sum(timelineRows.map((r) => r.amount));
-        const totalWeeklyGrossTips = sum(
-          payouts.map((p) => p.weeklyGrossTips ?? p.dailyTipsMonToSun),
-        );
-        const totalWorkingMinutes = sum(payouts.map((p) => p.totalWorkingMinutes));
-        const totalBreakMinutes = sum(payouts.map((p) => breakMinutesFromPayout(p)));
-        const totalWeeklyTardinessMinutes = sum(
-          payouts.map((p) => p.weeklyTardinessMinutes),
-        );
-        const totalTardinessDeduction = sum(payouts.map((p) => p.tardinessDeduction));
-        const totalWeeklyAfterTardiness = sum(
-          payouts.map((p) => p.weeklyAfterTardiness),
-        );
-        const totalManualDeduction = sum(payouts.map((p) => p.manualDeduction));
-        const totalAdditionalTips = sum(payouts.map((p) => p.additionalTips ?? 0));
-        const totalNetWeeklyTips = sum(payouts.map((p) => p.netWeeklyTips));
-        const totalTardinessRedistribution = sum(
-          payouts.map((p) => p.tardinessRedistribution ?? 0),
-        );
-        const totalFinalWeeklyTipsPayable = sum(
-          payouts.map((p) => p.finalWeeklyTipsPayable ?? 0),
-        );
-        const mergedTardinessPercent =
-          totalWeeklyGrossTips > 0
-            ? `${((totalTardinessDeduction / totalWeeklyGrossTips) * 100).toFixed(2)}%`
-            : "0%";
-        timelineBody.push(["Total", fmtMoney(totalAmount), "All locations"]);
-        timelineBody.push(["", "", ""]);
-        timelineBody.push(["Weekly Gross Tips", fmtMoney(totalWeeklyGrossTips), ""]);
-        timelineBody.push([
-          "Working hours",
-          formatDurationForReport(totalWorkingMinutes),
-          "",
-        ]);
-        timelineBody.push([
-          "Break hours",
-          formatDurationForReport(totalBreakMinutes),
-          "",
-        ]);
-        timelineBody.push([
-          "Weekly Tardiness (min)",
-          String(totalWeeklyTardinessMinutes),
-          "",
-        ]);
-        timelineBody.push(["Tardiness %", mergedTardinessPercent, ""]);
-        timelineBody.push(["Tardiness Deduction", fmtMoney(totalTardinessDeduction), ""]);
-        timelineBody.push([
-          "Weekly After Tardiness",
-          fmtMoney(totalWeeklyAfterTardiness),
-          "",
-        ]);
-        timelineBody.push(["Manual Deduction", fmtMoney(totalManualDeduction), ""]);
-        timelineBody.push(["Additional Tips (+)", fmtMoney(totalAdditionalTips), ""]);
-        timelineBody.push(["Net Weekly Tips", fmtMoney(totalNetWeeklyTips), ""]);
-        timelineBody.push([
-          "Tardiness Redistribution",
-          fmtMoney(totalTardinessRedistribution),
-          "",
-        ]);
-        timelineBody.push([
-          "Final Weekly Tips Payable",
-          fmtMoney(totalFinalWeeklyTipsPayable),
-          "",
-        ]);
-        if (kind === "csv") {
-          exportTableToCSV(timelineHeaders, timelineBody, `${fileBase}.csv`);
-        } else {
-          exportTableToPDF("", timelineHeaders, timelineBody, `${fileBase}.pdf`, {
-            headFillColor: PDF_HEAD_INDIGO,
-            weeklyPayoutHeader: exportMeta.weeklyPayoutHeader,
-            bodyFontSize: 8.5,
-            headFontSize: 8.5,
-          });
-        }
-      } else {
-        const rows = payouts.map((p) => payoutToExportRow(p, p.locationName ?? "-", cols, forCsv));
-        if (employeeScope !== "one_employee") {
-          const dayTotals = cols.map((_, idx) =>
-            sum(payouts.map((p) => (p.dailyTipsByDay || [])[idx] ?? 0)),
-          );
-          rows.push([
-            "Total",
-            geographicScope === "one_location" ? oneLocationLabel || "-" : "All locations",
-            ...dayTotals.map((v) => fmtMoney(v)),
-            fmtMoney(sum(payouts.map((p) => p.weeklyGrossTips ?? p.dailyTipsMonToSun))),
-            formatDurationForReport(sum(payouts.map((p) => p.totalWorkingMinutes))),
-            formatDurationForReport(sum(payouts.map((p) => breakMinutesFromPayout(p)))),
-            String(sum(payouts.map((p) => p.weeklyTardinessMinutes))),
-            "",
-            fmtMoney(sum(payouts.map((p) => p.tardinessDeduction))),
-            fmtMoney(sum(payouts.map((p) => p.weeklyAfterTardiness))),
-            fmtMoney(sum(payouts.map((p) => p.manualDeduction))),
-            fmtMoney(sum(payouts.map((p) => p.additionalTips ?? 0))),
-            fmtMoney(sum(payouts.map((p) => p.netWeeklyTips))),
-            fmtMoney(sum(payouts.map((p) => p.tardinessRedistribution))),
-            fmtMoney(sum(payouts.map((p) => p.finalWeeklyTipsPayable))),
-          ]);
-        }
-        if (kind === "csv") {
-          exportTableToCSV(hdr, rows, `${fileBase}.csv`);
-        } else if (employeeScope === "one_employee") {
-          const employeeLabel =
-            weeklyPayoutEmployeeOptions.find((o) => o.value === selectedEmployeeId)?.employeeName ||
-            selectedEmployeeFilter.employeeName ||
-            selectedEmployeeFilter.employeeId;
-          exportSingleEmployeeWeeklyPayoutPDF({
-            headers: hdr,
-            rows,
-            filename: `${fileBase}.pdf`,
-            searchQuery: employeeLabel,
-            periodLabel: `${sd} - ${ed}`,
-            scopeLabel: scopeSummary,
-            payouts,
-          });
-        } else {
-          exportTableToPDF("", hdr, rows, `${fileBase}.pdf`, {
-            headFillColor: PDF_HEAD_INDIGO,
-            weeklyPayoutHeader: exportMeta.weeklyPayoutHeader,
-          });
-        }
+      } catch (err) {
+        const msg = err?.response?.data?.error || err?.message;
+        if (msg === "Invalid date range") toast.error("Invalid date range");
+        else if (msg === "Select location") toast.error("Select location");
+        else if (msg === "Select employee") toast.error("Select employee");
+        else if (msg === "No data for export") toast.error("No data for export");
+        else throw err;
       }
     },
     [
@@ -716,126 +382,24 @@ export default function PayoutReports() {
 
   const runWeeklyTardinessExport = useCallback(
     async (kind) => {
-      const sd = toFileDate(startDate);
-      const ed = toFileDate(endDate);
-      if (!sd || !ed || ed < sd) {
-        toast.error("Invalid date range");
-        return;
-      }
-      if (tardinessGeographicScope === "one_location" && !singleLocationId) {
-        toast.error("Select location");
-        return;
-      }
-      if (tardinessEmployeeScope === "one_employee" && !tardinessSelectedEmployee) {
-        toast.error("Select employee");
-        return;
-      }
-      const result = await getWeeklyTardiness(
-        sd,
-        tardinessGeographicScope === "one_location" ? singleLocationId || null : null,
-        false,
-        sd,
-        ed,
-      );
-      const entries = (result?.entries ?? []).filter((row) => {
-        if (
-          tardinessEmployeeScope === "one_employee" &&
-          String(row?.employeeName || "").trim() !== tardinessSelectedEmployee
-        ) {
-          return false;
-        }
-        return true;
-      });
-      const dateColumns = getDateRangeColumns(sd, ed);
-      const employeeMap = new Map();
-      for (const row of entries) {
-        const key = row.employeeName;
-        if (!employeeMap.has(key)) employeeMap.set(key, { employeeName: key, byDate: {} });
-        const rec = employeeMap.get(key);
-        const d = String(row.date ?? "").trim().slice(0, 10);
-        const mins = Math.max(0, Number(row.minutesLate) || 0);
-        const clockInMins = timeToMinutes(row.clockIn);
-        if (!rec.byDate[d] || clockInMins < rec.byDate[d]._earliestMins) {
-          rec.byDate[d] = {
-            locationName: row.locationName || "—",
-            minutesLate: mins,
-            scheduledTime: row.scheduledTime,
-            clockIn: row.clockIn,
-            _earliestMins: clockInMins,
-          };
-        }
-      }
-      employeeMap.forEach((rec) => {
-        Object.keys(rec.byDate || {}).forEach((d) => delete rec.byDate[d]._earliestMins);
-      });
-      const employeeRows = Array.from(employeeMap.values()).sort((a, b) =>
-        a.employeeName.localeCompare(b.employeeName),
-      );
-      const headers = [
-        "Employee",
-        ...dateColumns.map((c) => c.label),
-        "Total (min)",
-        "Working hours",
-        "Break hours",
-      ];
-      const formatDayCell = (dayRec) => {
-        const loc = dayRec?.locationName ?? "—";
-        const s = String(dayRec?.scheduledTime ?? "").trim();
-        const c = String(dayRec?.clockIn ?? "").trim();
-        const minutes = s && s === c ? 0 : Math.max(0, Number(dayRec?.minutesLate) || 0);
-        if (minutes > 0) return `${loc} ${dayRec?.scheduledTime ?? "–"} -> ${dayRec?.clockIn ?? "–"} ${minutes} min`;
-        return `${loc} -`;
-      };
-      const rows = employeeRows.map((rec) => {
-        const rowTotal = dateColumns.reduce((sum, col) => {
-          const dayRec = rec.byDate[col.dateKey];
-          const s = String(dayRec?.scheduledTime ?? "").trim();
-          const c = String(dayRec?.clockIn ?? "").trim();
-          const mins = s && s === c ? 0 : Math.max(0, Number(dayRec?.minutesLate) || 0);
-          return sum + mins;
-        }, 0);
-        const working = Number(result?.totalWorkingMinutesByEmployee?.[rec.employeeName]) || 0;
-        const breaks = Number(result?.totalBreakMinutesByEmployee?.[rec.employeeName]) || 0;
-        return [
-          rec.employeeName,
-          ...dateColumns.map((col) => formatDayCell(rec.byDate[col.dateKey])),
-          String(rowTotal),
-          formatDurationForReport(working),
-          formatDurationForReport(breaks),
-        ];
-      });
-      const totalsByDate = {};
-      dateColumns.forEach((c) => {
-        totalsByDate[c.dateKey] = 0;
-      });
-      employeeRows.forEach((rec) => {
-        dateColumns.forEach((col) => {
-          const dayRec = rec.byDate[col.dateKey];
-          const s = String(dayRec?.scheduledTime ?? "").trim();
-          const c = String(dayRec?.clockIn ?? "").trim();
-          const mins = s && s === c ? 0 : Math.max(0, Number(dayRec?.minutesLate) || 0);
-          totalsByDate[col.dateKey] += mins;
+      try {
+        await exportWeeklyTardinessReport({
+          kind,
+          startDate,
+          endDate,
+          geographicScope: tardinessGeographicScope,
+          singleLocationId,
+          employeeScope: tardinessEmployeeScope,
+          selectedEmployeeName: tardinessSelectedEmployee,
+          reportLocations,
         });
-      });
-      rows.push([
-        "Total",
-        ...dateColumns.map((col) => `${totalsByDate[col.dateKey] ?? 0} min`),
-        String(sum(Object.values(totalsByDate))),
-        formatDurationForReport(sum(employeeRows.map((rec) => Number(result?.totalWorkingMinutesByEmployee?.[rec.employeeName]) || 0))),
-        formatDurationForReport(sum(employeeRows.map((rec) => Number(result?.totalBreakMinutesByEmployee?.[rec.employeeName]) || 0))),
-      ]);
-      const locSlug = tardinessGeographicScope === "one_location" && singleLocationId
-        ? sanitizeExportSlug(reportLocations.find((l) => l._id === singleLocationId)?.name)
-        : "all-locations";
-      const empSlug =
-        tardinessEmployeeScope === "one_employee"
-          ? sanitizeExportSlug(tardinessSelectedEmployee)
-          : "all-employees";
-      const file = `weekly-tardiness-${locSlug}-${empSlug}-${sd}-${ed}.${kind}`;
-      if (kind === "csv") {
-        exportTableToCSV(headers, rows, file);
-      } else {
-        exportTableToPDF(`Weekly Tardiness ${sd} ${ed}`, headers, rows, file);
+      } catch (err) {
+        const msg = err?.response?.data?.error || err?.message;
+        if (msg === "Invalid date range") toast.error("Invalid date range");
+        else if (msg === "Select location") toast.error("Select location");
+        else if (msg === "Select employee") toast.error("Select employee");
+        else if (msg === "No data for export") toast.error("No data for export");
+        else throw err;
       }
     },
     [
@@ -851,211 +415,18 @@ export default function PayoutReports() {
 
   const runDailyTipsExport = useCallback(
     async (kind) => {
-      const d = toFileDate(singleDate);
-      if (!d || !singleLocationId) {
-        toast.error("Select location and date");
-        return;
-      }
-      const calc = await getDailyTipCalculation(singleLocationId, d, { refresh: false });
-      const allocations = (calc?.employeeAllocations ?? [])
-        .slice()
-        .sort((a, b) =>
-          (a.employeeName || "").localeCompare(b.employeeName || "", undefined, { sensitivity: "base" }),
-        );
-      const excludedEmployees = Array.isArray(calc?.excludedEmployees)
-        ? calc.excludedEmployees
-            .slice()
-            .sort((a, b) =>
-              (a.employeeName || "").localeCompare(b.employeeName || "", undefined, { sensitivity: "base" }),
-            )
-        : [];
-      if (!allocations.length && excludedEmployees.length === 0) {
-        toast.error("No daily tips rows for export");
-        return;
-      }
-      const locName = reportLocations.find((l) => l._id === singleLocationId)?.name || "location";
-      const isCove = String(locName || "").trim().toLowerCase() === "the cove";
-
-      // Show the underlying numeric value (no 3-decimal screen truncation);
-      // strip trailing float noise but keep up to 4 fractional digits.
-      const fullNum = (value) => {
-        const n = Number(value);
-        if (!Number.isFinite(n)) return "0";
-        if (Number.isInteger(n)) return String(n);
-        const rounded = Math.round(n * 10000) / 10000;
-        const s = rounded.toString();
-        if (s.includes("e") || s.includes("E")) return rounded.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
-        return s;
-      };
-      const fullMoney = (value) => `$${fullNum(value)}`;
-      const moneyCell = (value) => (kind === "csv" ? fullNum(value) : fullMoney(value));
-
-      const headers = isCove
-        ? ["Employee", "Multiplier", "Worked hrs (weighted)", "Tips", "Net tips", "MR", "Total"]
-        : [
-            "Employee",
-            "Multiplier",
-            "AM weighted hrs",
-            "PM weighted hrs",
-            "AM tips",
-            "PM tips",
-            "Net tips",
-            "MR",
-            "Total",
-          ];
-
-      const rows = allocations.map((a) => {
-        if (isCove) {
-          return [
-            a.employeeName ?? "",
-            fullNum(jobTipMultiplierDisplay(a)),
-            fullNum(amWeightedWorkedHours(a) + pmWeightedWorkedHours(a)),
-            moneyCell(displayedAmTips(a) + displayedPmTips(a)),
-            moneyCell(netTipsAfterDeductions(a)),
-            moneyCell(Number(a.redistributionShare ?? 0)),
-            moneyCell(Number(a.finalTips ?? a.totalTips ?? 0)),
-          ];
-        }
-        return [
-          a.employeeName ?? "",
-          fullNum(jobTipMultiplierDisplay(a)),
-          fullNum(amWeightedWorkedHours(a)),
-          fullNum(pmWeightedWorkedHours(a)),
-          moneyCell(displayedAmTips(a)),
-          moneyCell(displayedPmTips(a)),
-          moneyCell(netTipsAfterDeductions(a)),
-          moneyCell(Number(a.redistributionShare ?? 0)),
-          moneyCell(Number(a.finalTips ?? a.totalTips ?? 0)),
-        ];
-      });
-
-      const totals = allocations.reduce(
-        (acc, a) => ({
-          amWeightedWorkedHours: acc.amWeightedWorkedHours + amWeightedWorkedHours(a),
-          pmWeightedWorkedHours: acc.pmWeightedWorkedHours + pmWeightedWorkedHours(a),
-          amTips: acc.amTips + displayedAmTips(a),
-          pmTips: acc.pmTips + displayedPmTips(a),
-          netTips: acc.netTips + netTipsAfterDeductions(a),
-          redistributionShare: acc.redistributionShare + (Number(a.redistributionShare) || 0),
-          totalTips: acc.totalTips + (Number(a.finalTips ?? a.totalTips) || 0),
-        }),
-        {
-          amWeightedWorkedHours: 0,
-          pmWeightedWorkedHours: 0,
-          amTips: 0,
-          pmTips: 0,
-          netTips: 0,
-          redistributionShare: 0,
-          totalTips: 0,
-        },
-      );
-
-      if (allocations.length > 0) {
-        if (isCove) {
-          rows.push([
-            "Total",
-            "",
-            fullNum(totals.amWeightedWorkedHours + totals.pmWeightedWorkedHours),
-            moneyCell(totals.amTips + totals.pmTips),
-            moneyCell(totals.netTips),
-            moneyCell(totals.redistributionShare),
-            moneyCell(totals.totalTips),
-          ]);
-        } else {
-          rows.push([
-            "Total",
-            "",
-            fullNum(totals.amWeightedWorkedHours),
-            fullNum(totals.pmWeightedWorkedHours),
-            moneyCell(totals.amTips),
-            moneyCell(totals.pmTips),
-            moneyCell(totals.netTips),
-            moneyCell(totals.redistributionShare),
-            moneyCell(totals.totalTips),
-          ]);
-        }
-      }
-
-      const amGross = Number(calc?.inputs?.amGrossTips) || 0;
-      const pmGross = Number(calc?.inputs?.pmGrossTips) || 0;
-      const productionPool =
-        (Number(calc?.inputs?.productionDeductionAM) || 0) +
-        (Number(calc?.inputs?.productionDeductionPM) || 0);
-      const distAm = Number(calc?.inputs?.distributableAM) || 0;
-      const distPm = Number(calc?.inputs?.distributablePM) || 0;
-      const amRate = Number(calc?.totals?.amTipRate) || 0;
-      const pmRate = Number(calc?.totals?.pmTipRate) || 0;
-
-      const preambleLines = [
-        `Location: ${locName}`,
-        `Date: ${d}`,
-        isCove
-          ? `Gross Tips: ${fullMoney(amGross)}`
-          : `AM Gross Tips: ${fullMoney(amGross)}`,
-        ...(isCove ? [] : [`PM Gross Tips: ${fullMoney(pmGross)}`]),
-        `Total Gross Tips: ${fullMoney(amGross + pmGross)}`,
-        `5.4% Production Pool: ${fullMoney(productionPool)}`,
-        isCove
-          ? `Distributable: ${fullMoney(distAm)}`
-          : `AM Distributable: ${fullMoney(distAm)}`,
-        ...(isCove ? [] : [`PM Distributable: ${fullMoney(distPm)}`]),
-        isCove
-          ? `Tip Rate: ${fullMoney(amRate)}/hr`
-          : `AM Tip Rate: ${fullMoney(amRate)}/hr`,
-        ...(isCove ? [] : [`PM Tip Rate: ${fullMoney(pmRate)}/hr`]),
-        excludedEmployees.length > 0
-          ? `Excluded employees: ${excludedEmployees.length} (see section below)`
-          : null,
-      ].filter(Boolean);
-
-      const sections = [];
-      if (allocations.length > 0) {
-        sections.push({
-          sectionTitle: "Employee Allocations",
-          headers,
-          rows,
+      try {
+        await exportDailyTipsReport({
+          kind,
+          locationId: singleLocationId,
+          date: singleDate,
+          reportLocations,
         });
-      }
-      if (excludedEmployees.length > 0) {
-        const excludedHeaders = isCove
-          ? ["Employee", "Job", "Worked hrs", "Reason"]
-          : ["Employee", "Job", "AM hrs", "PM hrs", "Reason"];
-        const excludedRows = excludedEmployees.map((ex) => {
-          const am = Number(ex.amWorkedHours) || 0;
-          const pm = Number(ex.pmWorkedHours) || 0;
-          if (isCove) {
-            return [
-              ex.employeeName ?? "",
-              ex.jobTitle || "—",
-              fullNum(am + pm),
-              String(ex.reason ?? "").trim() || "—",
-            ];
-          }
-          return [
-            ex.employeeName ?? "",
-            ex.jobTitle || "—",
-            fullNum(am),
-            fullNum(pm),
-            String(ex.reason ?? "").trim() || "—",
-          ];
-        });
-        sections.push({
-          sectionTitle: "Excluded Employees (not in calculation)",
-          headers: excludedHeaders,
-          rows: excludedRows,
-        });
-      }
-
-      const file = `daily-tips-${sanitizeExportSlug(locName)}-${d}.${kind}`;
-      if (kind === "csv") {
-        exportSectionedTableToCSV(preambleLines, sections, file);
-      } else {
-        exportSectionedTableToPDF(
-          `Daily Tips - ${locName} - ${d}`,
-          sections,
-          file,
-          { preambleLines },
-        );
+      } catch (err) {
+        const msg = err?.response?.data?.error || err?.message;
+        if (msg === "Select location and date") toast.error("Select location and date");
+        else if (msg === "No daily tips rows for export") toast.error("No daily tips rows for export");
+        else throw err;
       }
     },
     [singleDate, singleLocationId, reportLocations],
@@ -1163,7 +534,8 @@ export default function PayoutReports() {
       const payoutHeaders = [
         "Employee",
         "Allocation %",
-        "Gross Production Tips",
+        "Gross Production Tips (Weekly)",
+        ...dateCols.map((c) => `Gross (${c.label})`),
         "Weekly Tardiness (min)",
         "Tardiness %",
         "Tardiness Deduction",
@@ -1175,6 +547,7 @@ export default function PayoutReports() {
         p.name + (p.subjectToTardiness === false ? " (exempt)" : ""),
         `${p.allocationPercent ?? 0}%`,
         fmtMoney(p.weeklyGrossProductionTips),
+        ...dateCols.map((_, i) => fmtMoney((p.dailyByDay || [])[i] ?? 0)),
         String(p.weeklyTardinessMinutes ?? 0),
         `${p.tardinessPercent ?? 0}%`,
         fmtMoney(p.tardinessDeduction),
@@ -1186,6 +559,14 @@ export default function PayoutReports() {
         "Total",
         "",
         fmtMoney(sum(payouts.map((p) => p.weeklyGrossProductionTips))),
+        ...dateCols.map((_, i) =>
+          fmtMoney(
+            payouts.reduce(
+              (s, p) => s + (Number((p.dailyByDay || [])[i]) || 0),
+              0,
+            ),
+          ),
+        ),
         String(sum(payouts.map((p) => p.weeklyTardinessMinutes))),
         "",
         fmtMoney(sum(payouts.map((p) => p.tardinessDeduction))),

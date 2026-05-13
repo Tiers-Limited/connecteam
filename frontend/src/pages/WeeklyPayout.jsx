@@ -16,7 +16,8 @@ import {
   getDateRangeColumns,
   columnsFromDayDateKeys,
 } from "../utils/dateUtils";
-import { FiCreditCard, FiLoader, FiZap } from "react-icons/fi";
+import { exportWeeklyPayoutReport } from "../utils/weeklyPayoutExport";
+import { FiCreditCard, FiDownload, FiFileText, FiLoader, FiZap } from "react-icons/fi";
 import Button from "../components/ui/Button";
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -52,6 +53,10 @@ function breakMinutesFromRow(row) {
   return 0;
 }
 
+function sum(values) {
+  return values.reduce((acc, n) => acc + (Number(n) || 0), 0);
+}
+
 function formatTardinessDate(value) {
   if (!value) return "—";
   const raw = String(value).slice(0, 10);
@@ -78,6 +83,7 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
   const [editManualAmount, setEditManualAmount] = useState("");
   const [editAdditionalTips, setEditAdditionalTips] = useState("");
   const [editManualReason, setEditManualReason] = useState("");
+  const [exportLoadingKind, setExportLoadingKind] = useState(null);
   const [progressPercent, setProgressPercent] = useState(0);
   const progressTimerRef = useRef(null);
   const progressResetRef = useRef(null);
@@ -264,6 +270,35 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
   }, [modalEmployee, closeModal]);
 
   const payoutBusy = loading || saving;
+  const runExport = useCallback(
+    async (kind) => {
+      if (exportLoadingKind || !selectedLocationId) return;
+      const sd = startDate.trim().slice(0, 10);
+      const ed = endDate.trim().slice(0, 10);
+      if (!sd || !ed || ed < sd) {
+        toast.error("Invalid date range");
+        return;
+      }
+      setExportLoadingKind(kind);
+      try {
+        await exportWeeklyPayoutReport({
+          kind,
+          startDate: sd,
+          endDate: ed,
+          geographicScope: "one_location",
+          singleLocationId: selectedLocationId,
+          employeeScope: "all",
+          reportLocations: locations,
+        });
+        toast.success(kind === "csv" ? "CSV exported" : "PDF exported");
+      } catch (err) {
+        toast.error(err?.response?.data?.error || err?.message || "Export failed");
+      } finally {
+        setExportLoadingKind(null);
+      }
+    },
+    [exportLoadingKind, selectedLocationId, startDate, endDate, locations],
+  );
   useEffect(() => {
     if (payoutBusy) {
       if (progressResetRef.current) {
@@ -325,6 +360,47 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
   const currentPage = Math.min(Math.max(1, page), totalPages);
   const start = (currentPage - 1) * pageSize;
   const paginatedPayouts = payouts.slice(start, start + pageSize);
+  const payoutTotals =
+    totalRows > 0
+      ? (() => {
+          const totalWeeklyGross = sum(
+            payouts.map((p) => p.weeklyGrossTips ?? p.dailyTipsMonToSun),
+          );
+          const totalTardinessDeduction = sum(
+            payouts.map((p) => p.tardinessDeduction),
+          );
+          return {
+            dayTotals: weekDateColumns.map((_, idx) =>
+              sum(payouts.map((p) => (p.dailyTipsByDay || [])[idx] ?? 0)),
+            ),
+            totalWeeklyGross,
+            totalWorkingMinutes: sum(payouts.map((p) => p.totalWorkingMinutes)),
+            totalBreakMinutes: sum(payouts.map((p) => breakMinutesFromRow(p))),
+            totalTardinessMinutes: sum(
+              payouts.map((p) => p.weeklyTardinessMinutes),
+            ),
+            tardinessPercent:
+              totalWeeklyGross > 0
+                ? `${((totalTardinessDeduction / totalWeeklyGross) * 100).toFixed(2)}%`
+                : "0%",
+            totalTardinessDeduction,
+            totalWeeklyAfterTardiness: sum(
+              payouts.map((p) => p.weeklyAfterTardiness),
+            ),
+            totalManualDeduction: sum(payouts.map((p) => p.manualDeduction)),
+            totalAdditionalTips: sum(
+              payouts.map((p) => p.additionalTips ?? 0),
+            ),
+            totalNetWeeklyTips: sum(payouts.map((p) => p.netWeeklyTips)),
+            totalTardinessRedistribution: sum(
+              payouts.map((p) => p.tardinessRedistribution ?? 0),
+            ),
+            totalFinalWeeklyTipsPayable: sum(
+              payouts.map((p) => p.finalWeeklyTipsPayable ?? 0),
+            ),
+          };
+        })()
+      : null;
   const pageTitle = stepTitle || "Weekly Staff Payout";
   const modalRoot = typeof document !== "undefined" ? document.body : null;
   if (!selectedLocationId) {
@@ -455,9 +531,32 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
           {/* Main table card */}
           <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-white/[0.03] shadow-sm backdrop-blur-sm">
             <div className="border-b border-slate-200 dark:border-white/10 px-6 pb-4 pt-5">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                Weekly Staff Payout Table
-              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                  Weekly Staff Payout Table
+                </h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!!exportLoadingKind || totalRows === 0}
+                    onClick={() => runExport("csv")}
+                    className="inline-flex items-center gap-2"
+                  >
+                    <FiFileText className="h-4 w-4" />
+                    {exportLoadingKind === "csv" ? "Exporting…" : "Export CSV"}
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={!!exportLoadingKind || totalRows === 0}
+                    onClick={() => runExport("pdf")}
+                    className="inline-flex items-center gap-2"
+                  >
+                    <FiDownload className="h-4 w-4" />
+                    {exportLoadingKind === "pdf" ? "Exporting…" : "Export PDF"}
+                  </Button>
+                </div>
+              </div>
             </div>
 
             <div className="px-6 py-4">
@@ -696,6 +795,61 @@ export default function WeeklyPayout({ embedded = false, stepTitle = null }) {
                         </td>
                       </tr>
                     ))}
+                    {payoutTotals && (
+                      <tr className="border-t-2 border-slate-200 bg-slate-100/70 font-semibold dark:border-white/10 dark:bg-white/5">
+                        <td className="sticky left-0 z-[2] w-20 min-w-[5rem] max-w-[5rem] bg-slate-100 py-3 pr-2 dark:bg-slate-800/70" />
+                        <td className="sticky left-20 z-[1] bg-slate-100 px-4 py-3 text-slate-900 dark:bg-slate-800/70 dark:text-slate-100">
+                          Total
+                        </td>
+                        <td className="py-3 pr-4 text-slate-600 dark:text-slate-300">
+                          {locationName}
+                        </td>
+                        {payoutTotals.dayTotals.map((val, idx) => (
+                          <td
+                            key={weekDateColumns[idx]?.dateKey ?? idx}
+                            className="py-3 pr-2 text-right tabular-nums text-slate-900 dark:text-slate-100"
+                          >
+                            {formatMoney(val)}
+                          </td>
+                        ))}
+                        <td className="py-3 pr-4 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                          {formatMoney(payoutTotals.totalWeeklyGross)}
+                        </td>
+                        <td className="py-3 pr-4 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                          {formatDurationHours(payoutTotals.totalWorkingMinutes)}
+                        </td>
+                        <td className="py-3 pr-4 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                          {formatDurationHours(payoutTotals.totalBreakMinutes)}
+                        </td>
+                        <td className="py-3 pr-4 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                          {payoutTotals.totalTardinessMinutes}
+                        </td>
+                        <td className="py-3 pr-4 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                          {payoutTotals.tardinessPercent}
+                        </td>
+                        <td className="py-3 pr-4 text-right tabular-nums text-amber-700 dark:text-amber-300">
+                          {formatMoney(payoutTotals.totalTardinessDeduction)}
+                        </td>
+                        <td className="py-3 pr-4 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                          {formatMoney(payoutTotals.totalWeeklyAfterTardiness)}
+                        </td>
+                        <td className="py-3 pr-4 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                          {formatMoney(payoutTotals.totalManualDeduction)}
+                        </td>
+                        <td className="py-3 pr-4 text-right tabular-nums text-emerald-700 dark:text-emerald-300">
+                          {formatMoney(payoutTotals.totalAdditionalTips)}
+                        </td>
+                        <td className="py-3 pr-4 text-right tabular-nums text-slate-900 dark:text-slate-100">
+                          {formatMoney(payoutTotals.totalNetWeeklyTips)}
+                        </td>
+                        <td className="py-3 pr-4 text-right tabular-nums text-emerald-700 dark:text-emerald-300">
+                          {formatMoney(payoutTotals.totalTardinessRedistribution)}
+                        </td>
+                        <td className="py-3 pl-4 pr-6 text-right tabular-nums text-slate-950 dark:text-white">
+                          {formatMoney(payoutTotals.totalFinalWeeklyTipsPayable)}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

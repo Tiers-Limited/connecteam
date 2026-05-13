@@ -25,7 +25,8 @@ import {
 import {
   formatCsvNumeric,
 } from "../utils/reportUtils";
-import { FiClock, FiFileText, FiLoader, FiZap } from "react-icons/fi";
+import { exportDailyTipsReport } from "../utils/dailyTipsExport";
+import { FiClock, FiDownload, FiFileText, FiLoader, FiZap } from "react-icons/fi";
 import Button from "../components/ui/Button";
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -267,6 +268,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
     useState([]);
   const [breakdownEmployeesLoading, setBreakdownEmployeesLoading] =
     useState(false);
+  const [exportLoadingKind, setExportLoadingKind] = useState(null);
   const [manualRemoveRow, setManualRemoveRow] = useState(null);
   const [manualRemoveSaving, setManualRemoveSaving] = useState(false);
   const [progressPercent, setProgressPercent] = useState(0);
@@ -901,6 +903,31 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
       }
     },
     [breakdownView, refreshBreakdownCalculation],
+  );
+
+  const runBreakdownExport = useCallback(
+    async (kind) => {
+      if (exportLoadingKind) return;
+      if (!breakdownView?.locationId || !breakdownView?.dateStr) {
+        toast.error("Load breakdown first (location + date)");
+        return;
+      }
+      setExportLoadingKind(kind);
+      try {
+        await exportDailyTipsReport({
+          kind,
+          locationId: breakdownView.locationId,
+          date: breakdownView.dateStr,
+          reportLocations: locations,
+        });
+        toast.success(kind === "csv" ? "CSV exported" : "PDF exported");
+      } catch (err) {
+        toast.error(err?.response?.data?.error || err?.message || "Export failed");
+      } finally {
+        setExportLoadingKind(null);
+      }
+    },
+    [exportLoadingKind, breakdownView, locations],
   );
 
   const showShiftSplit = !isBreakdownTheCove;
@@ -1686,9 +1713,40 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
 
       {calculation && !calculationError && (
         <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-white/[0.03] p-5 shadow-sm">
-          <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-slate-100">
-            Daily calculation (audit)
-          </h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              Daily calculation (audit)
+            </h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={
+                  !!exportLoadingKind ||
+                  !breakdownView?.locationId ||
+                  !breakdownView?.dateStr
+                }
+                onClick={() => runBreakdownExport("csv")}
+                className="inline-flex items-center gap-2"
+              >
+                <FiFileText className="h-4 w-4" />
+                {exportLoadingKind === "csv" ? "Exporting…" : "Export CSV"}
+              </Button>
+              <Button
+                type="button"
+                disabled={
+                  !!exportLoadingKind ||
+                  !breakdownView?.locationId ||
+                  !breakdownView?.dateStr
+                }
+                onClick={() => runBreakdownExport("pdf")}
+                className="inline-flex items-center gap-2"
+              >
+                <FiDownload className="h-4 w-4" />
+                {exportLoadingKind === "pdf" ? "Exporting…" : "Export PDF"}
+              </Button>
+            </div>
+          </div>
 
           <div className="mb-4 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-white/10 pb-3">
             <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600 dark:text-slate-300">

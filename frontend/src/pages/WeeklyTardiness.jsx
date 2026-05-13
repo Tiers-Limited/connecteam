@@ -10,8 +10,9 @@ import {
   getDateRangeColumns,
   formatDate,
 } from "../utils/dateUtils";
-import { FiCalendar, FiLoader, FiZap, FiRefreshCw } from "react-icons/fi";
+import { FiCalendar, FiDownload, FiFileText, FiLoader, FiZap, FiRefreshCw } from "react-icons/fi";
 import Button from "../components/ui/Button";
+import { exportWeeklyTardinessReport } from "../utils/weeklyTardinessExport";
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
@@ -77,6 +78,7 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [exportLoadingKind, setExportLoadingKind] = useState(null);
   const [progressPercent, setProgressPercent] = useState(0);
   const progressTimerRef = useRef(null);
   const progressResetRef = useRef(null);
@@ -120,6 +122,36 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
       }
     },
     [startDate, endDate, selectedLocationId, locations],
+  );
+
+  const runExport = useCallback(
+    async (kind) => {
+      if (exportLoadingKind) return;
+      const start = startDate.trim().slice(0, 10);
+      const end = endDate.trim().slice(0, 10);
+      if (!start || !end || end < start) {
+        toast.error("Invalid date range");
+        return;
+      }
+      setExportLoadingKind(kind);
+      try {
+        await exportWeeklyTardinessReport({
+          kind,
+          startDate: start,
+          endDate: end,
+          geographicScope: selectedLocationId ? "one_location" : "all_locations",
+          singleLocationId: selectedLocationId || undefined,
+          employeeScope: "all",
+          reportLocations: locations,
+        });
+        toast.success(kind === "csv" ? "CSV exported" : "PDF exported");
+      } catch (err) {
+        toast.error(err?.response?.data?.error || err?.message || "Export failed");
+      } finally {
+        setExportLoadingKind(null);
+      }
+    },
+    [exportLoadingKind, startDate, endDate, selectedLocationId, locations],
   );
 
   const location = locations.find((l) => l._id === selectedLocationId);
@@ -371,9 +403,32 @@ export default function WeeklyTardiness({ embedded = false, stepTitle = null }) 
           {/* Main tardiness table */}
           <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-white/[0.03] shadow-sm backdrop-blur-sm">
             <div className="border-b border-slate-200 dark:border-white/10 px-6 pb-4 pt-5">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                Tardiness by employee (minutes late per day)
-              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                  Tardiness by employee (minutes late per day)
+                </h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!!exportLoadingKind || totalRows === 0}
+                    onClick={() => runExport("csv")}
+                    className="inline-flex items-center gap-2"
+                  >
+                    <FiFileText className="h-4 w-4" />
+                    {exportLoadingKind === "csv" ? "Exporting…" : "Export CSV"}
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={!!exportLoadingKind || totalRows === 0}
+                    onClick={() => runExport("pdf")}
+                    className="inline-flex items-center gap-2"
+                  >
+                    <FiDownload className="h-4 w-4" />
+                    {exportLoadingKind === "pdf" ? "Exporting…" : "Export PDF"}
+                  </Button>
+                </div>
+              </div>
             </div>
             <div className="px-6 py-4">
               {totalRows > 0 && (
