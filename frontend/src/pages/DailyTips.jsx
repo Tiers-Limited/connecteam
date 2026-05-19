@@ -507,7 +507,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
     }
     let cancelled = false;
     setBreakdownEmployeesLoading(true);
-    getEmployees(breakdownView.locationId)
+    getEmployees(breakdownView.locationId, false)
       .then((list) => {
         if (!cancelled)
           setBreakdownLocationEmployees(Array.isArray(list) ? list : []);
@@ -551,9 +551,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
       if (aid) inAudit.add(aid);
     }
     return breakdownLocationEmployees
-      .filter(
-        (e) => e?._id && String(e.connecteamsUserId || "").trim(),
-      )
+      .filter((e) => e?._id)
       .filter(
         (e) =>
           !inManual.has(String(e._id)) && !inAudit.has(String(e._id)),
@@ -1531,11 +1529,7 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
                   : breakdownLocationEmployees.length === 0
                     ? "No employees for this location"
                     : manualConnecteamSelectOptions.length === 0
-                      ? breakdownLocationEmployees.some((e) =>
-                          String(e.connecteamsUserId || "").trim(),
-                        )
-                        ? "All Connecteam employees are already in the audit or manual list"
-                        : "No Connecteam-linked employees at this location"
+                      ? "All employees are already in the audit or manual list"
                       : "Select employee…"}
               </option>
               {manualConnecteamSelectOptions.map((emp) => (

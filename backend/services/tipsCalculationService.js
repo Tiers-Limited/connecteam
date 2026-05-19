@@ -476,7 +476,15 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     rawConnecteamEntries = options.preFetchedEntries.filter((e) => (e.date || '').toString().slice(0, 10) === dateStr);
   } else {
     try {
-      rawConnecteamEntries = await connecteamsService.getTimeEntriesFromConnecteams(dateStr, dateStr);
+      const keysArg =
+        locationKeyFilter != null && String(locationKeyFilter).trim() !== ""
+          ? [String(locationKeyFilter).toLowerCase().trim()]
+          : null;
+      rawConnecteamEntries = await connecteamsService.getTimeEntriesFromConnecteams(
+        dateStr,
+        dateStr,
+        keysArg,
+      );
       usedConnecteamApi = true;
     } catch (err) {
       const timeEntriesFromDb = await TimeEntry.find({
@@ -504,13 +512,34 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     ? rawConnecteamEntries.manualBreaks.filter((b) => (b.date || '').toString().slice(0, 10) === dateStr)
     : [];
 
-  const connecteamEntries =
+  let connecteamEntries =
     options.preFetchedEntries && Array.isArray(options.preFetchedEntries)
       ? rawConnecteamEntries
       : locationKeyFilter
         ? rawConnecteamEntries.filter((e) => (e.locationKey || '').toLowerCase() === locationKeyFilter.toLowerCase() && (e.date || '').toString().slice(0, 10) === dateStr)
         : rawConnecteamEntries.filter((e) => (e.date || '').toString().slice(0, 10) === dateStr);
 
+  if (
+    !options.preFetchedEntries &&
+    locationKeyFilter &&
+    connecteamEntries.length === 0 &&
+    Array.isArray(rawConnecteamEntries) &&
+    rawConnecteamEntries.length > 0
+  ) {
+    const byDate = rawConnecteamEntries.filter(
+      (e) => (e.date || "").toString().slice(0, 10) === dateStr,
+    );
+    const lkWant = String(locationKeyFilter).toLowerCase().trim();
+    const relaxed = byDate.filter((e) => {
+      const lk = (e.locationKey || "").toString().toLowerCase().trim();
+      return (
+        lk === lkWant ||
+        lk.replace(/\s+/g, "") === lkWant.replace(/\s+/g, "") ||
+        (lkWant.length > 0 && lk.length > 0 && (lkWant.includes(lk) || lk.includes(lkWant)))
+      );
+    });
+    if (relaxed.length > 0) connecteamEntries = relaxed;
+  }
   const employeeFirstLast = new Map();
   for (const entry of connecteamEntries) {
     const uid = String(entry.connecteamsUserId || entry.employeeName || '');
@@ -603,13 +632,15 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     employeeOrClauses.push({ _id: { $in: mongoIdsFromConnecteamKeys } });
   }
 
+  // Include inactive employees: Connecteam punches still match their record; excluding
+  // isActive here caused empty daily breakdown when staff were deactivated in DB but
+  // still had shifts (Weekly Tardiness still showed them from the API).
   const employeeDocs = employeeOrClauses.length
     ? await Employee.find({
         locationId,
-        isActive: true,
         $or: employeeOrClauses,
       })
-        .select('_id name connecteamsUserId tipMultiplierOverride')
+        .select('_id name connecteamsUserId tipMultiplierOverride isActive')
         .lean()
     : [];
   const employeeByConnecteamId = new Map();
