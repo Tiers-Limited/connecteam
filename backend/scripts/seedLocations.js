@@ -2,8 +2,8 @@ const Location = require('../models/Location');
 const { LOCATIONS } = require('../utils/constants');
 
 /**
- * Ensure the 4 fixed locations (Oranjestad, Casa del Mar, The Cove, Drive Thru) exist.
- * Used for Connecteams sync; do not add locations manually for staff tips.
+ * Ensure all LOCATIONS from constants exist and stay active; deactivate removed names.
+ * Runs on every server start so locations persist across restarts.
  */
 async function seedLocations() {
   const configuredNames = LOCATIONS.map((l) => l.name);

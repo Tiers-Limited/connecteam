@@ -349,7 +349,7 @@ async function getConnecteamTimeEntries(req, res, next) {
     if (!locationKeyFilter) {
       return res.status(400).json({
         success: false,
-        error: 'Location is not one of the Connecteam locations (Oranjestad, Casa del Mar, The Cove, Drive Thru)',
+        error: `Location is not configured for Connecteam sync (${LOCATIONS.map((l) => l.name).join(', ')})`,
       });
     }
 

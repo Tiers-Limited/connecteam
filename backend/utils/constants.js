@@ -28,8 +28,8 @@ const LOCATION_SINGLE_SHIFT = {
 };
 
 /**
- * Fixed locations for Connecteams sync (from demo: Oranjestad, Casa del Mar, The Cove, Drive Thru).
- * Do not add locations manually for staff tips; use these four.
+ * Canonical locations for Connecteam sync and tip/tardiness scoping.
+ * Seeded into MongoDB on server startup (see seedLocations). Add new sites here.
  */
 const LOCATIONS = [
   { key: 'oranjestad', name: 'Oranjestad' },

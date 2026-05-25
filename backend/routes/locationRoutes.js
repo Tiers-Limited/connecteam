@@ -5,7 +5,7 @@ const validate = require('../middlewares/validate');
 
 const router = express.Router();
 
-// Locations are the 4 fixed (Oranjestad, Casa del Mar, The Cove, Drive Thru) — seeded on startup, no manual add/edit
+// Locations are defined in utils/constants LOCATIONS — seeded on startup via seedLocations
 router.get('/', locationController.list);
 router.get('/:id', param('id').isMongoId(), validate, locationController.getOne);
 

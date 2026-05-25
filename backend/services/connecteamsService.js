@@ -71,19 +71,6 @@ function getCustomFieldValues(user, fieldName) {
   return [one(v)];
 }
 
-function userBelongsToLocations(userInfo, locationKeys) {
-  if (!userInfo) return false;
-  if (!locationKeys.length) return true;
-  const locs = (userInfo.locationValues || []).map((s) => (s || '').toLowerCase().trim());
-  const jobs = (userInfo.locationJobValues || []).map((s) => (s || '').toLowerCase().trim());
-  const keys = locationKeys.map((k) => k.toLowerCase().trim());
-  for (const k of keys) {
-    if (locs.some((l) => l === k || l.includes(k))) return true;
-    if (jobs.some((j) => j.includes(k) || j.includes(k.replace(/\s/g, '-')))) return true;
-  }
-  return false;
-}
-
 function normalizeLocationKey(str) {
   if (!str || typeof str !== 'string') return null;
   const s = str.toLowerCase().trim();
@@ -95,7 +82,172 @@ function normalizeLocationKey(str) {
   if (s.includes('cove')) return 'the cove';
   if (s.includes('drive') && s.includes('thru')) return 'drive thru';
   if (s.includes('pastry')) return 'pastry';
+  if (s.includes('royal') && s.includes('plaza')) return 'royal plaza';
   return null;
+}
+
+/** Whether a normalized location key is included in the current fetch scope. */
+function locationKeyInScope(locationKey, locationKeys) {
+  if (!Array.isArray(locationKeys) || locationKeys.length === 0) return true;
+  if (!locationKey) return false;
+  const lk = String(locationKey).toLowerCase().trim();
+  return locationKeys.some((k) => String(k).toLowerCase().trim() === lk);
+}
+
+function extractJobFromApiResponse(jobRes) {
+  const jobData = jobRes && jobRes.data != null ? jobRes.data : jobRes;
+  return (jobData && (jobData.job || jobData)) || null;
+}
+
+/** Resolve app location key from a Connecteam job record (title, parent, instances). */
+function resolveLocationKeyFromJob(job) {
+  if (!job || typeof job !== 'object') return null;
+  const title = String(job.title || job.name || '').trim();
+  let locKey = title ? normalizeLocationKey(title) : null;
+  if (!locKey && job.useParentData) {
+    const parentTitle = String(
+      job.parentTitle ||
+        job.parentJobTitle ||
+        (job.parent && (job.parent.title || job.parent.name)) ||
+        '',
+    ).trim();
+    if (parentTitle) locKey = normalizeLocationKey(parentTitle);
+  }
+  if (!locKey && job.gps && job.gps.address) {
+    locKey = normalizeLocationKey(String(job.gps.address));
+  }
+  return locKey;
+}
+
+/** Register job + instance/sub-job ids to the same resolved location key. */
+function registerJobIdMappings(primaryJobId, job, locKey, jobIdToLocationKey, jobIdToResolvedKey, locationKeys) {
+  const ids = new Set();
+  if (primaryJobId != null && String(primaryJobId).trim() !== '') ids.add(String(primaryJobId));
+  if (job && job.jobId != null && String(job.jobId).trim() !== '') ids.add(String(job.jobId));
+  if (job && Array.isArray(job.instanceIds)) {
+    for (const iid of job.instanceIds) {
+      if (iid != null && String(iid).trim() !== '') ids.add(String(iid));
+    }
+  }
+  if (job && Array.isArray(job.subJobs)) {
+    for (const sub of job.subJobs) {
+      const sid = sub && (sub.jobId ?? sub.id);
+      if (sid != null && String(sid).trim() !== '') ids.add(String(sid));
+    }
+  }
+  for (const id of ids) {
+    jobIdToResolvedKey[id] = locKey;
+    if (locKey && locationKeyInScope(locKey, locationKeys)) {
+      jobIdToLocationKey[id] = locKey;
+    }
+  }
+}
+
+async function fetchJobRecord(jobId) {
+  const jobRes = await connecteamsFetch(`/jobs/v1/jobs/${encodeURIComponent(jobId)}`);
+  return extractJobFromApiResponse(jobRes);
+}
+
+/**
+ * Map a Connecteam job id to a location key, following parent jobs and instance ids.
+ * Generic for all locations configured in LOCATIONS.
+ */
+async function mapConnecteamJobToLocation(
+  jobId,
+  jobIdToLocationKey,
+  jobIdToResolvedKey,
+  locationKeys,
+  fetchedJobs,
+) {
+  const id = String(jobId);
+  if (fetchedJobs.has(id)) return;
+  fetchedJobs.add(id);
+
+  let job;
+  try {
+    job = await fetchJobRecord(id);
+  } catch (_) {
+    jobIdToResolvedKey[id] = null;
+    return;
+  }
+  if (!job) {
+    jobIdToResolvedKey[id] = null;
+    return;
+  }
+
+  let locKey = resolveLocationKeyFromJob(job);
+  const parentId = job.parentJobId ?? job.parentId ?? (job.parent && job.parent.jobId);
+  if (!locKey && parentId != null && String(parentId).trim() !== '') {
+    const parentKey = String(parentId);
+    if (!fetchedJobs.has(parentKey)) {
+      try {
+        const parentJob = await fetchJobRecord(parentKey);
+        fetchedJobs.add(parentKey);
+        if (parentJob) {
+          const parentLoc = resolveLocationKeyFromJob(parentJob);
+          if (parentLoc) {
+            locKey = parentLoc;
+            registerJobIdMappings(parentKey, parentJob, locKey, jobIdToLocationKey, jobIdToResolvedKey, locationKeys);
+          }
+        }
+      } catch (_) {
+        /* parent optional */
+      }
+    } else if (jobIdToResolvedKey[parentKey]) {
+      locKey = jobIdToResolvedKey[parentKey];
+    }
+  }
+
+  registerJobIdMappings(id, job, locKey, jobIdToLocationKey, jobIdToResolvedKey, locationKeys);
+}
+
+function shiftLocationStringFromPunch(shift) {
+  return (
+    (shift.locationData && (shift.locationData.gps || {}).address)
+      ? shift.locationData.gps.address
+      : (shift.locationData && shift.locationData.address)
+        ? shift.locationData.address
+        : (shift.locationData && shift.locationData.name)
+          ? shift.locationData.name
+          : (shift.locationName || shift.address || (shift.location && shift.location.name) || (shift.location && shift.location.address) || '')
+  );
+}
+
+function resolvePunchLocationKey({
+  shift,
+  userInfo,
+  schedEntry,
+  jobIdToLocationKey,
+  jobIdToResolvedKey,
+  locationKeys,
+  includeAllLocations,
+}) {
+  const jobId = shift.jobId != null ? String(shift.jobId) : null;
+  let locationKey =
+    (jobId && jobIdToLocationKey[jobId]) ||
+    (jobId && jobIdToResolvedKey[jobId]) ||
+    null;
+
+  const shiftLocationStr = shiftLocationStringFromPunch(shift);
+  if (!locationKey && shiftLocationStr) {
+    locationKey = normalizeLocationKey(shiftLocationStr);
+  }
+
+  if (!locationKey && schedEntry && schedEntry.locationKey) {
+    const sk = schedEntry.locationKey;
+    if (locationKeyInScope(sk, locationKeys)) locationKey = sk;
+  }
+
+  if (!locationKey && userInfo) {
+    const fromProfile = getLocationKeysForPunch(userInfo, null, locationKeys);
+    if (fromProfile.length > 0) locationKey = fromProfile[0];
+  }
+
+  if (!locationKey && includeAllLocations) {
+    locationKey = normalizeLocationKey(shiftLocationStr) || 'unknown';
+  }
+
+  return locationKey;
 }
 
 function getLocationKeysForPunch(userInfo, schedLocationKey, locationKeys) {
@@ -112,7 +264,6 @@ function getLocationKeysForPunch(userInfo, schedLocationKey, locationKeys) {
     if (!scoped || locationKeys.includes(k)) collected.add(k);
   }
   if (collected.size > 0) return Array.from(collected);
-  if (scoped && locationKeys[0]) return [locationKeys[0]];
   return [];
 }
 
@@ -275,11 +426,6 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
     .map((c) => (c.id != null ? c.id : c.timeClockId))
     .filter(Boolean);
 
-  const locationFilteredUserIds = Object.keys(userMap).filter((ukey) =>
-    userBelongsToLocations(userMap[ukey], locationKeys)
-  );
-  const shouldSendUserIdsFilter = locationKeys.length > 0;
-
   const scheduleMap = {};
   let totalShiftsLoaded = 0;
   try {
@@ -377,11 +523,7 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
   const tcFetchConcurrency = Math.min(8, Math.max(1, timeClockIds.length));
   await mapWithConcurrency(timeClockIds, tcFetchConcurrency, async (tcId) => {
     try {
-      const userIdsParam =
-        shouldSendUserIdsFilter && locationFilteredUserIds.length > 0
-          ? locationFilteredUserIds.map((id) => `userIds=${encodeURIComponent(id)}`).join('&')
-          : '';
-      const actPath = `/time-clock/v1/time-clocks/${tcId}/time-activities?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}${userIdsParam ? '&' + userIdsParam : ''}`;
+      const actPath = `/time-clock/v1/time-clocks/${tcId}/time-activities?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`;
       const actData = await connecteamsFetch(actPath);
       const actRaw = actData.data != null ? actData.data : actData;
       const byUsers =
@@ -394,8 +536,7 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
         const userId = userObj.userId ?? userObj.user_id ?? userObj.id;
         if (userId == null) continue;
         const ukey = String(userId);
-        const userInfo = userMap[ukey];
-        if (!userBelongsToLocations(userInfo, locationKeys)) continue;
+        const userInfo = userMap[ukey] || { name: 'User ' + ukey, locationValues: [], locationJobValues: [] };
         const shifts =
           userObj.shifts || userObj.activities || userObj.records || userObj.timeActivities || [];
         if (shifts.length > 0 && firstUserFlow.userId === null) {
@@ -440,23 +581,24 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
   const uniqueJobIds = [...new Set(allShiftsWithUser.map(({ shift }) => shift.jobId).filter(Boolean))];
   const jobIdToLocationKey = {};
   const jobIdToResolvedKey = {};
+  const fetchedJobs = new Set();
   const firstUserJobIdSet = firstUserFlow.jobIds ? new Set(firstUserFlow.jobIds) : null;
   await mapWithConcurrency(uniqueJobIds, CONNECTEAM_JOB_FETCH_CONCURRENCY, async (jobId) => {
-    try {
-      const jobRes = await connecteamsFetch(`/jobs/v1/jobs/${encodeURIComponent(jobId)}`);
-      if (firstUserJobIdSet && firstUserJobIdSet.has(jobId)) {
+    if (firstUserJobIdSet && firstUserJobIdSet.has(jobId)) {
+      try {
+        const jobRes = await connecteamsFetch(`/jobs/v1/jobs/${encodeURIComponent(jobId)}`);
         firstUserFlow.jobResponses.push({ jobId, response: jobRes });
+      } catch (_) {
+        /* debug flow only */
       }
-      const jobData = jobRes.data != null ? jobRes.data : jobRes;
-      const job = jobData.job || jobData;
-      const title = (job && (job.title || job.name)) ? String(job.title || job.name).trim() : '';
-      const locKey = title ? normalizeLocationKey(title) : null;
-      jobIdToResolvedKey[jobId] = locKey;
-      if (locKey && (locationKeys.length === 0 || locationKeys.includes(locKey))) {
-        jobIdToLocationKey[jobId] = locKey;
-      }
-    } catch (_) {
     }
+    await mapConnecteamJobToLocation(
+      jobId,
+      jobIdToLocationKey,
+      jobIdToResolvedKey,
+      locationKeys,
+      fetchedJobs,
+    );
   });
 
   const entries = [];
@@ -478,34 +620,20 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
       continue;
     }
 
-    const jobId = shift.jobId;
-    let locationKey = jobId && jobIdToLocationKey[jobId] ? jobIdToLocationKey[jobId] : null;
-    if (!locationKey && jobId != null && Object.prototype.hasOwnProperty.call(jobIdToResolvedKey, jobId)) {
-      const resolved = jobIdToResolvedKey[jobId];
-      if (locationKeys.length > 0 && resolved != null && resolved !== '' && !locationKeys.includes(resolved)) {
-        continue;
-      }
-    }
-    if (!locationKey) {
-      const sched = (scheduleMap[ukey] || {})[shiftDate];
-      const locationKeysForPunch = getLocationKeysForPunch(userInfo, sched && sched.locationKey, locationKeys);
-      if (locationKeysForPunch.length > 0) locationKey = locationKeysForPunch[0];
-      else if (includeAllLocations) {
-        const shiftLocationStr =
-          (shift.locationData && (shift.locationData.gps || {}).address)
-            ? shift.locationData.gps.address
-            : (shift.locationData && shift.locationData.address)
-              ? shift.locationData.address
-              : (shift.locationData && shift.locationData.name)
-                ? shift.locationData.name
-                : (shift.locationName || shift.address || (shift.location && shift.location.name) || (shift.location && shift.location.address) || '');
-        locationKey = normalizeLocationKey(shiftLocationStr) || 'unknown';
-      } else continue;
-    }
+    const sched = (scheduleMap[ukey] || {})[shiftDate];
+    const locationKey = resolvePunchLocationKey({
+      shift,
+      userInfo,
+      schedEntry: sched,
+      jobIdToLocationKey,
+      jobIdToResolvedKey,
+      locationKeys,
+      includeAllLocations,
+    });
+    if (!locationKeyInScope(locationKey, locationKeys)) continue;
 
     const clockOutTs = getClockOutMsFromRecord(shift);
     const clockOutMsUse = clockOutTs != null ? clockOutTs : clockInTs + 8 * 60 * 60 * 1000;
-    const sched = (scheduleMap[ukey] || {})[shiftDate];
     const scheduledTimeStr =
       sched && sched.scheduledStartMs != null ? formatTimeInTimezone(sched.scheduledStartMs, tz) : undefined;
 
@@ -821,22 +949,31 @@ const jobInfoCache = new Map();
 
 async function getJobInfo(jobId) {
   if (!jobId) return null;
-  if (jobInfoCache.has(jobId)) return jobInfoCache.get(jobId);
+  const cacheKey = String(jobId);
+  if (jobInfoCache.has(cacheKey)) return jobInfoCache.get(cacheKey);
 
   try {
-    const jobRes = await connecteamsFetch(`/jobs/v1/jobs/${encodeURIComponent(jobId)}`);
-    if (jobRes && jobRes.data && jobRes.data.job) {
-      const job = jobRes.data.job;
-      const result = {
-        jobId: job.jobId || jobId,
-        title: job.title || null,
-        code: job.code || null,
-        description: job.description || null,
-      };
-      jobInfoCache.set(jobId, result);
-      return result;
+    let job = await fetchJobRecord(cacheKey);
+    let title = job && (job.title || job.name) ? String(job.title || job.name).trim() : null;
+    const parentId = job && (job.parentJobId ?? job.parentId ?? (job.parent && job.parent.jobId));
+    if (!title && parentId != null) {
+      try {
+        const parentJob = await fetchJobRecord(String(parentId));
+        if (parentJob) title = String(parentJob.title || parentJob.name || '').trim() || null;
+      } catch (_) {
+        /* optional parent */
+      }
     }
-    return null;
+    if (!job) return null;
+    const result = {
+      jobId: job.jobId || cacheKey,
+      title: title || null,
+      code: job.code || null,
+      description: job.description || null,
+      locationKey: resolveLocationKeyFromJob(job) || (title ? normalizeLocationKey(title) : null),
+    };
+    jobInfoCache.set(cacheKey, result);
+    return result;
   } catch (err) {
     console.warn(`[getJobInfo] Failed to fetch job ${jobId}:`, err.message);
     return null;
