@@ -1,5 +1,10 @@
 const https = require('https');
-const { connecteamsApiKey, connecteamsBase } = require('../config/env');
+const {
+  connecteamsApiKey,
+  connecteamsBase,
+  connecteamTimeClockIds,
+  connecteamTimeClockNames,
+} = require('../config/env');
 const { LOCATIONS } = require('../utils/constants');
 const {
   toDateString,
@@ -92,6 +97,34 @@ function locationKeyInScope(locationKey, locationKeys) {
   if (!locationKey) return false;
   const lk = String(locationKey).toLowerCase().trim();
   return locationKeys.some((k) => String(k).toLowerCase().trim() === lk);
+}
+
+function timeClockDisplayName(clock) {
+  return String(clock.name || clock.title || clock.label || '').trim();
+}
+
+/** Only fetch punches from configured time clocks (default: name contains SANTOS). */
+function selectTimeClocksForFetch(timeClocksList) {
+  const list = Array.isArray(timeClocksList) ? timeClocksList : [];
+  const idFilter =
+    Array.isArray(connecteamTimeClockIds) && connecteamTimeClockIds.length > 0
+      ? new Set(connecteamTimeClockIds.map((id) => String(id).trim()))
+      : null;
+  if (idFilter) {
+    return list.filter((c) => {
+      const id = c.id != null ? c.id : c.timeClockId;
+      return id != null && idFilter.has(String(id));
+    });
+  }
+  const nameFilter =
+    Array.isArray(connecteamTimeClockNames) && connecteamTimeClockNames.length > 0
+      ? connecteamTimeClockNames.map((n) => String(n).toLowerCase().trim()).filter(Boolean)
+      : [];
+  if (nameFilter.length === 0) return list;
+  return list.filter((c) => {
+    const name = timeClockDisplayName(c).toLowerCase();
+    return nameFilter.some((needle) => name === needle || name.includes(needle));
+  });
 }
 
 function extractJobFromApiResponse(jobRes) {
@@ -223,10 +256,11 @@ function resolvePunchLocationKey({
   includeAllLocations,
 }) {
   const jobId = shift.jobId != null ? String(shift.jobId) : null;
-  let locationKey =
-    (jobId && jobIdToLocationKey[jobId]) ||
-    (jobId && jobIdToResolvedKey[jobId]) ||
-    null;
+  let locationKey = (jobId && jobIdToLocationKey[jobId]) || null;
+  if (!locationKey && jobId && jobIdToResolvedKey[jobId]) {
+    const resolved = jobIdToResolvedKey[jobId];
+    if (locationKeyInScope(resolved, locationKeys)) locationKey = resolved;
+  }
 
   const shiftLocationStr = shiftLocationStringFromPunch(shift);
   if (!locationKey && shiftLocationStr) {
@@ -238,33 +272,11 @@ function resolvePunchLocationKey({
     if (locationKeyInScope(sk, locationKeys)) locationKey = sk;
   }
 
-  if (!locationKey && userInfo) {
-    const fromProfile = getLocationKeysForPunch(userInfo, null, locationKeys);
-    if (fromProfile.length > 0) locationKey = fromProfile[0];
-  }
-
   if (!locationKey && includeAllLocations) {
     locationKey = normalizeLocationKey(shiftLocationStr) || 'unknown';
   }
 
   return locationKey;
-}
-
-function getLocationKeysForPunch(userInfo, schedLocationKey, locationKeys) {
-  const scoped = Array.isArray(locationKeys) && locationKeys.length > 0;
-  if (schedLocationKey && (!scoped || locationKeys.includes(schedLocationKey))) {
-    return [schedLocationKey];
-  }
-  const collected = new Set();
-  const locJob = (userInfo && (userInfo.locationJobValues || userInfo.locationValues)) || [];
-  const locOnly = (userInfo && userInfo.locationValues) || [];
-  for (const v of [...locJob, ...locOnly]) {
-    const k = normalizeLocationKey(String(v));
-    if (!k) continue;
-    if (!scoped || locationKeys.includes(k)) collected.add(k);
-  }
-  if (collected.size > 0) return Array.from(collected);
-  return [];
 }
 
 function dateFromTimestamp(tsSeconds) {
@@ -422,9 +434,24 @@ async function getTimeEntriesFromConnecteamsUncached(startDate, endDate, locatio
   const timeClocksRes = await connecteamsFetch('/time-clock/v1/time-clocks');
   const tcRaw = timeClocksRes.data != null ? timeClocksRes.data : timeClocksRes;
   const timeClocksList = Array.isArray(tcRaw) ? tcRaw : (tcRaw.timeClocks || tcRaw.items || []);
-  const timeClockIds = timeClocksList
+  const selectedClocks = selectTimeClocksForFetch(timeClocksList);
+  const timeClockIds = selectedClocks
     .map((c) => (c.id != null ? c.id : c.timeClockId))
     .filter(Boolean);
+  if (timeClockIds.length === 0) {
+    const available = timeClocksList
+      .map((c) => {
+        const id = c.id != null ? c.id : c.timeClockId;
+        return `${id}:${timeClockDisplayName(c) || '(unnamed)'}`;
+      })
+      .join(', ');
+    const hint = connecteamTimeClockIds
+      ? `CONNECTEAM_TIME_CLOCK_IDS=${connecteamTimeClockIds.join(',')}`
+      : `CONNECTEAM_TIME_CLOCK_NAMES=${(connecteamTimeClockNames || []).join(',')}`;
+    throw new Error(
+      `No Connecteam time clock matched (${hint}). Available clocks: ${available || 'none'}`,
+    );
+  }
 
   const scheduleMap = {};
   let totalShiftsLoaded = 0;
