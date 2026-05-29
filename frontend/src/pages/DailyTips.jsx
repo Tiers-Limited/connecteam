@@ -15,7 +15,7 @@ import {
   upsertManualWorking,
   deleteManualWorking,
 } from "../services/manualWorkingService";
-import { getEmployees, patchEmployeeTipMultiplier } from "../services/employeeService";
+import { getEmployees } from "../services/employeeService";
 import { toDateString } from "../utils/dateUtils";
 import {
   splitWorkedHoursForLocation,
@@ -72,20 +72,33 @@ function shiftDescriptionForLocation(locationName) {
   return " Enter gross tips per shift (AM 06:00–15:00, PM 15:00–23:00). ";
 }
 
+function adjustmentEmployeeIdString(employeeId) {
+  if (employeeId && typeof employeeId === "object" && employeeId._id != null) {
+    return String(employeeId._id);
+  }
+  return String(employeeId ?? "");
+}
+
 function getAdjustmentReasonForEmployee(adjustments, employeeId, type) {
   const eid = String(employeeId ?? "");
   if (!eid) return "";
   const list = Array.isArray(adjustments) ? adjustments : [];
-  const hit = list.find((x) => {
-    const xid =
-      x?.employeeId &&
-      typeof x.employeeId === "object" &&
-      x.employeeId._id != null
-        ? String(x.employeeId._id)
-        : String(x?.employeeId ?? "");
-    return xid === eid && x.type === type;
-  });
+  const hit = list.find(
+    (x) => adjustmentEmployeeIdString(x?.employeeId) === eid && x.type === type,
+  );
   return String(hit?.reason ?? "").trim();
+}
+
+function getAdjustmentAmountForEmployee(adjustments, employeeId, type) {
+  const eid = String(employeeId ?? "");
+  if (!eid) return null;
+  const list = Array.isArray(adjustments) ? adjustments : [];
+  const hit = list.find(
+    (x) => adjustmentEmployeeIdString(x?.employeeId) === eid && x.type === type,
+  );
+  if (!hit) return null;
+  const amt = Number(hit.amount);
+  return Number.isFinite(amt) && amt > 0 ? amt : null;
 }
 
 function excludedEmployeeIdString(row) {
@@ -137,7 +150,7 @@ function allocationEmployeeIdString(row) {
   return "";
 }
 
-/** Effective multiplier: saved employee override wins, else API jobTipMultiplier (from last calc / job title). */
+/** Effective multiplier: day-specific override wins, else API jobTipMultiplier (from job title / constants). */
 function jobTipMultiplierDisplay(row) {
   const o = row?.tipMultiplierOverride;
   const on = o != null ? Number(o) : NaN;
@@ -788,15 +801,22 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
           "redistribute_equal",
         ),
       );
+      const dayMult = getAdjustmentAmountForEmployee(
+        calculation?.adjustments,
+        row.employeeId,
+        "tip_multiplier",
+      );
       const o = row?.tipMultiplierOverride;
       const on = o != null ? Number(o) : NaN;
       const prev = Number(row?.jobTipMultiplier);
       const prefill =
-        Number.isFinite(on) && on > 0
-          ? on
-          : Number.isFinite(prev) && prev > 0
-            ? prev
-            : 1;
+        dayMult != null
+          ? dayMult
+          : Number.isFinite(on) && on > 0
+            ? on
+            : Number.isFinite(prev) && prev > 0
+              ? prev
+              : 1;
       setAdjustMultiplierInput(String(prefill));
       setAdjustExclude(false);
       setAdjustExcludeReason("");
@@ -821,14 +841,14 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
       return;
     }
     const multTrim = adjustMultiplierInput.trim();
-    let tipMultiplierOverride = null;
+    let tipMultiplierAmount = 0;
     if (multTrim !== "") {
       const m = parseFloat(multTrim);
       if (!Number.isFinite(m) || m < 0.01 || m > 100) {
         toast.error("Tip multiplier must be between 0.01 and 100");
         return;
       }
-      tipMultiplierOverride = m;
+      tipMultiplierAmount = m;
     }
     const excludeReason = adjustExcludeReason.trim();
     setAdjustSaving(true);
@@ -852,7 +872,12 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
           amount: adjustExclude ? 1 : 0,
           reason: adjustExclude ? excludeReason : "",
         }),
-        patchEmployeeTipMultiplier(empIdStr, tipMultiplierOverride),
+        upsertDailyTipAdjustment(lid, ds, {
+          employeeId: empIdStr,
+          type: "tip_multiplier",
+          amount: tipMultiplierAmount,
+          reason: "",
+        }),
       ]);
       toast.success(
         adjustExclude
@@ -2455,6 +2480,10 @@ export default function DailyTips({ embedded = false, stepTitle = null }) {
               <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
                 Tip multiplier
               </label>
+              <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                Applies to this date only. Other days use the job-title default from settings.
+                Clear the field and save to reset this day to the default.
+              </p>
               <input
                 type="number"
                 min="0.01"

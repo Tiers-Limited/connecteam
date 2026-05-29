@@ -17,7 +17,7 @@ const {
 
 const DEFAULT_TIMEZONE = 'America/Aruba';
 
-const CONNECTEAM_ENTRIES_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const CONNECTEAM_ENTRIES_CACHE_TTL_MS = 2 * 60 * 1000; 
 const connecteamEntriesCache = new Map();
 const connecteamEntriesInFlight = new Map();
 const CONNECTEAM_JOB_FETCH_CONCURRENCY = 8;

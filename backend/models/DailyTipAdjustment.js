@@ -19,7 +19,7 @@ const dailyTipAdjustmentSchema = new mongoose.Schema(
     type: {
       type: String,
       required: true,
-      enum: ['cash_advance', 'redistribute_equal', 'exclude'],
+      enum: ['cash_advance', 'redistribute_equal', 'exclude', 'tip_multiplier'],
     },
     amount: {
       type: Number,

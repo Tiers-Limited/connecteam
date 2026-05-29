@@ -52,8 +52,18 @@ router.post(
   param('locationId').isMongoId(),
   param('date').isISO8601().withMessage('Valid date required'),
   body('employeeId').isMongoId().withMessage('Valid employeeId required'),
-  body('type').isIn(['cash_advance', 'redistribute_equal', 'exclude']).withMessage('Valid adjustment type required'),
-  body('amount').isFloat({ min: 0 }).withMessage('Amount must be >= 0'),
+  body('type')
+    .isIn(['cash_advance', 'redistribute_equal', 'exclude', 'tip_multiplier'])
+    .withMessage('Valid adjustment type required'),
+  body('amount')
+    .isFloat({ min: 0 })
+    .withMessage('Amount must be >= 0')
+    .custom((value, { req }) => {
+      if (req.body?.type === 'tip_multiplier' && value > 0 && (value < 0.01 || value > 100)) {
+        throw new Error('tip_multiplier must be between 0.01 and 100');
+      }
+      return true;
+    }),
   body('reason').optional().isString(),
   validate,
   dailyTipController.upsertAdjustment

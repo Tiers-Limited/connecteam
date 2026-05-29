@@ -21,7 +21,7 @@ const employeeSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
-    /** When set, daily tip pool uses this multiplier instead of the job-title default from constants. */
+    /** Legacy field; daily tips use per-day `tip_multiplier` adjustments instead. */
     tipMultiplierOverride: {
       type: Number,
       min: 0.01,

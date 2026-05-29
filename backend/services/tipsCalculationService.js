@@ -256,13 +256,13 @@ function employeeWorkedHoursForRedistribution(row) {
   return Math.max(0, am + pm);
 }
 
-function weightedHoursForTipRate(employeeHoursMap) {
+function weightedHoursForTipRate(employeeHoursMap, dayTipMultiplierByEmpId) {
   let totalWeightedAMHours = 0;
   let totalWeightedPMHours = 0;
   const multiplierByKey = new Map();
 
   for (const [key, row] of employeeHoursMap.entries()) {
-    const jobMultiplier = effectiveJobTipMultiplier(row);
+    const jobMultiplier = effectiveJobTipMultiplier(row, dayTipMultiplierByEmpId);
     multiplierByKey.set(key, jobMultiplier);
     totalWeightedAMHours += (Number(row.amHours) || 0) * jobMultiplier;
     totalWeightedPMHours += (Number(row.pmHours) || 0) * jobMultiplier;
@@ -422,12 +422,45 @@ function getJobTipMultiplier(jobTitle) {
   return JOB_TIP_MULTIPLIERS.default || 1.0;
 }
 
-/** Employee.tipMultiplierOverride wins when set (positive); else job title from constants. */
-function effectiveJobTipMultiplier(row) {
+/** Day-specific tip_multiplier adjustment on row wins; else job title from constants. */
+function effectiveJobTipMultiplier(row, dayTipMultiplierByEmpId) {
+  const empKey =
+    row?.employeeId != null
+      ? String(row.employeeId._id ?? row.employeeId)
+      : '';
+  if (empKey && dayTipMultiplierByEmpId) {
+    const dayOv = dayTipMultiplierByEmpId.get(empKey);
+    const dn = dayOv != null ? Number(dayOv) : NaN;
+    if (Number.isFinite(dn) && dn > 0) return dn;
+  }
   const o = row?.tipMultiplierOverride;
   const n = o != null ? Number(o) : NaN;
   if (Number.isFinite(n) && n > 0) return n;
   return getJobTipMultiplier(row?.jobTitle);
+}
+
+function dayTipMultiplierByEmployeeIdFromAdjustments(adjustments) {
+  const m = new Map();
+  for (const a of adjustments || []) {
+    if (a.type !== 'tip_multiplier') continue;
+    const amt = Number(a.amount) || 0;
+    if (amt <= 0) continue;
+    const empKey = a.employeeId?.toString?.() || String(a.employeeId || '');
+    if (!empKey) continue;
+    m.set(empKey, amt);
+  }
+  return m;
+}
+
+function applyDayTipMultipliersToEmployeeHours(employeeHours, dayTipMultiplierByEmpId) {
+  for (const row of employeeHours.values()) {
+    const empKey = row.employeeId ? row.employeeId.toString() : '';
+    if (empKey && dayTipMultiplierByEmpId.has(empKey)) {
+      row.tipMultiplierOverride = dayTipMultiplierByEmpId.get(empKey);
+    } else {
+      delete row.tipMultiplierOverride;
+    }
+  }
 }
 
 let productionStaffNamesCache = null;
@@ -640,7 +673,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         locationId,
         $or: employeeOrClauses,
       })
-        .select('_id name connecteamsUserId tipMultiplierOverride isActive')
+        .select('_id name connecteamsUserId isActive')
         .lean()
     : [];
   const employeeByConnecteamId = new Map();
@@ -736,7 +769,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
             _id: created._id,
             name: created.name,
             connecteamsUserId: created.connecteamsUserId,
-            tipMultiplierOverride: created.tipMultiplierOverride,
           };
           employeeById.set(String(employee._id), employee);
           const cuid = String(employee.connecteamsUserId || '').trim();
@@ -763,11 +795,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       jobTitle = jobTitleBySubJobId.get(String(row.subJobId));
     }
 
-    const tipOverride =
-      employee?.tipMultiplierOverride != null &&
-      Number(employee.tipMultiplierOverride) > 0
-        ? Number(employee.tipMultiplierOverride)
-        : undefined;
     employeeHours.set(mapKey, {
       employeeId,
       employeeName,
@@ -780,7 +807,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
       clockOut: row.lastOut,
       jobTitle,
       subJobId: row.subJobId,
-      ...(tipOverride != null ? { tipMultiplierOverride: tipOverride } : {}),
     });
   }
 
@@ -812,7 +838,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     locationId,
     date: { $gte: dateStart, $lte: dateEnd },
   })
-    .populate('employeeId', 'name tipMultiplierOverride')
+    .populate('employeeId', 'name')
     .lean();
 
   let manualAMTipsTotal = 0;
@@ -820,11 +846,6 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   for (const manual of manualEntries) {
     const empDoc = manual.employeeId;
     const empId = empDoc._id.toString();
-    const fromEmpOverride =
-      empDoc?.tipMultiplierOverride != null &&
-      Number(empDoc.tipMultiplierOverride) > 0
-        ? Number(empDoc.tipMultiplierOverride)
-        : undefined;
     if (!employeeHours.has(empId)) {
       employeeHours.set(empId, {
         employeeId: empDoc._id,
@@ -838,11 +859,9 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         clockOut: null,
         manualAmTips: 0,
         manualPmTips: 0,
-        ...(fromEmpOverride != null ? { tipMultiplierOverride: fromEmpOverride } : {}),
       });
     }
     const row = employeeHours.get(empId);
-    if (fromEmpOverride != null) row.tipMultiplierOverride = fromEmpOverride;
     if (isTheCove) {
       row.amHours += (manual.amHours || 0) + (manual.pmHours || 0);
       row.manualAmTips = (row.manualAmTips || 0) + (manual.amTips || 0) + (manual.pmTips || 0);
@@ -874,6 +893,9 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     locationId,
     date: { $gte: dateStart, $lte: dateEnd },
   }).lean();
+
+  const dayTipMultiplierByEmpId = dayTipMultiplierByEmployeeIdFromAdjustments(adjustments);
+  applyDayTipMultipliersToEmployeeHours(employeeHours, dayTipMultiplierByEmpId);
 
   // Build set of employees flagged "exclude from calculation". Their hours are
   // dropped before tip-rate math, so they don't influence the pool, and their
@@ -941,7 +963,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
     totalWeightedAMHours,
     totalWeightedPMHours,
     multiplierByKey,
-  } = weightedHoursForTipRate(employeeHours);
+  } = weightedHoursForTipRate(employeeHours, dayTipMultiplierByEmpId);
   const amTipRate =
     totalWeightedAMHours > 0 ? adjustedDistributableAM / totalWeightedAMHours : 0;
   const pmTipRate = isTheCove
@@ -953,7 +975,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
   const allocationDrafts = [];
   for (const [mapKey, row] of employeeHours.entries()) {
     const jobMultiplier =
-      multiplierByKey.get(mapKey) ?? effectiveJobTipMultiplier(row);
+      multiplierByKey.get(mapKey) ?? effectiveJobTipMultiplier(row, dayTipMultiplierByEmpId);
     const amTipsRaw = row.amHours * amTipRate * jobMultiplier;
     const pmTipsRaw = row.pmHours * pmTipRate * jobMultiplier;
     const tipOverrideOut =
@@ -1101,7 +1123,7 @@ async function getDailyTipCalculation(locationId, date, options = {}) {
         employeeId: r.employeeId,
         employeeName: r.employeeName,
         jobTitle: r.jobTitle,
-        jobTipMultiplier: effectiveJobTipMultiplier(r),
+        jobTipMultiplier: effectiveJobTipMultiplier(r, dayTipMultiplierByEmpId),
         amHours: r.amHours,
         pmHours: r.pmHours,
         connecteamBreakHours: r.connecteamBreakHours ?? 0,
@@ -1193,26 +1215,6 @@ function mapFirstLastClockByEmployeeFromTimeEntries(entries) {
   }
   return out;
 }
-async function tipMultiplierOverrideByEmployeeId(locationId) {
-  const locOid =
-    typeof locationId === 'string' && mongoose.Types.ObjectId.isValid(locationId)
-      ? new mongoose.Types.ObjectId(locationId)
-      : locationId;
-  const rows = await Employee.find({
-    locationId: locOid,
-    isActive: true,
-    tipMultiplierOverride: { $gt: 0 },
-  })
-    .select('_id tipMultiplierOverride')
-    .lean();
-  const m = new Map();
-  for (const r of rows) {
-    const v = Number(r.tipMultiplierOverride);
-    if (Number.isFinite(v) && v > 0) m.set(String(r._id), v);
-  }
-  return m;
-}
-
 async function getDailyTipCalculationSnapshot(locationId, date) {
   const dateStr = typeof date === 'string' ? date.slice(0, 10) : toDateString(date);
   const tz = getAppTimezone();
@@ -1236,18 +1238,28 @@ async function getDailyTipCalculationSnapshot(locationId, date) {
     return null;
   }
 
-  const tipOverrideByEmpId = await tipMultiplierOverrideByEmployeeId(locationId);
+  const adjustmentsEarly = await DailyTipAdjustment.find({
+    locationId,
+    date: { $gte: dateStart, $lte: dateEnd },
+  }).lean();
+  const dayTipMultiplierByEmpIdEarly = dayTipMultiplierByEmployeeIdFromAdjustments(adjustmentsEarly);
 
   if (audit.snapshot && Array.isArray(audit.snapshot.employeeAllocations)) {
     return {
       ...audit.snapshot,
       employeeAllocations: audit.snapshot.employeeAllocations.map((a) => {
         const ek = a.employeeId != null ? String(a.employeeId) : '';
-        const ov = ek ? tipOverrideByEmpId.get(ek) : null;
+        const dayOv = ek ? dayTipMultiplierByEmpIdEarly.get(ek) : null;
+        const effectiveMult =
+          dayOv != null
+            ? dayOv
+            : a.jobTipMultiplier != null
+              ? Number(a.jobTipMultiplier) || getJobTipMultiplier(a.jobTitle)
+              : getJobTipMultiplier(a.jobTitle);
         return {
           ...a,
-          tipMultiplierOverride:
-            ov != null ? ov : a.tipMultiplierOverride != null ? a.tipMultiplierOverride : null,
+          jobTipMultiplier: effectiveMult,
+          tipMultiplierOverride: dayOv != null ? dayOv : null,
         };
       }),
       excludedEmployees: Array.isArray(audit.snapshot.excludedEmployees)
@@ -1261,10 +1273,7 @@ async function getDailyTipCalculationSnapshot(locationId, date) {
   const locationDoc = await Location.findById(locationId).select('name').lean();
   const isTheCove = (locationDoc?.name || '').trim().toLowerCase() === LOCATION_SINGLE_SHIFT.key;
 
-  const adjustments = await DailyTipAdjustment.find({
-    locationId,
-    date: { $gte: dateStart, $lte: dateEnd },
-  }).lean();
+  const adjustments = adjustmentsEarly;
 
   const manualEntries = await ManualWorking.find({
     locationId,
@@ -1416,13 +1425,19 @@ async function getDailyTipCalculationSnapshot(locationId, date) {
       clockIn = manualClock.clockIn;
       clockOut = manualClock.clockOut;
     }
-    const ov = empKey ? tipOverrideByEmpId.get(empKey) : null;
-    const tipMultiplierOverride = ov != null ? ov : null;
+    const dayOv = empKey ? dayTipMultiplierByEmpIdEarly.get(empKey) : null;
+    const tipMultiplierOverride = dayOv != null ? dayOv : null;
+    const jobTipMultiplier =
+      dayOv != null
+        ? dayOv
+        : h?.jobTipMultiplier != null
+          ? Number(h.jobTipMultiplier) || getJobTipMultiplier(h?.jobTitle)
+          : getJobTipMultiplier(h?.jobTitle);
     return {
       employeeId: p.employeeId,
       employeeName: p.employeeName,
       jobTitle: h?.jobTitle ?? null,
-      jobTipMultiplier: h?.jobTipMultiplier != null ? h.jobTipMultiplier : getJobTipMultiplier(h?.jobTitle),
+      jobTipMultiplier,
       tipMultiplierOverride,
       clockIn,
       clockOut,
